@@ -1,0 +1,16 @@
+[H1] Skill Smoke Test Report
+
+[H2] Overview
+
+This paragraph confirms that the skill can write a plain report section and convert it into DOCX.
+
+[H2] Findings
+
+The helper should create a DOCX file in the results folder and pass validation for this simple input.
+
+[TABLE_START]
+[TABLE_CAPTION] Table 1 - Conversion Status
+| Item | Status |
+| Wrapper | Passed |
+| DOCX Output | Expected |
+[TABLE_END]
