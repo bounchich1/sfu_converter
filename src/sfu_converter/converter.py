@@ -1,4 +1,3 @@
-import re
 import logging
 from pathlib import Path
 from docx import Document
@@ -6,6 +5,24 @@ from docx.shared import Pt, Cm, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.ns import qn
 from sfu_converter.config import SIBFUConfig
+from sfu_converter.domain.ast_nodes import (
+    AppendixNode,
+    BibliographyEntryNode,
+    Document as AstDocument,
+    FigureNode,
+    FormulaNode,
+    HeadingLevel,
+    HeadingNode,
+    ListNode,
+    MetadataNode,
+    PageBreakNode,
+    ParagraphNode,
+    RawBlockNode,
+    TableCaptionNode,
+    TableNode,
+)
+from sfu_converter.domain.diagnostics import Severity
+from sfu_converter.parser.v1_parser import V1Parser
 from sfu_converter.utils_image_insert import insert_image
 
 
@@ -239,85 +256,85 @@ class TextToDocxConverter:
             self._setup_document_margins()
 
     def _render_lines(self, lines):
-        """Преобразует строки исходного файла в содержимое DOCX."""
-        i = 0
-        while i < len(lines):
-            line = lines[i].strip()
-            
-            if not line:
-                i += 1
-                continue
+        """Преобразует строки исходного файла или AST в содержимое DOCX."""
+        if isinstance(lines, AstDocument):
+            self._render_from_ast(lines)
+            return
 
-            if line.startswith('[H1]'):
-                text = line.replace('[H1]', '').strip()
-                p = self.doc.add_paragraph(text)
-                self._set_paragraph_format(p, 'h1')
-                self._add_empty_paragraph('empty_after_header')
-                i += 1
-                continue
+        source = self._lines_to_source(lines)
+        result = V1Parser().parse(source)
+        self._log_parser_diagnostics(result.diagnostics)
+        self._render_from_ast(result.document)
 
-            if line.startswith('[H2]'):
-                self._add_empty_paragraph('empty_before_header')
-                text = line.replace('[H2]', '').strip()
-                p = self.doc.add_paragraph(text)
-                self._set_paragraph_format(p, 'h2')
-                self._add_empty_paragraph('empty_after_header')
-                i += 1
-                continue
+    def _lines_to_source(self, lines):
+        if isinstance(lines, str):
+            return lines
 
-            if line.startswith('[H3]'):
-                text = line.replace('[H3]', '').strip()
-                p = self.doc.add_paragraph(text)
-                self._set_paragraph_format(p, 'h3')
-                self._add_empty_paragraph('empty_after_header')
-                i += 1
-                continue
+        source_lines = list(lines)
+        if any(line.endswith(('\n', '\r')) for line in source_lines):
+            return ''.join(source_lines)
+        return '\n'.join(source_lines)
 
-            if line.startswith('[IMAGE'):
-                match = re.match(r'\[IMAGE(?:=([^\]]+))?\]', line)
-                if match:
-                    image_path = match.group(1).strip() if match.group(1) else None
-                    
-                    caption = None
-                    if i + 1 < len(lines):
-                        next_line = lines[i + 1].strip()
-                        if next_line.startswith('Рисунок') or next_line.startswith('Figure'):
-                            caption = next_line
-                            i += 1
-                    
-                    self._insert_image(image_path, caption)
-                i += 1
-                continue
+    def _log_parser_diagnostics(self, diagnostics):
+        for diagnostic in diagnostics:
+            line = diagnostic.source.line_start if diagnostic.source else "?"
+            message = f"{diagnostic.code} at line {line}: {diagnostic.message}"
+            if diagnostic.severity in (Severity.ERROR, Severity.FATAL):
+                self.logger.error(message)
+            else:
+                self.logger.warning(message)
 
-            if line.startswith('[TABLE_START]'):
-                i += 1
-                table_rows = []
-                caption = None
-                
-                while i < len(lines) and lines[i].strip() != '[TABLE_END]':
-                    current_line = lines[i].strip()
-                    if current_line.startswith('[TABLE_CAPTION]'):
-                        caption = current_line.replace('[TABLE_CAPTION]', '').strip()
-                    else:
-                        row = self._parse_table_line(current_line)
-                        if row:
-                            table_rows.append(row)
-                    i += 1
-                
-                self._create_table(table_rows, caption)
-                i += 1
-                continue
-
-            if line.startswith('[TABLE_CAPTION]'):
-                text = line.replace('[TABLE_CAPTION]', '').strip()
-                p = self.doc.add_paragraph(text)
+    def _render_from_ast(self, document):
+        """Render a parsed domain document into the current document."""
+        for block in document.blocks:
+            if isinstance(block, HeadingNode):
+                self._render_heading(block)
+            elif isinstance(block, ParagraphNode):
+                self._render_paragraph(block)
+            elif isinstance(block, TableNode):
+                rows = [[cell.text for cell in row.cells] for row in block.rows]
+                self._create_table(rows, block.caption)
+            elif isinstance(block, TableCaptionNode):
+                p = self.doc.add_paragraph(block.text)
                 self._set_paragraph_format(p, 'caption_table')
-                i += 1
+            elif isinstance(block, FigureNode):
+                self._insert_image(block.src, block.caption)
+            elif isinstance(block, PageBreakNode):
+                self.doc.add_page_break()
+            elif isinstance(block, FormulaNode):
+                self._render_text_block(block.content)
+            elif isinstance(block, ListNode):
+                for item in block.items:
+                    self._render_text_block(item.text)
+            elif isinstance(block, AppendixNode):
+                self._render_heading(HeadingNode(level=HeadingLevel.H1, text=block.title))
+                self._render_from_ast(AstDocument(blocks=block.blocks))
+            elif isinstance(block, BibliographyEntryNode):
+                self._render_text_block(f"{block.number}. {block.text}")
+            elif isinstance(block, RawBlockNode):
+                self._render_text_block(block.text)
+            elif isinstance(block, MetadataNode):
                 continue
 
-            p = self.doc.add_paragraph(line)
-            self._set_paragraph_format(p, 'normal')
-            i += 1
+    def _render_heading(self, block):
+        if block.level is HeadingLevel.H2:
+            self._add_empty_paragraph('empty_before_header')
+
+        style_type = {
+            HeadingLevel.H1: 'h1',
+            HeadingLevel.H2: 'h2',
+            HeadingLevel.H3: 'h3',
+        }[block.level]
+        p = self.doc.add_paragraph(block.text)
+        self._set_paragraph_format(p, style_type)
+        self._add_empty_paragraph('empty_after_header')
+
+    def _render_paragraph(self, block):
+        self._render_text_block(''.join(run.text for run in block.runs))
+
+    def _render_text_block(self, text):
+        p = self.doc.add_paragraph(text)
+        self._set_paragraph_format(p, 'normal')
 
     def convert_file(self, input_file: Path, output_file: Path, template: str | None = None):
         """Конвертирует TXT файл по явным входному и выходному путям."""

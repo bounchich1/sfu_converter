@@ -1,0 +1,44 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from enum import Enum
+
+from .ast_nodes import SourceSpan
+
+
+class Severity(Enum):
+    INFO = "info"
+    WARNING = "warning"
+    ERROR = "error"
+    FATAL = "fatal"
+
+
+@dataclass(frozen=True)
+class Diagnostic:
+    """A structured diagnostic message."""
+
+    code: str
+    message: str
+    severity: Severity
+    source: SourceSpan | None = None
+    rule_id: str | None = None
+    suggestion: str | None = None
+
+
+class DiagnosticCodes:
+    TXT_UNKNOWN_MARKER = "TXT_UNKNOWN_MARKER"
+    TXT_CYRILLIC_IN_MARKER = "TXT_CYRILLIC_IN_MARKER"
+    TXT_DUPLICATE_ID = "TXT_DUPLICATE_ID"
+    TXT_MISSING_BLOCK_END = "TXT_MISSING_BLOCK_END"
+    TXT_MALFORMED_ATTRIBUTE = "TXT_MALFORMED_ATTRIBUTE"
+    TXT_INVALID_TABLE_SHAPE = "TXT_INVALID_TABLE_SHAPE"
+    TXT_IMAGE_NOT_FOUND = "TXT_IMAGE_NOT_FOUND"
+    TXT_IMAGE_OUTSIDE_ROOT = "TXT_IMAGE_OUTSIDE_ROOT"
+    TXT_UNSUPPORTED_SYNTAX = "TXT_UNSUPPORTED_SYNTAX"
+    FORMAT_MARGIN_LEFT = "FORMAT_MARGIN_LEFT"
+    FORMAT_MARGIN_RIGHT = "FORMAT_MARGIN_RIGHT"
+    FORMAT_FONT_NAME = "FORMAT_FONT_NAME"
+    FORMAT_FONT_SIZE = "FORMAT_FONT_SIZE"
+    FORMAT_LINE_SPACING = "FORMAT_LINE_SPACING"
+    FORMAT_INDENT = "FORMAT_INDENT"
+    FORMAT_ALIGNMENT = "FORMAT_ALIGNMENT"
