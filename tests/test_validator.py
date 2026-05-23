@@ -1,13 +1,9 @@
 import pytest
-from pathlib import Path
 from docx import Document
 from docx.shared import Pt, Cm
 from docx.enum.text import WD_ALIGN_PARAGRAPH
-import sys
 
-sys.path.insert(0, str(Path(__file__).parent.parent / 'src'))
-from validator import StyleValidator
-from config import SIBFUConfig
+from sfu_converter.validator import StyleValidator
 
 
 class TestStyleValidator:

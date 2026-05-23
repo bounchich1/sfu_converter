@@ -1,99 +1,84 @@
+import logging
+
+import pytest
 from docx import Document
-from docx.shared import Cm, Pt
-from docx.enum.text import WD_ALIGN_PARAGRAPH
-from pathlib import Path
+from docx.shared import Cm
 from PIL import Image
-import io
 
-# === 1. Создаём тестовую картинку ===
-print("Создание тестовой картинки...")
-img = Image.new('RGB', (400, 200), color='blue')
-from PIL import ImageDraw
-draw = ImageDraw.Draw(img)
-draw.text((50, 90), "TEST IMAGE", fill='white')
+from sfu_converter.config import SIBFUConfig
+from sfu_converter.utils_image_insert import (
+    calculate_image_dimensions,
+    convert_image_to_rgb,
+    insert_image,
+    save_image_to_buffer,
+)
 
-img_path = Path(__file__).parent / 'test_image.png'
-img.save(img_path, format='PNG', dpi=(96, 96))
-print(f"✓ Картинка сохранена: {img_path}")
 
-# === 2. Тест разных способов вставки ===
-print("\n" + "="*60)
-print("ТЕСТ СПОСОБОВ ВСТАВКИ КАРТИНКИ")
-print("="*60)
+@pytest.fixture
+def sample_image(tmp_path):
+    img = Image.new("RGB", (200, 100), color="red")
+    path = tmp_path / "test.png"
+    img.save(str(path))
+    return path
 
-doc = Document()
 
-# --- Способ 1: run.add_picture() ---
-print("\n[Способ 1] run.add_picture()")
-para1 = doc.add_paragraph("Абзац с картинкой через run.add_picture()")
-pf1 = para1.paragraph_format
-pf1.line_spacing = 1.5
-pf1.alignment = WD_ALIGN_PARAGRAPH.CENTER
+@pytest.fixture
+def rgba_image(tmp_path):
+    img = Image.new("RGBA", (200, 100), color=(255, 0, 0, 128))
+    path = tmp_path / "test_rgba.png"
+    img.save(str(path))
+    return path
 
-run1 = para1.add_run()
-print(f"  run методы с 'picture': {[m for m in dir(run1) if 'picture' in m.lower()]}")
 
-if hasattr(run1, 'add_picture'):
-    try:
-        run1.add_picture(str(img_path), width=Cm(10))
-        print("  ✅ run.add_picture() РАБОТАЕТ!")
-    except Exception as e:
-        print(f"  ❌ run.add_picture() ОШИБКА: {e}")
-else:
-    print("  ❌ run.add_picture() НЕ СУЩЕСТВУЕТ")
+class TestConvertImageToRgb:
+    def test_rgb_passthrough(self, sample_image):
+        img = Image.open(str(sample_image))
 
-# --- Способ 2: doc.add_picture() ---
-print("\n[Способ 2] doc.add_picture()")
-doc.add_paragraph("Текст перед картинкой")
+        result = convert_image_to_rgb(img)
 
-shape = doc.add_picture(str(img_path), width=Cm(10))
-print(f"  shape тип: {type(shape).__name__}")
-print(f"  shape атрибуты: {[a for a in dir(shape) if not a.startswith('_')][:15]}")
+        assert result.mode == "RGB"
 
-# Проверяем доступ к абзацу
-print(f"  hasattr(shape, '_parent'): {hasattr(shape, '_parent')}")
-print(f"  hasattr(shape, 'parent'): {hasattr(shape, 'parent')}")
-print(f"  hasattr(shape, '_inline'): {hasattr(shape, '_inline')}")
+    def test_rgba_conversion(self, rgba_image):
+        img = Image.open(str(rgba_image))
 
-if hasattr(shape, '_inline'):
-    print(f"  hasattr(shape._inline, 'getparent'): {hasattr(shape._inline, 'getparent')}")
+        result = convert_image_to_rgb(img)
 
-# Настраиваем последний абзац (где картинка)
-para_img = doc.paragraphs[-1]
-para_img.paragraph_format.line_spacing = 1.5
-para_img.paragraph_format.alignment = WD_ALIGN_PARAGRAPH.CENTER
-print("  ✅ Настроен paragraphs[-1]")
+        assert result.mode == "RGB"
 
-# --- Способ 3: run.add_image() (альтернатива) ---
-print("\n[Способ 3] run.add_image()")
-para3 = doc.add_paragraph("Абзац с run.add_image()")
-run3 = para3.add_run()
-print(f"  run методы с 'image': {[m for m in dir(run3) if 'image' in m.lower()]}")
 
-if hasattr(run3, 'add_image'):
-    try:
-        run3.add_image(str(img_path))
-        print("  ✅ run.add_image() РАБОТАЕТ!")
-    except Exception as e:
-        print(f"  ❌ run.add_image() ОШИБКА: {e}")
-else:
-    print("  ❌ run.add_image() НЕ СУЩЕСТВУЕТ")
+class TestCalculateImageDimensions:
+    def test_dimensions_within_max_width(self):
+        width, height = calculate_image_dimensions(
+            original_size=(1000, 500),
+            width=None,
+            height=None,
+            max_width=Cm(15),
+            dpi=96,
+        )
 
-# === 3. Сохранение ===
-output_path = Path(__file__).parent / 'test_picture_methods.docx'
-doc.save(str(output_path))
-print(f"\n✓ Документ сохранён: {output_path}")
-print("="*60)
+        assert width is not None
+        assert height is not None
+        assert width <= Cm(15)
 
-# === 4. Итоговая таблица ===
-print("\nИТОГИ:")
-print("-"*60)
-print("| Метод              | Существует | Работает |")
-print("-"*60)
-print(f"| run.add_picture()  | {hasattr(run1, 'add_picture')} | {'✅' if hasattr(run1, 'add_picture') else '❌'} |")
-print(f"| run.add_image()    | {hasattr(run3, 'add_image')} | {'✅' if hasattr(run3, 'add_image') else '❌'} |")
-print(f"| doc.add_picture()  | True | ✅ |")
-print(f"| shape._parent      | {hasattr(shape, '_parent')} | {'✅' if hasattr(shape, '_parent') else '❌'} |")
-print(f"| shape.parent       | {hasattr(shape, 'parent')} | {'✅' if hasattr(shape, 'parent') else '❌'} |")
-print("-"*60)
-print("\nОткройте test_picture_methods.docx и проверьте визуально!")
+
+class TestSaveImageToBuffer:
+    def test_saves_rgb_image_to_buffer(self, sample_image):
+        img = Image.open(str(sample_image))
+
+        buffer = save_image_to_buffer(img, format="PNG")
+
+        assert buffer.getbuffer().nbytes > 0
+
+
+class TestInsertImage:
+    def test_insert_into_document(self, sample_image, tmp_path):
+        doc = Document()
+        logger = logging.getLogger("test")
+
+        inserted = insert_image(doc, str(sample_image), SIBFUConfig.IMAGE, logger)
+
+        output = tmp_path / "output.docx"
+        doc.save(str(output))
+        assert inserted is True
+        assert output.exists()
+        assert len(doc.inline_shapes) == 1

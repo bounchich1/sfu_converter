@@ -2,7 +2,7 @@ import logging
 from pathlib import Path
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
-from config import SIBFUConfig
+from sfu_converter.config import SIBFUConfig
 
 
 class StyleValidator:

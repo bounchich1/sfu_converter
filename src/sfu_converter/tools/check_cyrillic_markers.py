@@ -44,10 +44,10 @@ def main():
     print("=" * 70)
     
     # Директория с примерами
-    examples_dir = Path(__file__).parent.parent / 'examples'
+    examples_dir = Path.cwd() / 'examples'
     
     if not examples_dir.exists():
-        print(f"\n⚠️  Директория не найдена: {examples_dir}")
+        print(f"\nWARNING: Директория не найдена: {examples_dir}")
         print("   Создайте папку examples/ и поместите туда TXT файлы")
         return
     
@@ -55,11 +55,11 @@ def main():
     txt_files = sorted(examples_dir.glob('*.txt'))
     
     if not txt_files:
-        print(f"\n⚠️  TXT файлы не найдены в {examples_dir}")
+        print(f"\nWARNING: TXT файлы не найдены в {examples_dir}")
         return
     
-    print(f"\n📁 Директория: {examples_dir}")
-    print(f"📄 Найдено файлов: {len(txt_files)}")
+    print(f"\nДиректория: {examples_dir}")
+    print(f"Найдено файлов: {len(txt_files)}")
     print()
     
     total_issues = 0
@@ -72,17 +72,17 @@ def main():
             files_with_issues += 1
             total_issues += len(issues)
             
-            print(f"\n{'─' * 70}")
-            print(f"❌ {txt_file.name} — найдено проблем: {len(issues)}")
-            print(f"{'─' * 70}")
+            print(f"\n{'-' * 70}")
+            print(f"ERROR: {txt_file.name} - найдено проблем: {len(issues)}")
+            print(f"{'-' * 70}")
             
             for issue in issues:
                 print(f"  Строка {issue['line']}: [{issue['marker']}]")
-                print(f"    ⚠️  Кириллическая '{issue['char']}' → замените на '{issue['suggestion']}'")
-                print(f"    📝 {issue['text']}...")
+                print(f"    WARNING: Кириллическая '{issue['char']}' -> замените на '{issue['suggestion']}'")
+                print(f"    Текст: {issue['text']}...")
                 print()
         else:
-            print(f"✅ {txt_file.name} — ошибок нет")
+            print(f"OK: {txt_file.name} - ошибок нет")
     
     # Итоговый отчёт
     print(f"\n{'=' * 70}")
@@ -93,10 +93,10 @@ def main():
     print(f"  Всего проблем:        {total_issues}")
     
     if total_issues == 0:
-        print(f"\n✅ Все файлы корректны! Маркеры используют латинские символы.")
+        print(f"\nOK: Все файлы корректны! Маркеры используют латинские символы.")
     else:
-        print(f"\n⚠️  Найдены проблемы! Замените кириллические символы в маркерах.")
-        print(f"   Пример: [Н1] → [H1], [ТABLE_START] → [TABLE_START]")
+        print(f"\nWARNING: Найдены проблемы! Замените кириллические символы в маркерах.")
+        print(f"   Пример: [Н1] -> [H1], [ТABLE_START] -> [TABLE_START]")
     
     print(f"{'=' * 70}\n")
 

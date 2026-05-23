@@ -15,7 +15,7 @@ python -m venv .venv
 # или
 source .venv/bin/activate  # macOS/Linux
 
-pip install -r requirements.txt
+pip install -e ".[dev]"
 ```
 
 ## Использование
@@ -23,8 +23,7 @@ pip install -r requirements.txt
 ### Запуск консольного приложения
 
 ```bash
-cd src
-python main.py 
+python -m sfu_converter
 ```
 
 ## Формат входного файла
@@ -131,14 +130,33 @@ move examples\* examples_arch\
 
 ## Разработка
 
-Для изменения формата конвертации внесите изменения `src/config.py`.
+Для изменения формата конвертации внесите изменения `src/sfu_converter/config.py`.
+
+Запуск тестов:
+
+```bash
+python -m pytest
+```
+
+Запуск тестов с покрытием:
+
+```bash
+python -m pytest --cov=sfu_converter --cov-branch --cov-report=term-missing
+```
+
+HTML-отчет покрытия:
+
+```bash
+python -m pytest --cov=sfu_converter --cov-branch --cov-report=html
+```
 
 ## Документация по стандарту и roadmap
 
-В репозиторий добавлены отдельные документы по сравнению проекта со стандартом СФУ:
+В репозиторий добавлены отдельные документы:
 
-- `docs/sfu-standard-audit.md` — краткий конспект ключевых требований `СТУ 7.5-07-2021`, текущие возможности проекта, пробелы и приоритеты развития.
-- `docs/superpowers/plans/2026-04-18-sfu-standard-compliance.md` — детальный план по доработке проекта до более полного соответствия стандарту.
+- `docs/formatting requirements/` — требования к оформлению по СТУ 7.5-07-2021, разбитые по типам документов.
+- `docs/technical requirements/` — технические требования к переписке проекта, архитектуре, CLI, синтаксису и покрытию тестами.
+- `docs/tasks/` — пошаговые задачи по реализации всех фич и рефакторингу.
 
 ## ⚠️ Важное предупреждение: Кириллические символы в маркерах
 
@@ -163,8 +181,7 @@ move examples\* examples_arch\
 ### Как проверить
 
 ```bash
-cd tests
-python check_cyrillic_markers.py
+python -m sfu_converter.tools.check_cyrillic_markers
 ```
 
 Скрипт просканирует файлы в `examples/` и покажет проблемные маркеры.
@@ -172,8 +189,7 @@ python check_cyrillic_markers.py
 ### Как исправить автоматически
 
 ```bash
-cd tests
-python fix_cyrillic_markers.py
+python -m sfu_converter.tools.fix_cyrillic_markers
 ```
 
 **Что делает скрипт:**
@@ -199,7 +215,7 @@ python fix_cyrillic_markers.py
 |----------|--------------|
 | Набор маркеров | Переключайтесь на **английскую раскладку** |
 | Копирование из Word | Используйте «Вставить как текст» или набирайте вручную |
-| Перед конвертацией | Запускайте `fix_cyrillic_markers.py` для проверки |
+| Перед конвертацией | Запускайте `python -m sfu_converter.tools.fix_cyrillic_markers` для проверки |
 
 ### Для отката изменений
 
@@ -216,6 +232,6 @@ cp examples/file.txt.backup examples/file.txt
 ## 📋 Чек-лист перед конвертацией
 
 - [ ] Все маркеры набраны в английской раскладке (`[H1]`, `[TABLE_START]`, `[IMAGE=...]`)
-- [ ] Запущен `fix_cyrillic_markers.py` и показывает 0 ошибок
+- [ ] Запущен `python -m sfu_converter.tools.fix_cyrillic_markers` и показывает 0 ошибок
 - [ ] Изображения находятся в папке `images/`
 - [ ] Файлы `.txt` находятся в папке `examples/`

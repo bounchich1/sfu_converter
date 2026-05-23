@@ -97,7 +97,7 @@ class SIBFUConfig:
         'top': Cm(2),
         'bottom': Cm(2),
         'left': Cm(3),
-        'right': Cm(1.5)
+        'right': Cm(1)
     }
         
     # === Изображения ===
@@ -108,7 +108,7 @@ class SIBFUConfig:
         'height': None,          # Или None для авто-расчета
         'dpi': (96, 96),
         'format': 'PNG',         # Или 'JPEG'
-        'max_width': Cm(1.5),     # Максимальная ширина
+        'max_width': Cm(15),      # Максимальная ширина
     }
     
     TABLE_CELL_PADDING = Pt(6)

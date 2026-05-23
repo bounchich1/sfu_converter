@@ -78,7 +78,7 @@ def _to_emu(value: Union[Cm, Inches, int, float, None], dpi: int = 96) -> Option
 
 def _from_emu_to_cm(emu: int) -> Cm:
     """Конвертирует EMU обратно в Cm."""
-    return Cm(emu / 36000)  # 36000 EMU = 1 cm
+    return Cm(emu / 360000)  # 360000 EMU = 1 cm
 
 
 def calculate_image_dimensions(
@@ -113,17 +113,14 @@ def calculate_image_dimensions(
         current_w_emu = _to_emu(orig_w, dpi)
         
         if current_w_emu and max_w_emu and current_w_emu > max_w_emu:
-            scale = max_w_emu / current_w_emu
-            new_w_px = int(orig_w * scale)
-            new_h_px = int(orig_h * scale)
-            width = _from_emu_to_cm(_to_emu(new_w_px, dpi))
-            height = _from_emu_to_cm(_to_emu(new_h_px, dpi))
+            width = _from_emu_to_cm(max_w_emu)
+            height = _from_emu_to_cm(int(max_w_emu * aspect_ratio))
             return width, height
     
     # 2. Если задана только ширина — вычисляем высоту
     if width is not None and height is None:
         if isinstance(width, Cm):
-            height = Cm(width.emu * aspect_ratio / 36000)
+            height = Cm(width.emu * aspect_ratio / 360000)
         elif isinstance(width, Inches):
             height = Inches(width.inches * aspect_ratio)
         else:
@@ -133,7 +130,7 @@ def calculate_image_dimensions(
     elif height is not None and width is None:
         inv_aspect = orig_w / orig_h if orig_h > 0 else 1
         if isinstance(height, Cm):
-            width = Cm(height.emu * inv_aspect / 36000)
+            width = Cm(height.emu * inv_aspect / 360000)
         elif isinstance(height, Inches):
             width = Inches(height.inches * inv_aspect)
         else:
