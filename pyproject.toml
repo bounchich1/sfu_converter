@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sfu-converter"
+version = "0.1.0"
+description = "TXT to DOCX converter with SFU formatting standards"
+requires-python = ">=3.10"
+dependencies = [
+    "python-docx>=1.1.0",
+    "Pillow>=10.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "coverage[toml]>=7.0",
+]
+
+[project.scripts]
+sfu-converter = "sfu_converter.main:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.coverage.run]
+source = ["sfu_converter"]
+branch = true
+
+[tool.coverage.report]
+fail_under = 0
+show_missing = true
+skip_empty = true

@@ -1,8 +1,8 @@
 import logging
 from pathlib import Path
-from converter import TextToDocxConverter
-from validator import StyleValidator
-from menu import ConsoleMenu
+from sfu_converter.converter import TextToDocxConverter
+from sfu_converter.menu import ConsoleMenu
+from sfu_converter.validator import StyleValidator
 
 
 def setup_logging(log_dir):
@@ -24,7 +24,7 @@ def setup_logging(log_dir):
 
 def main():
     """Точка входа в приложение"""
-    base_dir = Path(__file__).resolve().parent.parent
+    base_dir = Path.cwd()
     
     logger = setup_logging(base_dir / 'logs')
     logger.info("Запуск приложения")

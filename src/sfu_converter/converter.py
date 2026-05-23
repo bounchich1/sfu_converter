@@ -5,8 +5,8 @@ from docx import Document
 from docx.shared import Pt, Cm, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.ns import qn
-from config import SIBFUConfig
-from utils_image_insert import insert_image
+from sfu_converter.config import SIBFUConfig
+from sfu_converter.utils_image_insert import insert_image
 
 
 class TextToDocxConverter:

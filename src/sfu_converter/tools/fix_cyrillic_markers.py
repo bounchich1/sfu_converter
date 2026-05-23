@@ -4,7 +4,6 @@
 import re
 import shutil
 from pathlib import Path
-from datetime import datetime
 
 
 CYRILLIC_TO_LATIN = {
@@ -53,7 +52,7 @@ def fix_file(file_path, create_backup=True):
     if create_backup:
         backup_path = file_path.with_suffix(file_path.suffix + '.backup')
         shutil.copy2(file_path, backup_path)
-        print(f"  💾 Бэкап: {backup_path.name}")
+        print(f"  Backup: {backup_path.name}")
     
     # Читаем файл
     with open(file_path, 'r', encoding='utf-8') as f:
@@ -128,21 +127,21 @@ def main():
     print("=" * 70)
     
     # Директория с примерами
-    examples_dir = Path(__file__).parent.parent / 'examples'
+    examples_dir = Path.cwd() / 'examples'
     
     if not examples_dir.exists():
-        print(f"\n⚠️  Директория не найдена: {examples_dir}")
+        print(f"\nWARNING: Директория не найдена: {examples_dir}")
         return
     
     # Поиск всех TXT файлов (исключаем бэкапы)
     txt_files = sorted([f for f in examples_dir.glob('*.txt') if not f.name.endswith('.backup')])
     
     if not txt_files:
-        print(f"\n⚠️  TXT файлы не найдены в {examples_dir}")
+        print(f"\nWARNING: TXT файлы не найдены в {examples_dir}")
         return
     
-    print(f"\n📁 Директория: {examples_dir}")
-    print(f"📄 Найдено файлов: {len(txt_files)}")
+    print(f"\nДиректория: {examples_dir}")
+    print(f"Найдено файлов: {len(txt_files)}")
     print()
     
     total_fixed = 0
@@ -150,9 +149,9 @@ def main():
     files_processed = 0
     
     # === ЭТАП 1: Исправление ===
-    print("╔" + "═" * 68 + "╗")
-    print("║ ЭТАП 1: ИСПРАВЛЕНИЕ ФАЙЛОВ" + " " * 37 + "║")
-    print("╚" + "═" * 68 + "╝")
+    print("=" * 70)
+    print("ЭТАП 1: ИСПРАВЛЕНИЕ ФАЙЛОВ")
+    print("=" * 70)
     print()
     
     for txt_file in txt_files:
@@ -162,25 +161,25 @@ def main():
             files_processed += 1
             total_fixed += stats['fixed']
             
-            print(f"✏️  {txt_file.name}")
+            print(f"EDIT: {txt_file.name}")
             print(f"    Исправлено замен: {stats['fixed']}")
             
             for change in stats['changes'][:5]:  # Показываем первые 5
-                chars_str = ', '.join(f"'{c}'→'{CYRILLIC_TO_LATIN[c]}'" for c in change['chars'])
-                print(f"    Строка {change['line']}: {change['old']} → {change['new']}")
+                chars_str = ', '.join(f"'{c}'->'{CYRILLIC_TO_LATIN[c]}'" for c in change['chars'])
+                print(f"    Строка {change['line']}: {change['old']} -> {change['new']}")
                 print(f"           {chars_str}")
             
             if len(stats['changes']) > 5:
                 print(f"    ... и ещё {len(stats['changes']) - 5} замен")
             print()
         else:
-            print(f"✅ {txt_file.name} — ошибок не найдено")
+            print(f"OK: {txt_file.name} - ошибок не найдено")
     
     # === ЭТАП 2: Проверка ===
     print()
-    print("╔" + "═" * 68 + "╗")
-    print("║ ЭТАП 2: ПРОВЕРКА ПОСЛЕ ИСПРАВЛЕНИЯ" + " " * 31 + "║")
-    print("╚" + "═" * 68 + "╝")
+    print("=" * 70)
+    print("ЭТАП 2: ПРОВЕРКА ПОСЛЕ ИСПРАВЛЕНИЯ")
+    print("=" * 70)
     print()
     
     for txt_file in txt_files:
@@ -188,7 +187,7 @@ def main():
         
         if remaining:
             total_remaining += len(remaining)
-            print(f"⚠️  {txt_file.name} — осталось проблем: {len(remaining)}")
+            print(f"WARNING: {txt_file.name} - осталось проблем: {len(remaining)}")
             
             for issue in remaining[:3]:  # Показываем первые 3
                 print(f"    Строка {issue['line']}: {issue['marker']} (символ '{issue['char']}')")
@@ -197,7 +196,7 @@ def main():
                 print(f"    ... и ещё {len(remaining) - 3}")
             print()
         else:
-            print(f"✅ {txt_file.name} — чисто")
+            print(f"OK: {txt_file.name} - чисто")
     
     # === ИТОГОВЫЙ ОТЧЁТ ===
     print()
@@ -210,14 +209,14 @@ def main():
     print()
     
     if total_remaining == 0:
-        print("✅ Все файлы исправлены успешно!")
+        print("OK: Все файлы исправлены успешно!")
         print("   Теперь можно запускать конвертацию.")
     else:
-        print("⚠️  Некоторые ошибки не удалось исправить автоматически.")
+        print("WARNING: Некоторые ошибки не удалось исправить автоматически.")
         print("   Проверьте файлы вручную.")
     
     print()
-    print("📂 Бэкапы сохранены с расширением .txt.backup")
+    print("Бэкапы сохранены с расширением .txt.backup")
     print("   Для отката: скопируйте .backup поверх .txt")
     print("=" * 70)
     print()

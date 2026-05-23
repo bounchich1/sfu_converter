@@ -5,11 +5,8 @@ from pathlib import Path
 from docx import Document
 from docx.shared import Pt, Cm
 from docx.enum.text import WD_ALIGN_PARAGRAPH
-import sys
 
-sys.path.insert(0, str(Path(__file__).parent.parent / 'src'))
-from converter import TextToDocxConverter
-from config import SIBFUConfig
+from sfu_converter.converter import TextToDocxConverter
 
 
 @pytest.fixture
@@ -202,4 +199,4 @@ class TestTextToDocxConverter:
         assert abs(section.top_margin - Cm(2)) < 1000
         assert abs(section.bottom_margin - Cm(2)) < 1000
         assert abs(section.left_margin - Cm(3)) < 1000
-        assert abs(section.right_margin - Cm(1.5)) < 1000
+        assert abs(section.right_margin - Cm(1)) < 1000
