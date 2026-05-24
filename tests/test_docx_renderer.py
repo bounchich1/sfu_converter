@@ -7,6 +7,9 @@ from sfu_converter.domain.ast_nodes import (
     Document,
     HeadingLevel,
     HeadingNode,
+    ListItemNode,
+    ListNode,
+    ListType,
     ParagraphNode,
     StructuralSectionNode,
     StructuralSectionType,
@@ -16,7 +19,7 @@ from sfu_converter.domain.ast_nodes import (
     TextRun,
 )
 from sfu_converter.domain.formatting import FormattingProfile
-from sfu_converter.infrastructure.docx_renderer import DocxRenderer
+from sfu_converter.infrastructure.docx_renderer import DocxRenderer, SectionNumberer
 from sfu_converter.ports.renderer import RendererPort
 
 
@@ -60,6 +63,103 @@ def test_docx_renderer_renders_ast_to_file(tmp_path):
     assert doc.paragraphs[0].paragraph_format.alignment == WD_ALIGN_PARAGRAPH.CENTER
     assert len(doc.tables) == 1
     assert doc.tables[0].rows[1].cells[1].text == "2"
+
+
+def test_section_numberer_tracks_hierarchical_numbers():
+    numberer = SectionNumberer()
+
+    assert numberer.next_number(1) == "1"
+    assert numberer.next_number(2) == "1.1"
+    assert numberer.next_number(2) == "1.2"
+    assert numberer.next_number(3) == "1.2.1"
+    assert numberer.next_number(1) == "2"
+    assert numberer.next_number(2) == "2.1"
+
+    numberer.reset()
+
+    assert numberer.next_number(1) == "1"
+
+
+def test_docx_renderer_renders_auto_numbered_headings_without_trailing_period(tmp_path):
+    renderer = DocxRenderer(config_class=SIBFUConfig, base_dir=tmp_path)
+    profile = FormattingProfile(
+        name="common",
+        display_name="Common",
+        source_docs=("standard",),
+    )
+    ast = Document(
+        blocks=(
+            HeadingNode(level=HeadingLevel.H1, text="Первый раздел", number="auto"),
+            HeadingNode(level=HeadingLevel.H2, text="Первый подраздел", number="auto"),
+            HeadingNode(level=HeadingLevel.H3, text="Первый пункт", number="auto"),
+            HeadingNode(level=HeadingLevel.H1, text="Второй раздел", number="auto"),
+            HeadingNode(level=HeadingLevel.H2, text="Новый подраздел", number="auto"),
+        )
+    )
+    output_path = tmp_path / "numbered.docx"
+
+    renderer.render_to_file(ast, profile, str(output_path))
+
+    doc = DocxDocument(str(output_path))
+    assert [paragraph.text for paragraph in doc.paragraphs if paragraph.text] == [
+        "1 Первый раздел",
+        "1.1 Первый подраздел",
+        "1.1.1 Первый пункт",
+        "2 Второй раздел",
+        "2.1 Новый подраздел",
+    ]
+
+
+def test_docx_renderer_renders_list_items_with_sfu_markers_and_formatting(tmp_path):
+    renderer = DocxRenderer(config_class=SIBFUConfig, base_dir=tmp_path)
+    profile = FormattingProfile(
+        name="common",
+        display_name="Common",
+        source_docs=("standard",),
+    )
+    ast = Document(
+        blocks=(
+            ListNode(
+                list_type=ListType.BULLET,
+                items=(
+                    ListItemNode("первый элемент"),
+                    ListItemNode("второй элемент"),
+                ),
+            ),
+            ListNode(
+                list_type=ListType.LETTERED,
+                items=(
+                    ListItemNode("первый вариант"),
+                    ListItemNode("второй вариант"),
+                ),
+            ),
+            ListNode(
+                list_type=ListType.NUMBERED,
+                items=(
+                    ListItemNode("подпункт один"),
+                    ListItemNode("подпункт два"),
+                ),
+            ),
+        )
+    )
+    output_path = tmp_path / "lists.docx"
+
+    renderer.render_to_file(ast, profile, str(output_path))
+
+    doc = DocxDocument(str(output_path))
+    paragraphs = [paragraph for paragraph in doc.paragraphs if paragraph.text]
+    assert [paragraph.text for paragraph in paragraphs] == [
+        "- первый элемент;",
+        "- второй элемент.",
+        "а) первый вариант;",
+        "б) второй вариант.",
+        "1) подпункт один.",
+        "2) подпункт два.",
+    ]
+    for paragraph in paragraphs:
+        assert paragraph.paragraph_format.alignment == WD_ALIGN_PARAGRAPH.JUSTIFY
+        assert_close(paragraph.paragraph_format.first_line_indent, Cm(1.25))
+        assert paragraph.paragraph_format.line_spacing == 1.5
 
 
 def test_docx_renderer_adds_page_numbering_to_default_footer(tmp_path):

@@ -7,6 +7,8 @@ from sfu_converter.domain.ast_nodes import (
     FigureNode,
     HeadingLevel,
     HeadingNode,
+    ListNode,
+    ListType,
     ParagraphNode,
     StructuralSectionNode,
     StructuralSectionType,
@@ -88,6 +90,98 @@ def test_parser_converts_known_h1_to_structural_section():
     assert isinstance(regular, HeadingNode)
     assert regular.level is HeadingLevel.H1
     assert regular.text == "Обычный раздел"
+    assert regular.number == "auto"
+
+
+def test_parser_marks_regular_headings_for_auto_numbering():
+    result = V1Parser().parse(
+        "\n".join(
+            [
+                "[H1] Раздел",
+                "[H2] Подраздел",
+                "[H3] Пункт",
+            ]
+        )
+    )
+
+    assert result.diagnostics == []
+    assert [
+        (block.level, block.text, block.number)
+        for block in result.document.blocks
+    ] == [
+        (HeadingLevel.H1, "Раздел", "auto"),
+        (HeadingLevel.H2, "Подраздел", "auto"),
+        (HeadingLevel.H3, "Пункт", "auto"),
+    ]
+
+
+def test_parser_groups_consecutive_dash_lines_into_bullet_list():
+    result = V1Parser().parse(
+        "\n".join(
+            [
+                "Перед списком",
+                "- первый элемент",
+                "- второй элемент;",
+                "- третий элемент.",
+                "После списка",
+            ]
+        ),
+        filename="list.txt",
+    )
+
+    assert result.diagnostics == []
+    before, list_block, after = result.document.blocks
+    assert before.runs[0].text == "Перед списком"
+    assert after.runs[0].text == "После списка"
+    assert isinstance(list_block, ListNode)
+    assert list_block.list_type is ListType.BULLET
+    assert [item.text for item in list_block.items] == [
+        "первый элемент",
+        "второй элемент;",
+        "третий элемент.",
+    ]
+    assert list_block.source.line_start == 2
+    assert list_block.source.line_end == 4
+
+
+def test_parser_parses_explicit_lettered_and_numbered_lists():
+    result = V1Parser().parse(
+        "\n".join(
+            [
+                "[LIST type=letter]",
+                "[а)] первый элемент",
+                "[б)] второй элемент",
+                "[LIST_END]",
+                "[LIST type=number]",
+                "[1)] первый подпункт",
+                "[2)] второй подпункт",
+                "[LIST_END]",
+            ]
+        )
+    )
+
+    assert result.diagnostics == []
+    lettered, numbered = result.document.blocks
+    assert lettered.list_type is ListType.LETTERED
+    assert [item.text for item in lettered.items] == [
+        "первый элемент",
+        "второй элемент",
+    ]
+    assert numbered.list_type is ListType.NUMBERED
+    assert [item.text for item in numbered.items] == [
+        "первый подпункт",
+        "второй подпункт",
+    ]
+
+
+def test_parser_accepts_empty_explicit_list():
+    result = V1Parser().parse("[LIST type=bullet]\n[LIST_END]")
+
+    assert result.diagnostics == []
+    (list_block,) = result.document.blocks
+    assert isinstance(list_block, ListNode)
+    assert list_block.list_type is ListType.BULLET
+    assert list_block.items == ()
 
 
 def test_parser_recognizes_explicit_structural_markers():
@@ -232,7 +326,7 @@ def test_converter_renders_preparsed_ast(tmp_path):
 
     doc = DocxDocument(str(output_file))
     assert [paragraph.text for paragraph in doc.paragraphs if paragraph.text] == [
-        "Заголовок",
+        "1 Заголовок",
         "Абзац",
     ]
     assert doc.tables[0].rows[1].cells[1].text == "D"

@@ -135,7 +135,7 @@ class TestTextToDocxConverter:
 
         doc = Document(output_path)
         assert [para.text for para in doc.paragraphs if para.text] == [
-            "Тестовый заголовок",
+            "1 Тестовый заголовок",
             "Обычный текст",
         ]
 
@@ -160,7 +160,7 @@ class TestTextToDocxConverter:
 
         found_h1 = False
         for para in doc.paragraphs:
-            if para.text == "Важный заголовок":
+            if para.text == "1 Важный заголовок":
                 assert para.paragraph_format.alignment == WD_ALIGN_PARAGRAPH.CENTER
                 found_h1 = True
 

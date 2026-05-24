@@ -61,7 +61,7 @@ def test_convert_command_writes_docx_and_json_result(tmp_path, capsys):
 
     doc = Document(str(output_file))
     assert [para.text for para in doc.paragraphs if para.text] == [
-        "Report title",
+        "1 Report title",
         "Body text",
     ]
 

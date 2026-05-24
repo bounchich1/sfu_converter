@@ -7,6 +7,9 @@ from sfu_converter.domain.ast_nodes import (
     FigureNode,
     HeadingLevel,
     HeadingNode,
+    ListItemNode,
+    ListNode,
+    ListType,
     ParagraphNode,
     SourceSpan,
     StructuralSectionNode,
@@ -41,6 +44,8 @@ _KNOWN_MARKERS = (
     "[H2]",
     "[H3]",
     "[IMAGE",
+    "[LIST",
+    "[LIST_END]",
     "[SECTION",
     "[STRUCTURAL",
     "[TABLE_START]",
@@ -64,6 +69,14 @@ _STRUCTURAL_TYPE_ALIASES = {
     "bibliography": StructuralSectionType.SOURCES,
     "appendix": StructuralSectionType.APPENDIX,
 }
+_LIST_TYPE_ALIASES = {
+    "bullet": ListType.BULLET,
+    "letter": ListType.LETTERED,
+    "lettered": ListType.LETTERED,
+    "number": ListType.NUMBERED,
+    "numbered": ListType.NUMBERED,
+}
+_EXPLICIT_LIST_ITEM_RE = re.compile(r"^\[(?:-|[^\]]+\))\]\s*(.*)$")
 
 
 class V1Parser(BaseParser):
@@ -96,6 +109,7 @@ class V1Parser(BaseParser):
                         HeadingNode(
                             level=HeadingLevel.H1,
                             text=title,
+                            number="auto",
                             source=span,
                         )
                     )
@@ -104,6 +118,7 @@ class V1Parser(BaseParser):
                     HeadingNode(
                         level=HeadingLevel.H2,
                         text=stripped.replace("[H2]", "", 1).strip(),
+                        number="auto",
                         source=span,
                     )
                 )
@@ -112,9 +127,20 @@ class V1Parser(BaseParser):
                     HeadingNode(
                         level=HeadingLevel.H3,
                         text=stripped.replace("[H3]", "", 1).strip(),
+                        number="auto",
                         source=span,
                     )
                 )
+            elif _is_list_start(stripped):
+                list_node, list_diagnostics, end_index = self._parse_explicit_list(
+                    lines,
+                    i,
+                    filename,
+                )
+                diagnostics.extend(list_diagnostics)
+                if list_node is not None:
+                    blocks.append(list_node)
+                i = end_index
             elif stripped.startswith("[IMAGE"):
                 figure = self._parse_image(stripped, span, diagnostics)
                 if figure is not None:
@@ -154,7 +180,14 @@ class V1Parser(BaseParser):
                     )
                 )
             elif not stripped.startswith("["):
-                blocks.append(ParagraphNode(runs=(TextRun(text=stripped),), source=span))
+                if stripped.startswith("- "):
+                    list_node, end_index = _parse_dash_list(lines, i, filename)
+                    blocks.append(list_node)
+                    i = end_index
+                else:
+                    blocks.append(
+                        ParagraphNode(runs=(TextRun(text=stripped),), source=span)
+                    )
 
             i += 1
 
@@ -268,6 +301,83 @@ class V1Parser(BaseParser):
             )
         return table, diagnostics, i
 
+    def _parse_explicit_list(
+        self,
+        lines: list[str],
+        start_index: int,
+        filename: str | None,
+    ) -> tuple[ListNode | None, list[Diagnostic], int]:
+        diagnostics: list[Diagnostic] = []
+        list_start_span = _span_for_line(lines[start_index], start_index, filename)
+        attrs = _parse_attributes(lines[start_index].strip())
+        list_type_name = attrs.get("type", "bullet").strip().lower()
+        list_type = _LIST_TYPE_ALIASES.get(list_type_name)
+
+        if list_type is None:
+            diagnostics.append(
+                Diagnostic(
+                    code=DiagnosticCodes.TXT_MALFORMED_ATTRIBUTE,
+                    message=f"Unknown list type: {list_type_name or '<empty>'}",
+                    severity=Severity.ERROR,
+                    source=list_start_span,
+                )
+            )
+            return None, diagnostics, start_index
+
+        items: list[ListItemNode] = []
+        i = start_index + 1
+        found_end = False
+
+        while i < len(lines):
+            stripped = lines[i].strip()
+            span = _span_for_line(lines[i], i, filename)
+
+            if stripped.startswith("["):
+                self._check_cyrillic(stripped, span, diagnostics)
+
+            if stripped.startswith("[LIST_END]"):
+                found_end = True
+                break
+
+            match = _EXPLICIT_LIST_ITEM_RE.fullmatch(stripped)
+            if match is not None:
+                items.append(ListItemNode(text=match.group(1).strip(), source=span))
+            elif stripped:
+                diagnostics.append(
+                    Diagnostic(
+                        code=DiagnosticCodes.TXT_MALFORMED_ATTRIBUTE,
+                        message=f"Malformed list item: {stripped}",
+                        severity=Severity.ERROR,
+                        source=span,
+                    )
+                )
+            i += 1
+
+        if not found_end:
+            diagnostics.append(
+                Diagnostic(
+                    code=DiagnosticCodes.TXT_MISSING_BLOCK_END,
+                    message="LIST without matching LIST_END",
+                    severity=Severity.ERROR,
+                    source=list_start_span,
+                )
+            )
+
+        line_end = i + 1 if found_end else len(lines)
+        return (
+            ListNode(
+                list_type=list_type,
+                items=tuple(items),
+                source=SourceSpan(
+                    line_start=list_start_span.line_start,
+                    line_end=line_end,
+                    filename=filename,
+                ),
+            ),
+            diagnostics,
+            i,
+        )
+
     def _check_cyrillic(
         self,
         text: str,
@@ -310,6 +420,42 @@ def _parse_table_row(stripped: str) -> TableRow | None:
     if not cells:
         return None
     return TableRow(cells=tuple(TableCell(text=cell) for cell in cells))
+
+
+def _parse_dash_list(
+    lines: list[str],
+    start_index: int,
+    filename: str | None,
+) -> tuple[ListNode, int]:
+    items: list[ListItemNode] = []
+    i = start_index
+
+    while i < len(lines) and lines[i].strip().startswith("- "):
+        stripped = lines[i].strip()
+        items.append(
+            ListItemNode(
+                text=stripped[2:].strip(),
+                source=_span_for_line(lines[i], i, filename),
+            )
+        )
+        i += 1
+
+    return (
+        ListNode(
+            list_type=ListType.BULLET,
+            items=tuple(items),
+            source=SourceSpan(
+                line_start=start_index + 1,
+                line_end=i,
+                filename=filename,
+            ),
+        ),
+        i - 1,
+    )
+
+
+def _is_list_start(stripped: str) -> bool:
+    return stripped == "[LIST]" or stripped.startswith("[LIST ")
 
 
 def _parse_attributes(text: str) -> dict[str, str]:

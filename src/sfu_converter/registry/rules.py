@@ -206,6 +206,23 @@ COMMON_RULES: tuple[FormattingRule, ...] = (
         description="Empty line after a heading separating it from the body text",
     ),
     FormattingRule(
+        id="common.list.item",
+        source_doc=_COMMON_DOC,
+        source_section="Division of Text - Enumeration rules",
+        severity=RuleSeverity.REQUIRED,
+        parameters={
+            "alignment": "justify",
+            "bold": False,
+            "line_spacing": 1.5,
+            "indent_cm": 1.25,
+            "space_before_pt": 0,
+            "space_after_pt": 0,
+        },
+        renderer_status=RuleStatus.IMPLEMENTED,
+        validator_status=RuleStatus.NOT_SUPPORTED,
+        description="Enumeration item: paragraph indent, justified, 1.5 line spacing",
+    ),
+    FormattingRule(
         id="common.figure.caption",
         source_doc=_COMMON_DOC,
         source_section="Illustrations",

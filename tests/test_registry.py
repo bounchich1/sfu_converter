@@ -155,6 +155,16 @@ def test_heading_blocks_round_trip_through_config():
     assert legacy["H3"]["bold"] is False
 
 
+def test_list_item_block_round_trips_through_config():
+    legacy = build_legacy_config()
+
+    assert legacy["LIST_ITEM"]["align"] == WD_ALIGN_PARAGRAPH.JUSTIFY
+    assert legacy["LIST_ITEM"]["bold"] is False
+    assert legacy["LIST_ITEM"]["line_spacing"] == 1.5
+    assert_close(legacy["LIST_ITEM"]["indent"], Cm(1.25))
+    assert SIBFUConfig.LIST_ITEM == legacy["LIST_ITEM"]
+
+
 def test_page_numbering_and_structural_sections_round_trip_through_config():
     legacy = build_legacy_config()
 

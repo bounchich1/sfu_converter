@@ -15,6 +15,7 @@ ALL_STYLE_TYPES = (
     "h1",
     "h2",
     "h3",
+    "list_item",
     "structural_section",
     "caption_img",
     "caption_table",
@@ -92,6 +93,21 @@ def test_h3_style_is_not_bold(tmp_path):
 
     renderer._set_paragraph_format(para, "h3")
 
+    assert para.runs[0].bold is False
+
+
+def test_list_item_style_matches_body_indent_and_spacing(tmp_path):
+    renderer = _make_renderer(tmp_path)
+    para = _new_para(renderer)
+
+    renderer._set_paragraph_format(para, "list_item")
+    pf = para.paragraph_format
+
+    assert pf.alignment == WD_ALIGN_PARAGRAPH.JUSTIFY
+    assert pf.line_spacing == 1.5
+    assert abs(pf.first_line_indent - Cm(1.25)) < 1000
+    assert pf.space_before == Pt(0)
+    assert pf.space_after == Pt(0)
     assert para.runs[0].bold is False
 
 

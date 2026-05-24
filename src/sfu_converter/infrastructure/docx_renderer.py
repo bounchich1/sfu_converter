@@ -20,6 +20,7 @@ from sfu_converter.domain.ast_nodes import (
     HeadingLevel,
     HeadingNode,
     ListNode,
+    ListType,
     MetadataNode,
     PageBreakNode,
     ParagraphNode,
@@ -34,6 +35,60 @@ from sfu_converter.ports.renderer import RendererPort
 from sfu_converter.utils_image_insert import insert_image
 
 
+class SectionNumberer:
+    """Tracks hierarchical section numbers for H1-H3 headings."""
+
+    def __init__(self):
+        self._counters = [0, 0, 0]
+
+    def next_number(self, level: int) -> str:
+        if level < 1 or level > len(self._counters):
+            raise ValueError(f"Unsupported heading level: {level}")
+
+        index = level - 1
+        for parent_index in range(index):
+            if self._counters[parent_index] == 0:
+                self._counters[parent_index] = 1
+
+        self._counters[index] += 1
+        for lower_index in range(index + 1, len(self._counters)):
+            self._counters[lower_index] = 0
+
+        return ".".join(str(part) for part in self._counters[:level])
+
+    def reset(self):
+        self._counters = [0, 0, 0]
+
+
+_RUSSIAN_LIST_LETTERS = (
+    "а",
+    "б",
+    "в",
+    "г",
+    "д",
+    "е",
+    "ж",
+    "и",
+    "к",
+    "л",
+    "м",
+    "н",
+    "п",
+    "р",
+    "с",
+    "т",
+    "у",
+    "ф",
+    "х",
+    "ц",
+    "ш",
+    "щ",
+    "э",
+    "ю",
+    "я",
+)
+
+
 class DocxRenderer(RendererPort):
     """python-docx renderer for the domain AST."""
 
@@ -44,6 +99,8 @@ class DocxRenderer(RendererPort):
         self.logger = logger or logging.getLogger(__name__)
         self._style_map = self._build_style_map()
         self._bold_styles = frozenset({"h1", "h2", "structural_section"})
+        self._section_numberer = SectionNumberer()
+        self._rendered_body_blocks = False
 
     def render(
         self,
@@ -122,6 +179,13 @@ class DocxRenderer(RendererPort):
                 "line_spacing": cfg.H3["line_spacing"],
                 "space_before": cfg.H3["space_before"],
                 "space_after": cfg.H3["space_after"],
+            },
+            "list_item": {
+                "align": cfg.LIST_ITEM["align"],
+                "indent": cfg.LIST_ITEM["indent"],
+                "line_spacing": cfg.LIST_ITEM["line_spacing"],
+                "space_before": cfg.LIST_ITEM["space_before"],
+                "space_after": cfg.LIST_ITEM["space_after"],
             },
             "structural_section": {
                 "align": cfg.STRUCTURAL_SECTION["align"],
@@ -221,6 +285,7 @@ class DocxRenderer(RendererPort):
                 p = self.doc.add_paragraph(caption)
                 self._set_paragraph_format(p, "caption_img")
             self._add_empty_paragraph("empty_after_image")
+            self._rendered_body_blocks = True
             return
 
         full_path = self._resolve_image_path(image_path)
@@ -252,6 +317,7 @@ class DocxRenderer(RendererPort):
             self._set_paragraph_format(p, "caption_img")
 
         self._add_empty_paragraph("empty_after_image")
+        self._rendered_body_blocks = True
 
     def _parse_table_line(self, line):
         line = line.strip()
@@ -299,6 +365,7 @@ class DocxRenderer(RendererPort):
                             self._set_run_style(run, bold=is_header)
 
         self._add_empty_paragraph("empty_after_table")
+        self._rendered_body_blocks = True
 
     def _setup_document_margins(self):
         for section in self.doc.sections:
@@ -372,6 +439,8 @@ class DocxRenderer(RendererPort):
             self.doc = DocxDocument()
         self._setup_document_margins()
         self._add_page_numbering()
+        self._section_numberer.reset()
+        self._rendered_body_blocks = False
 
     def _render_from_ast(self, document):
         for block in document.blocks:
@@ -394,8 +463,7 @@ class DocxRenderer(RendererPort):
             elif isinstance(block, FormulaNode):
                 self._render_text_block(block.content)
             elif isinstance(block, ListNode):
-                for item in block.items:
-                    self._render_text_block(item.text)
+                self._render_list(block)
             elif isinstance(block, AppendixNode):
                 self._render_heading(HeadingNode(level=HeadingLevel.H1, text=block.title))
                 self._render_from_ast(Document(blocks=block.blocks))
@@ -407,6 +475,9 @@ class DocxRenderer(RendererPort):
                 continue
 
     def _render_heading(self, block):
+        if block.level is HeadingLevel.H1 and self._rendered_body_blocks:
+            self.doc.add_page_break()
+
         if block.level is HeadingLevel.H2:
             self._add_empty_paragraph("empty_before_header")
 
@@ -415,9 +486,18 @@ class DocxRenderer(RendererPort):
             HeadingLevel.H2: "h2",
             HeadingLevel.H3: "h3",
         }[block.level]
-        p = self.doc.add_paragraph(block.text)
+        p = self.doc.add_paragraph(self._heading_text(block))
         self._set_paragraph_format(p, style_type)
         self._add_empty_paragraph("empty_after_header")
+        self._rendered_body_blocks = True
+
+    def _heading_text(self, block):
+        if block.number != "auto":
+            return block.text
+
+        number = self._section_numberer.next_number(block.level.value)
+        title = block.text.rstrip().removesuffix(".")
+        return f"{number} {title}"
 
     def _render_structural_section(self, block):
         if self.config.STRUCTURAL_SECTION["page_break_before"]:
@@ -433,6 +513,7 @@ class DocxRenderer(RendererPort):
         self._set_paragraph_format(p, "structural_section")
         run.underline = False
         self._add_empty_paragraph("empty_after_header")
+        self._rendered_body_blocks = True
 
     def _render_paragraph(self, block):
         self._render_text_block("".join(run.text for run in block.runs))
@@ -440,6 +521,34 @@ class DocxRenderer(RendererPort):
     def _render_text_block(self, text):
         p = self.doc.add_paragraph(text)
         self._set_paragraph_format(p, "normal")
+        self._rendered_body_blocks = True
+
+    def _render_list(self, block):
+        for index, item in enumerate(block.items):
+            text = self._list_item_text(
+                list_type=block.list_type,
+                index=index,
+                item_text=item.text,
+                is_last=index == len(block.items) - 1,
+            )
+            p = self.doc.add_paragraph(text)
+            self._set_paragraph_format(p, "list_item")
+        if block.items:
+            self._rendered_body_blocks = True
+
+    def _list_item_text(self, list_type, index, item_text, is_last):
+        text = _normalize_list_item_punctuation(
+            item_text,
+            list_type=list_type,
+            is_last=is_last,
+        )
+        if list_type is ListType.BULLET:
+            return f"- {text}"
+        if list_type is ListType.LETTERED:
+            return f"{_russian_list_letter(index)}) {text}"
+        if list_type is ListType.NUMBERED:
+            return f"{index + 1}) {text}"
+        raise ValueError(f"Unsupported list type: {list_type}")
 
     def _resolve_image_path(self, image_path):
         path = Path(image_path)
@@ -456,3 +565,23 @@ class DocxRenderer(RendererPort):
             if candidate.exists():
                 return candidate
         return self.base_dir / "templates" / path
+
+
+def _normalize_list_item_punctuation(
+    text: str,
+    *,
+    list_type: ListType,
+    is_last: bool,
+) -> str:
+    stripped = text.strip()
+    if not stripped or stripped.endswith((".", ";")):
+        return stripped
+
+    ending = "." if list_type is ListType.NUMBERED or is_last else ";"
+    return f"{stripped}{ending}"
+
+
+def _russian_list_letter(index: int) -> str:
+    if index < len(_RUSSIAN_LIST_LETTERS):
+        return _RUSSIAN_LIST_LETTERS[index]
+    return str(index + 1)
