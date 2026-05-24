@@ -4,6 +4,7 @@ from docx import Document as DocxDocument
 
 from sfu_converter.converter import TextToDocxConverter
 from sfu_converter.domain.ast_nodes import (
+    AppendixNode,
     BibliographyEntryNode,
     FigureNode,
     FormulaNode,
@@ -15,9 +16,10 @@ from sfu_converter.domain.ast_nodes import (
     StructuralSectionNode,
     StructuralSectionType,
     TableNode,
+    TableOfContentsNode,
 )
 from sfu_converter.domain.diagnostics import DiagnosticCodes, Severity
-from sfu_converter.parser.v1_parser import V1Parser
+from sfu_converter.parser.v1_parser import APPENDIX_LETTERS, V1Parser
 
 
 def test_parse_v1_headings_plain_text_image_and_table():
@@ -528,3 +530,85 @@ def test_parser_recognises_section_marker_for_bibliography_mode():
     assert section.section_type is StructuralSectionType.SOURCES
     assert isinstance(entry, BibliographyEntryNode)
     assert entry.number == 1
+
+
+def test_appendix_letters_skip_excluded_cyrillic_letters():
+    excluded = {"Ё", "З", "Й", "О", "Ч", "Ъ", "Ы", "Ь"}
+    assert excluded.isdisjoint(APPENDIX_LETTERS)
+    assert APPENDIX_LETTERS[0] == "А"
+    assert "Б" in APPENDIX_LETTERS
+
+
+def test_parser_recognises_appendix_h1_with_letter_type_and_subtitle():
+    result = V1Parser().parse(
+        "\n".join(
+            [
+                "[H1] ПРИЛОЖЕНИЕ А",
+                "Справочное",
+                "Исходные данные эксперимента",
+                "Содержание приложения.",
+            ]
+        )
+    )
+
+    assert result.diagnostics == []
+    appendix, paragraph = result.document.blocks
+    assert isinstance(appendix, AppendixNode)
+    assert appendix.letter == "А"
+    assert appendix.appendix_type == "справочное"
+    assert appendix.subtitle == "Исходные данные эксперимента"
+    assert appendix.title == "ПРИЛОЖЕНИЕ А"
+    assert appendix.id == "app:а"
+    assert appendix.source.line_start == 1
+    assert appendix.source.line_end == 3
+    assert isinstance(paragraph, ParagraphNode)
+    assert paragraph.runs[0].text == "Содержание приложения."
+
+
+def test_parser_appendix_without_type_or_subtitle_consumes_only_heading():
+    result = V1Parser().parse(
+        "\n".join(
+            [
+                "[H1] ПРИЛОЖЕНИЕ Б",
+                "Тело текста приложения, не подзаголовок.",
+            ]
+        )
+    )
+
+    assert result.diagnostics == []
+    appendix, paragraph = result.document.blocks
+    assert isinstance(appendix, AppendixNode)
+    assert appendix.letter == "Б"
+    assert appendix.appendix_type is None
+    assert appendix.subtitle is None
+    assert isinstance(paragraph, ParagraphNode)
+
+
+def test_parser_excludes_letters_not_allowed_for_appendix_designation():
+    """Letters Ё, З, Й, О, Ч, Ъ, Ы, Ь fall back to a regular H1 heading."""
+
+    result = V1Parser().parse("[H1] ПРИЛОЖЕНИЕ З")
+
+    assert result.diagnostics == []
+    (heading,) = result.document.blocks
+    assert isinstance(heading, HeadingNode)
+    assert heading.text == "ПРИЛОЖЕНИЕ З"
+
+
+def test_parser_recognises_toc_marker():
+    result = V1Parser().parse('[TOC levels=2 title="ОГЛАВЛЕНИЕ"]')
+
+    assert result.diagnostics == []
+    (toc,) = result.document.blocks
+    assert isinstance(toc, TableOfContentsNode)
+    assert toc.levels == 2
+    assert toc.title == "ОГЛАВЛЕНИЕ"
+
+
+def test_parser_default_toc_marker_uses_three_levels_and_default_title():
+    result = V1Parser().parse("[TOC]")
+
+    assert result.diagnostics == []
+    (toc,) = result.document.blocks
+    assert toc.levels == 3
+    assert toc.title == "СОДЕРЖАНИЕ"

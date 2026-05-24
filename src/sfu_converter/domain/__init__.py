@@ -23,6 +23,7 @@ from .ast_nodes import (
     TableCaptionNode,
     TableCell,
     TableNode,
+    TableOfContentsNode,
     TableRow,
     TextRun,
 )
@@ -59,6 +60,7 @@ __all__ = [
     "TableCaptionNode",
     "TableCell",
     "TableNode",
+    "TableOfContentsNode",
     "TableRow",
     "TextRun",
 ]

@@ -25,6 +25,7 @@ from sfu_converter.domain.ast_nodes import (
     TableCaptionNode,
     TableCell,
     TableNode,
+    TableOfContentsNode,
     TableRow,
     TextRun,
     Document,
@@ -136,6 +137,7 @@ def test_blocknode_union_contains_all_supported_block_classes():
         RawBlockNode,
         MetadataNode,
         StructuralSectionNode,
+        TableOfContentsNode,
     }
 
 

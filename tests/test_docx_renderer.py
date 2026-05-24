@@ -4,6 +4,7 @@ from docx.shared import Cm, Pt, RGBColor
 
 from sfu_converter.config import SIBFUConfig
 from sfu_converter.domain.ast_nodes import (
+    AppendixNode,
     BibliographyEntryNode,
     Document,
     FormulaNode,
@@ -17,6 +18,7 @@ from sfu_converter.domain.ast_nodes import (
     StructuralSectionType,
     TableCell,
     TableNode,
+    TableOfContentsNode,
     TableRow,
     TextRun,
 )
@@ -512,3 +514,112 @@ def test_docx_renderer_renders_bibliography_entries_with_paragraph_indent(tmp_pa
         assert entry.paragraph_format.alignment == WD_ALIGN_PARAGRAPH.JUSTIFY
         assert_close(entry.paragraph_format.first_line_indent, Cm(1.25))
         assert entry.paragraph_format.line_spacing == 1.5
+
+
+def test_docx_renderer_renders_appendix_on_new_page_with_centered_heading(tmp_path):
+    renderer = DocxRenderer(config_class=SIBFUConfig, base_dir=tmp_path)
+    ast = Document(
+        blocks=(
+            ParagraphNode(runs=(TextRun("Перед приложением."),)),
+            AppendixNode(
+                title="ПРИЛОЖЕНИЕ А",
+                letter="А",
+                appendix_type="справочное",
+                subtitle="Исходные данные",
+            ),
+        )
+    )
+    output_path = tmp_path / "appendix.docx"
+
+    renderer.render_to_file(ast, _common_profile(), str(output_path))
+
+    doc = DocxDocument(str(output_path))
+    texts = [p.text for p in doc.paragraphs]
+    heading_index = texts.index("ПРИЛОЖЕНИЕ А")
+    heading = doc.paragraphs[heading_index]
+    type_para = doc.paragraphs[heading_index + 1]
+    subtitle_index = texts.index("Исходные данные")
+    subtitle = doc.paragraphs[subtitle_index]
+
+    assert 'w:type="page"' in doc.paragraphs[heading_index - 1]._p.xml
+    assert heading.paragraph_format.alignment == WD_ALIGN_PARAGRAPH.CENTER
+    assert_close(heading.paragraph_format.first_line_indent, Cm(0))
+    assert heading.runs[0].bold is True
+    assert "Heading 1" in heading.style.name
+    assert type_para.text == "(справочное)"
+    assert subtitle.paragraph_format.alignment == WD_ALIGN_PARAGRAPH.CENTER
+
+
+def test_docx_renderer_renders_appendix_without_optional_fields(tmp_path):
+    renderer = DocxRenderer(config_class=SIBFUConfig, base_dir=tmp_path)
+    ast = Document(
+        blocks=(
+            AppendixNode(title="ПРИЛОЖЕНИЕ Б", letter="Б"),
+        )
+    )
+    output_path = tmp_path / "appendix_min.docx"
+
+    renderer.render_to_file(ast, _common_profile(), str(output_path))
+
+    doc = DocxDocument(str(output_path))
+    texts = [p.text for p in doc.paragraphs]
+    assert "ПРИЛОЖЕНИЕ Б" in texts
+    assert not any(text.startswith("(") for text in texts if text)
+
+
+def test_docx_renderer_renders_toc_field_with_placeholder_and_heading_styles(tmp_path):
+    renderer = DocxRenderer(config_class=SIBFUConfig, base_dir=tmp_path)
+    ast = Document(
+        blocks=(
+            TableOfContentsNode(),
+            HeadingNode(level=HeadingLevel.H1, text="Раздел", number="auto"),
+        )
+    )
+    output_path = tmp_path / "toc.docx"
+
+    renderer.render_to_file(ast, _common_profile(), str(output_path))
+
+    doc = DocxDocument(str(output_path))
+    body_xml = doc.element.body.xml
+    assert " TOC " in body_xml
+    assert 'w:fldCharType="begin"' in body_xml
+    assert 'w:fldCharType="end"' in body_xml
+    texts = [p.text for p in doc.paragraphs]
+    assert "СОДЕРЖАНИЕ" in texts
+    assert any("Обновите оглавление" in text for text in texts)
+
+
+def test_docx_renderer_treats_contents_structural_section_as_toc(tmp_path):
+    renderer = DocxRenderer(config_class=SIBFUConfig, base_dir=tmp_path)
+    ast = Document(
+        blocks=(
+            StructuralSectionNode(
+                section_type=StructuralSectionType.CONTENTS,
+                title="Содержание",
+            ),
+        )
+    )
+    output_path = tmp_path / "contents.docx"
+
+    renderer.render_to_file(ast, _common_profile(), str(output_path))
+
+    doc = DocxDocument(str(output_path))
+    body_xml = doc.element.body.xml
+    assert " TOC " in body_xml
+    assert 'w:fldCharType="begin"' in body_xml
+
+
+def test_docx_renderer_attaches_word_heading_style_to_h1_for_toc(tmp_path):
+    renderer = DocxRenderer(config_class=SIBFUConfig, base_dir=tmp_path)
+    ast = Document(
+        blocks=(
+            HeadingNode(level=HeadingLevel.H1, text="Раздел", number="auto"),
+        )
+    )
+    output_path = tmp_path / "h1_style.docx"
+
+    renderer.render_to_file(ast, _common_profile(), str(output_path))
+
+    doc = DocxDocument(str(output_path))
+    heading = next(p for p in doc.paragraphs if p.text.startswith("1 "))
+    assert "Heading 1" in heading.style.name

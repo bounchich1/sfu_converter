@@ -23,6 +23,7 @@ class BlockType(Enum):
     TABLE_CAPTION = auto()
     FIGURE_CAPTION = auto()
     METADATA = auto()
+    TABLE_OF_CONTENTS = auto()
 
 
 class HeadingLevel(Enum):
@@ -180,11 +181,23 @@ class PageBreakNode:
 class AppendixNode:
     title: str
     id: str | None = None
+    letter: str | None = None
+    appendix_type: str | None = None
+    subtitle: str | None = None
     blocks: tuple = ()
     source: SourceSpan | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "blocks", tuple(self.blocks))
+
+
+@dataclass(frozen=True)
+class TableOfContentsNode:
+    """Insertion point for an automatically generated table of contents."""
+
+    title: str = "СОДЕРЖАНИЕ"
+    levels: int = 3
+    source: SourceSpan | None = None
 
 
 @dataclass(frozen=True)
@@ -223,6 +236,7 @@ BlockNode = (
     | BibliographyEntryNode
     | RawBlockNode
     | MetadataNode
+    | TableOfContentsNode
 )
 
 
