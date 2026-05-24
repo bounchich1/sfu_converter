@@ -168,7 +168,14 @@ def cmd_convert(args) -> int:
 
     try:
         converter = TextToDocxConverter(SIBFUConfig, str(args.workdir))
-        converter.convert_file(input_path, output_path, template=args.template)
+        converter.convert_file(
+            input_path,
+            output_path,
+            template=args.template,
+            template_mode=args.template_mode,
+            insert_after_page=args.insert_after_page,
+            insert_at_bookmark=args.insert_at_bookmark,
+        )
     except OSError as exc:
         _emit_write_failure(args, "convert", str(exc))
         return ExitCodes.WRITE_FAILURE

@@ -20,11 +20,18 @@ class FakeRenderer:
         self.diagnostics = diagnostics or []
         self.calls = []
 
-    def render(self, document, profile, template_path=None):
+    def render(self, document, profile, template_path=None, template_mode="append"):
         return b"unused"
 
-    def render_to_file(self, document, profile, output_path, template_path=None):
-        self.calls.append((document, profile, output_path, template_path))
+    def render_to_file(
+        self,
+        document,
+        profile,
+        output_path,
+        template_path=None,
+        template_mode="append",
+    ):
+        self.calls.append((document, profile, output_path, template_path, template_mode))
         return self.diagnostics
 
 
@@ -50,5 +57,5 @@ def test_convert_text_to_docx_parses_source_and_renders_document():
     )
 
     assert parser.calls == [("source text", "input.txt")]
-    assert renderer.calls == [(document, profile, "out.docx", "template.docx")]
+    assert renderer.calls == [(document, profile, "out.docx", "template.docx", "append")]
     assert diagnostics == [parse_diagnostic, render_diagnostic]

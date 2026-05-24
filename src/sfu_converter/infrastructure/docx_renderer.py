@@ -31,6 +31,7 @@ from sfu_converter.domain.ast_nodes import (
     TableCaptionNode,
     TableNode,
     TableOfContentsNode,
+    TitlePageNode,
 )
 from sfu_converter.domain.diagnostics import Diagnostic
 from sfu_converter.domain.formatting import FormattingProfile
@@ -110,8 +111,9 @@ class DocxRenderer(RendererPort):
         document: Document,
         profile: FormattingProfile,
         template_path: str | None = None,
+        template_mode: str = "append",
     ) -> bytes:
-        self._initialize_document(template_path)
+        self._initialize_document(template_path, template_mode=template_mode)
         self._render_from_ast(document)
         buffer = BytesIO()
         self.doc.save(buffer)
@@ -123,8 +125,9 @@ class DocxRenderer(RendererPort):
         profile: FormattingProfile,
         output_path: str,
         template_path: str | None = None,
+        template_mode: str = "append",
     ) -> list[Diagnostic]:
-        self._initialize_document(template_path)
+        self._initialize_document(template_path, template_mode=template_mode)
         self._render_from_ast(document)
         destination = Path(output_path)
         destination.parent.mkdir(parents=True, exist_ok=True)
@@ -500,7 +503,7 @@ class DocxRenderer(RendererPort):
             self._setup_document_margins()
             self.logger.info("Создан новый документ")
 
-    def _initialize_document(self, template=None):
+    def _initialize_document(self, template=None, *, template_mode: str = "append"):
         if template:
             self._load_template(template)
         else:
@@ -511,6 +514,8 @@ class DocxRenderer(RendererPort):
         self._rendered_body_blocks = False
         self._table_counter = 0
         self._formula_counter = 0
+        self._template_mode = template_mode
+        self._title_page_emitted = False
 
     def _render_from_ast(self, document):
         for block in document.blocks:
@@ -544,6 +549,8 @@ class DocxRenderer(RendererPort):
                 self._render_bibliography_entry(block)
             elif isinstance(block, RawBlockNode):
                 self._render_text_block(block.text)
+            elif isinstance(block, TitlePageNode):
+                self._render_title_page(document.metadata, block.profile)
             elif isinstance(block, MetadataNode):
                 continue
 
@@ -594,6 +601,97 @@ class DocxRenderer(RendererPort):
         self._apply_word_heading_style(p, "Heading 1")
         self._add_empty_paragraph("empty_after_header")
         self._rendered_body_blocks = True
+
+    def _render_title_page(self, metadata, profile_name=None):
+        """Generate a title page from document metadata.
+
+        Skipped when the renderer is composing into a template prefix that
+        already provides its own title page (``template_mode='preserve-prefix'``)
+        or when a title page has already been emitted for this document.
+        """
+
+        if self._template_mode == "preserve-prefix":
+            return
+        if self._title_page_emitted:
+            return
+
+        metadata = dict(metadata or {})
+        ministry = metadata.get(
+            "ministry",
+            "МИНИСТЕРСТВО НАУКИ И ВЫСШЕГО ОБРАЗОВАНИЯ РОССИЙСКОЙ ФЕДЕРАЦИИ",
+        )
+        university = metadata.get("university", "Сибирский федеральный университет")
+        institute = metadata.get("institute", "")
+        department = metadata.get("department", "")
+        title = metadata.get("title", "")
+        subject = metadata.get("subject", "")
+        student = metadata.get("student", "")
+        group = metadata.get("group", "")
+        supervisor = metadata.get("supervisor", "")
+        supervisor_title = metadata.get("supervisor_title", "")
+        city = metadata.get("city", "Красноярск")
+        year = metadata.get("year", "")
+
+        self._add_title_paragraph(ministry.upper(), bold=False)
+        self._add_title_paragraph(university.upper(), bold=True)
+        if institute:
+            self._add_title_paragraph(institute, bold=False)
+        if department:
+            self._add_title_paragraph(department, bold=False)
+
+        for _ in range(4):
+            self._add_title_paragraph("", bold=False)
+
+        if subject:
+            self._add_title_paragraph(subject.upper(), bold=False)
+        if title:
+            self._add_title_paragraph(title, bold=True, size=Pt(16))
+
+        for _ in range(4):
+            self._add_title_paragraph("", bold=False)
+
+        if supervisor:
+            label = "Руководитель"
+            if supervisor_title:
+                label = f"{label}, {supervisor_title}"
+            self._add_title_paragraph(
+                f"{label} ____________ {supervisor}",
+                bold=False,
+                align=WD_ALIGN_PARAGRAPH.RIGHT,
+            )
+        if student:
+            label = "Студент"
+            if group:
+                label = f"{label} {group}"
+            self._add_title_paragraph(
+                f"{label} ____________ {student}",
+                bold=False,
+                align=WD_ALIGN_PARAGRAPH.RIGHT,
+            )
+
+        for _ in range(4):
+            self._add_title_paragraph("", bold=False)
+
+        if city or year:
+            footer = " ".join(part for part in (city, year) if part)
+            self._add_title_paragraph(footer, bold=False)
+
+        self.doc.add_page_break()
+        self._title_page_emitted = True
+
+    def _add_title_paragraph(self, text, *, bold=False, size=None, align=None):
+        para = self.doc.add_paragraph()
+        para.paragraph_format.alignment = align or WD_ALIGN_PARAGRAPH.CENTER
+        para.paragraph_format.first_line_indent = Cm(0)
+        para.paragraph_format.space_before = Pt(0)
+        para.paragraph_format.space_after = Pt(0)
+        para.paragraph_format.line_spacing = 1.0
+        run = para.add_run(text)
+        run.font.name = self.config.FONT_NAME
+        run.font.size = size or self.config.FONT_SIZE
+        run.font.color.rgb = RGBColor(*self.config.FONT_COLOR_RGB)
+        run.bold = bold
+        run._element.get_or_add_rPr().rFonts.set(qn("w:eastAsia"), self.config.FONT_NAME)
 
     def _render_appendix(self, block):
         """Render ``ПРИЛОЖЕНИЕ X`` on a new page with the standard heading layout.

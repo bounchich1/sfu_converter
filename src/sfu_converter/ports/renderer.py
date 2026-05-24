@@ -14,6 +14,7 @@ class RendererPort(ABC):
         document: Document,
         profile: FormattingProfile,
         template_path: str | None = None,
+        template_mode: str = "append",
     ) -> bytes:
         """Render a Document AST to DOCX bytes."""
 
@@ -24,5 +25,6 @@ class RendererPort(ABC):
         profile: FormattingProfile,
         output_path: str,
         template_path: str | None = None,
+        template_mode: str = "append",
     ) -> list[Diagnostic]:
         """Render a Document AST to a DOCX file."""

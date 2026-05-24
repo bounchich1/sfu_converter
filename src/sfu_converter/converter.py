@@ -89,7 +89,15 @@ class TextToDocxConverter:
             else:
                 self.logger.warning(message)
 
-    def convert_file(self, input_file: Path, output_file: Path, template: str | None = None):
+    def convert_file(
+        self,
+        input_file: Path,
+        output_file: Path,
+        template: str | None = None,
+        template_mode: str = "append",
+        insert_after_page: int | None = None,
+        insert_at_bookmark: str | None = None,
+    ):
         """Convert a TXT file by explicit input and output paths."""
         input_file = Path(input_file)
         output_file = Path(output_file)
@@ -97,14 +105,51 @@ class TextToDocxConverter:
         self.logger.info(f"Начало конвертации: {input_file}")
         source = input_file.read_text(encoding="utf-8")
         use_case = ConvertTextToDocx(V1Parser(), self._renderer)
+
+        composing_into_template = template is not None and (
+            template_mode in ("preserve-prefix", "replace-body")
+            or insert_after_page is not None
+            or insert_at_bookmark is not None
+        )
+
+        renderer_template = None if composing_into_template else (
+            str(template) if template is not None else None
+        )
+
         diagnostics = use_case.execute(
             source=source,
             profile=self._default_profile(),
             output_path=str(output_file),
-            template_path=str(template) if template is not None else None,
+            template_path=renderer_template,
+            template_mode=template_mode,
             filename=str(input_file),
         )
         self._log_parser_diagnostics(diagnostics)
+
+        if composing_into_template:
+            from sfu_converter.infrastructure.template_adapter import (
+                DocxTemplateAdapter,
+            )
+
+            adapter = DocxTemplateAdapter(base_dir=self.base_dir, logger=self.logger)
+            tmpl = adapter.load_template(str(template))
+            insertion = adapter.find_insertion_point(
+                tmpl,
+                mode=template_mode,
+                page=insert_after_page,
+                bookmark=insert_at_bookmark,
+            )
+            if not insertion.found:
+                if insertion.diagnostic is not None:
+                    diagnostics.append(insertion.diagnostic)
+                self.logger.error(
+                    "Template composition aborted: insertion point not found"
+                )
+            else:
+                generated_bytes = output_file.read_bytes()
+                composed = adapter.compose(tmpl, insertion, generated_bytes)
+                output_file.write_bytes(composed)
+
         self.logger.info(f"Конвертация завершена: {output_file}")
         return str(output_file)
 
