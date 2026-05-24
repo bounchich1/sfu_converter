@@ -1,114 +1,45 @@
-from docx.shared import Pt, Cm
-from docx.enum.text import WD_ALIGN_PARAGRAPH
+"""Legacy ``SIBFUConfig`` compatibility layer over the formatting registry.
+
+The class attributes are populated from the registry at import time. New code
+should reach for ``sfu_converter.registry`` directly; this module remains so
+existing callers (renderer, validator, image utils) keep working unchanged.
+"""
+
+from __future__ import annotations
+
+from sfu_converter.registry.loader import build_legacy_config
+
+_LEGACY_CONFIG = build_legacy_config()
 
 
 class SIBFUConfig:
-    """Конфигурация стандартов оформления СФУ"""
-    
-    FONT_NAME = 'Times New Roman'
-    FONT_SIZE = Pt(14)
-    FONT_COLOR_RGB = (0, 0, 0)
-    LINE_SPACING_NORMAL = 1.5
-    ALIGNMENT = WD_ALIGN_PARAGRAPH.JUSTIFY
-    FIRST_LINE_INDENT = Cm(1.25)
-    
-    H1 = {
-        'align': WD_ALIGN_PARAGRAPH.CENTER,
-        'bold': True,
-        'line_spacing': 1.0,
-        'indent': Cm(0),
-        'space_before': Pt(0),
-        'space_after': Pt(0)
-    }
+    """Конфигурация стандартов оформления СФУ.
 
-    H2 = {
-        'align': WD_ALIGN_PARAGRAPH.LEFT,
-        'bold': True,
-        'line_spacing': 1.0,
-        'indent': Cm(0),
-        'space_before': Pt(0),
-        'space_after': Pt(0)
-    }
+    Compatibility shim. Values come from the rule registry under
+    ``sfu_converter.registry``; do not edit constants here.
+    """
 
-    H3 = {
-        'align': WD_ALIGN_PARAGRAPH.LEFT,
-        'bold': False,
-        'line_spacing': 1.0,
-        'indent': Cm(0),
-        'space_before': Pt(0),
-        'space_after': Pt(0)
-    }
+    FONT_NAME = _LEGACY_CONFIG["FONT_NAME"]
+    FONT_SIZE = _LEGACY_CONFIG["FONT_SIZE"]
+    FONT_COLOR_RGB = _LEGACY_CONFIG["FONT_COLOR_RGB"]
+    LINE_SPACING_NORMAL = _LEGACY_CONFIG["LINE_SPACING_NORMAL"]
+    ALIGNMENT = _LEGACY_CONFIG["ALIGNMENT"]
+    FIRST_LINE_INDENT = _LEGACY_CONFIG["FIRST_LINE_INDENT"]
 
-    CAPTION_IMAGE = {
-        'align': WD_ALIGN_PARAGRAPH.CENTER,
-        'indent': Cm(0),
-        'bold': False,
-        'line_spacing': 1.5,
-        'space_before': Pt(0),
-        'space_after': Pt(0)
-    }
+    H1 = _LEGACY_CONFIG["H1"]
+    H2 = _LEGACY_CONFIG["H2"]
+    H3 = _LEGACY_CONFIG["H3"]
 
-    CAPTION_TABLE = {
-        'align': WD_ALIGN_PARAGRAPH.LEFT,
-        'indent': Cm(0),
-        'bold': False,
-        'line_spacing': 1.5,
-        'space_before': Pt(0),
-        'space_after': Pt(0)
-    }
+    CAPTION_IMAGE = _LEGACY_CONFIG["CAPTION_IMAGE"]
+    CAPTION_TABLE = _LEGACY_CONFIG["CAPTION_TABLE"]
 
-    EMPTY_BEFORE_HEADER = {
-        'line_spacing': 0.5,
-        'space_before': Pt(0),
-        'space_after': Pt(0)
-    }
+    EMPTY_BEFORE_HEADER = _LEGACY_CONFIG["EMPTY_BEFORE_HEADER"]
+    EMPTY_AFTER_HEADER = _LEGACY_CONFIG["EMPTY_AFTER_HEADER"]
+    EMPTY_BEFORE_IMAGE = _LEGACY_CONFIG["EMPTY_BEFORE_IMAGE"]
+    EMPTY_AFTER_IMAGE = _LEGACY_CONFIG["EMPTY_AFTER_IMAGE"]
+    EMPTY_BEFORE_TABLE = _LEGACY_CONFIG["EMPTY_BEFORE_TABLE"]
+    EMPTY_AFTER_TABLE = _LEGACY_CONFIG["EMPTY_AFTER_TABLE"]
 
-    EMPTY_AFTER_HEADER = {
-        'line_spacing': 1,
-        'space_before': Pt(0),
-        'space_after': Pt(0)
-    }
-
-    EMPTY_AFTER_IMAGE = {
-        'line_spacing': 0.5,
-        'space_before': Pt(0),
-        'space_after': Pt(0)
-    }
-
-    EMPTY_BEFORE_IMAGE = {
-        'line_spacing': 0.8,
-        'space_before': Pt(0),
-        'space_after': Pt(0)
-    }
-
-    EMPTY_BEFORE_TABLE = {
-        'line_spacing': 0.5,
-        'space_before': Pt(0),
-        'space_after': Pt(0)
-    }
-
-    EMPTY_AFTER_TABLE = {
-        'line_spacing': 1,
-        'space_before': Pt(0),
-        'space_after': Pt(0)
-    }
-
-    MARGINS = {
-        'top': Cm(2),
-        'bottom': Cm(2),
-        'left': Cm(3),
-        'right': Cm(1)
-    }
-        
-    # === Изображения ===
-    IMAGE = {
-        'line_spacing': 1.5,
-        'alignment': WD_ALIGN_PARAGRAPH.CENTER,
-        'width': None,           # Или Cm(10) для фиксированной ширины
-        'height': None,          # Или None для авто-расчета
-        'dpi': (96, 96),
-        'format': 'PNG',         # Или 'JPEG'
-        'max_width': Cm(15),      # Максимальная ширина
-    }
-    
-    TABLE_CELL_PADDING = Pt(6)
+    MARGINS = _LEGACY_CONFIG["MARGINS"]
+    IMAGE = _LEGACY_CONFIG["IMAGE"]
+    TABLE_CELL_PADDING = _LEGACY_CONFIG["TABLE_CELL_PADDING"]

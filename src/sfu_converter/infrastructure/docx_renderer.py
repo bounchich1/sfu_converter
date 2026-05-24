@@ -40,6 +40,8 @@ class DocxRenderer(RendererPort):
         self.base_dir = Path(base_dir) if base_dir else Path.cwd()
         self.doc = None
         self.logger = logger or logging.getLogger(__name__)
+        self._style_map = self._build_style_map()
+        self._bold_styles = frozenset({"h1", "h2"})
 
     def render(
         self,
@@ -74,95 +76,130 @@ class DocxRenderer(RendererPort):
         run.bold = bold
         run._element.rPr.rFonts.set(qn("w:eastAsia"), self.config.FONT_NAME)
 
-    def _set_paragraph_format(self, para, style_type="normal"):
-        pf = para.paragraph_format
+    def _build_style_map(self):
+        """Return style_type -> formatting parameters dict.
+
+        Each entry may carry the optional keys ``word_style``, ``align``,
+        ``indent``, ``line_spacing``, ``space_before``, ``space_after``. Only
+        present keys are applied to the paragraph; missing keys are left
+        untouched. Resolved once per renderer instance and cached.
+        """
+
         cfg = self.config
+        zero = Pt(0)
+        no_indent = Cm(0)
 
-        if style_type == "normal":
-            pf.line_spacing = cfg.LINE_SPACING_NORMAL
-            pf.alignment = cfg.ALIGNMENT
-            pf.first_line_indent = cfg.FIRST_LINE_INDENT
-            pf.space_before = Pt(0)
-            pf.space_after = Pt(0)
+        return {
+            "normal": {
+                "align": cfg.ALIGNMENT,
+                "indent": cfg.FIRST_LINE_INDENT,
+                "line_spacing": cfg.LINE_SPACING_NORMAL,
+                "space_before": zero,
+                "space_after": zero,
+            },
+            "h1": {
+                "word_style": "Heading 1",
+                "align": cfg.H1["align"],
+                "indent": cfg.H1["indent"],
+                "line_spacing": cfg.H1["line_spacing"],
+                "space_before": cfg.H1["space_before"],
+                "space_after": cfg.H1["space_after"],
+            },
+            "h2": {
+                "word_style": "Heading 2",
+                "align": cfg.H2["align"],
+                "indent": cfg.H2["indent"],
+                "line_spacing": cfg.H2["line_spacing"],
+                "space_before": cfg.H2["space_before"],
+                "space_after": cfg.H2["space_after"],
+            },
+            "h3": {
+                "word_style": "Heading 3",
+                "align": cfg.H3["align"],
+                "indent": cfg.H3["indent"],
+                "line_spacing": cfg.H3["line_spacing"],
+                "space_before": cfg.H3["space_before"],
+                "space_after": cfg.H3["space_after"],
+            },
+            "caption_img": {
+                "align": cfg.CAPTION_IMAGE["align"],
+                "indent": cfg.CAPTION_IMAGE["indent"],
+                "line_spacing": cfg.CAPTION_IMAGE["line_spacing"],
+                "space_before": cfg.CAPTION_IMAGE["space_before"],
+                "space_after": cfg.CAPTION_IMAGE["space_after"],
+            },
+            "caption_table": {
+                "align": cfg.CAPTION_TABLE["align"],
+                "indent": cfg.CAPTION_TABLE["indent"],
+                "line_spacing": cfg.CAPTION_TABLE["line_spacing"],
+                "space_before": cfg.CAPTION_TABLE["space_before"],
+                "space_after": cfg.CAPTION_TABLE["space_after"],
+            },
+            "empty_before_header": {
+                "indent": no_indent,
+                "line_spacing": cfg.EMPTY_BEFORE_HEADER["line_spacing"],
+                "space_before": cfg.EMPTY_BEFORE_HEADER["space_before"],
+                "space_after": cfg.EMPTY_BEFORE_HEADER["space_after"],
+            },
+            "empty_after_header": {
+                "indent": no_indent,
+                "line_spacing": cfg.EMPTY_AFTER_HEADER["line_spacing"],
+                "space_before": cfg.EMPTY_AFTER_HEADER["space_before"],
+                "space_after": cfg.EMPTY_AFTER_HEADER["space_after"],
+            },
+            "empty_before_image": {
+                "indent": no_indent,
+                "line_spacing": cfg.EMPTY_BEFORE_IMAGE["line_spacing"],
+                "space_before": zero,
+                "space_after": zero,
+            },
+            "empty_after_image": {
+                "indent": no_indent,
+                "line_spacing": cfg.EMPTY_AFTER_IMAGE["line_spacing"],
+                "space_before": cfg.EMPTY_AFTER_IMAGE["space_before"],
+                "space_after": cfg.EMPTY_AFTER_IMAGE["space_after"],
+            },
+            "empty_before_table": {
+                "indent": no_indent,
+                "line_spacing": cfg.EMPTY_BEFORE_TABLE["line_spacing"],
+                "space_before": zero,
+                "space_after": zero,
+            },
+            "empty_after_table": {
+                "indent": no_indent,
+                "line_spacing": cfg.EMPTY_AFTER_TABLE["line_spacing"],
+                "space_before": zero,
+                "space_after": zero,
+            },
+        }
 
-        elif style_type == "h1":
-            para.style = self.doc.styles["Heading 1"]
-            pf.line_spacing = cfg.H1["line_spacing"]
-            pf.alignment = cfg.H1["align"]
-            pf.first_line_indent = cfg.H1["indent"]
-            pf.space_before = cfg.H1["space_before"]
-            pf.space_after = cfg.H1["space_after"]
+    def _set_paragraph_format(self, para, style_type="normal"):
+        style = self._style_map.get(style_type)
+        if style is None:
+            self.logger.warning("Unknown style_type: %s", style_type)
+            return
 
-        elif style_type == "h2":
-            para.style = self.doc.styles["Heading 2"]
-            pf.line_spacing = cfg.H2["line_spacing"]
-            pf.alignment = cfg.H2["align"]
-            pf.first_line_indent = cfg.H2["indent"]
-            pf.space_before = cfg.H2["space_before"]
-            pf.space_after = cfg.H2["space_after"]
+        word_style = style.get("word_style")
+        if word_style is not None and self.doc is not None:
+            para.style = self.doc.styles[word_style]
 
-        elif style_type == "h3":
-            para.style = self.doc.styles["Heading 3"]
-            pf.line_spacing = cfg.H3["line_spacing"]
-            pf.alignment = cfg.H3["align"]
-            pf.first_line_indent = cfg.H3["indent"]
-            pf.space_before = cfg.H3["space_before"]
-            pf.space_after = cfg.H3["space_after"]
-
-        elif style_type == "caption_img":
-            pf.line_spacing = cfg.CAPTION_IMAGE["line_spacing"]
-            pf.alignment = cfg.CAPTION_IMAGE["align"]
-            pf.first_line_indent = cfg.CAPTION_IMAGE["indent"]
-            pf.space_before = cfg.CAPTION_IMAGE["space_before"]
-            pf.space_after = cfg.CAPTION_IMAGE["space_after"]
-
-        elif style_type == "caption_table":
-            pf.line_spacing = cfg.CAPTION_TABLE["line_spacing"]
-            pf.alignment = cfg.CAPTION_TABLE["align"]
-            pf.first_line_indent = cfg.CAPTION_TABLE["indent"]
-            pf.space_before = cfg.CAPTION_TABLE["space_before"]
-            pf.space_after = cfg.CAPTION_TABLE["space_after"]
-
-        elif style_type == "empty_before_header":
-            pf.line_spacing = cfg.EMPTY_BEFORE_HEADER["line_spacing"]
-            pf.space_before = cfg.EMPTY_BEFORE_HEADER["space_before"]
-            pf.space_after = cfg.EMPTY_BEFORE_HEADER["space_after"]
-            pf.first_line_indent = Cm(0)
-
-        elif style_type == "empty_after_header":
-            pf.line_spacing = cfg.EMPTY_AFTER_HEADER["line_spacing"]
-            pf.space_before = cfg.EMPTY_AFTER_HEADER["space_before"]
-            pf.space_after = cfg.EMPTY_AFTER_HEADER["space_after"]
-            pf.first_line_indent = Cm(0)
-
-        elif style_type == "empty_after_image":
-            pf.line_spacing = cfg.EMPTY_AFTER_IMAGE["line_spacing"]
-            pf.space_before = cfg.EMPTY_AFTER_IMAGE["space_before"]
-            pf.space_after = cfg.EMPTY_AFTER_IMAGE["space_after"]
-            pf.first_line_indent = Cm(0)
-
-        elif style_type == "empty_before_image":
-            pf.line_spacing = cfg.EMPTY_BEFORE_IMAGE["line_spacing"]
-            pf.space_before = Pt(0)
-            pf.space_after = Pt(0)
-            pf.first_line_indent = Cm(0)
-
-        elif style_type == "empty_before_table":
-            pf.line_spacing = cfg.EMPTY_BEFORE_TABLE["line_spacing"]
-            pf.space_before = Pt(0)
-            pf.space_after = Pt(0)
-            pf.first_line_indent = Cm(0)
-
-        elif style_type == "empty_after_table":
-            pf.line_spacing = cfg.EMPTY_AFTER_TABLE["line_spacing"]
-            pf.space_before = Pt(0)
-            pf.space_after = Pt(0)
-            pf.first_line_indent = Cm(0)
+        pf = para.paragraph_format
+        if "align" in style:
+            pf.alignment = style["align"]
+        if "indent" in style:
+            pf.first_line_indent = style["indent"]
+        if "line_spacing" in style:
+            pf.line_spacing = style["line_spacing"]
+        if "space_before" in style:
+            pf.space_before = style["space_before"]
+        if "space_after" in style:
+            pf.space_after = style["space_after"]
 
         if not para.runs:
             para.add_run()
+        bold = style_type in self._bold_styles
         for run in para.runs:
-            self._set_run_style(run, bold=style_type in ["h1", "h2"])
+            self._set_run_style(run, bold=bold)
 
     def _add_empty_paragraph(self, style_type="empty_after_image"):
         p = self.doc.add_paragraph()
