@@ -1,7 +1,7 @@
 """Entry point for python -m sfu_converter."""
 
-from sfu_converter.main import main
+from sfu_converter.cli import main
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

@@ -9,6 +9,6 @@ def test_package_exposes_version():
 
 def test_module_entrypoint_imports_main_function():
     entrypoint = importlib.import_module("sfu_converter.__main__")
-    main_module = importlib.import_module("sfu_converter.main")
+    cli_module = importlib.import_module("sfu_converter.cli")
 
-    assert entrypoint.main is main_module.main
+    assert entrypoint.main is cli_module.main
