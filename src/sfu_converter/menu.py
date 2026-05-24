@@ -1,6 +1,7 @@
-import os
 import sys
 from pathlib import Path
+
+from sfu_converter.config import PathConfig
 
 
 class ConsoleMenu:
@@ -14,7 +15,7 @@ class ConsoleMenu:
 
     def clear_screen(self):
         """Очищает экран консоли"""
-        os.system('cls' if os.name == 'nt' else 'clear')
+        print("\033[2J\033[H", end="", flush=True)
 
     def print_header(self, title):
         """Выводит заголовок меню"""
@@ -26,17 +27,20 @@ class ConsoleMenu:
 
     def get_txt_files(self):
         """Получает список TXT файлов из директории examples"""
-        examples_dir = self.base_dir / 'examples'
+        examples_dir = self.base_dir / PathConfig.EXAMPLES_DIR
         if not examples_dir.exists():
             return []
-        return sorted([f.name for f in examples_dir.iterdir() if f.suffix == '.txt'])
+        return sorted([f.name for f in examples_dir.iterdir() if f.suffix == ".txt"])
 
     def get_templates(self):
         """Получает список шаблонов из директории templates"""
-        templates_dir = self.base_dir / 'templates'
+        templates_dir = self.base_dir / PathConfig.TEMPLATES_DIR
         if not templates_dir.exists():
             return []
-        return sorted([f.name for f in templates_dir.iterdir() if f.suffix == '.docx'])
+        return sorted([f.name for f in templates_dir.iterdir() if f.suffix == ".docx"])
+
+    def output_name_for(self, txt_file):
+        return Path(txt_file).with_suffix(".docx").name
 
     def select_template(self):
         """Меню выбора шаблона"""
@@ -140,12 +144,12 @@ class ConsoleMenu:
                 print()
                 
                 for txt_file in self.selected_files:
-                    output_name = txt_file.replace('.txt', '.docx')
+                    output_name = self.output_name_for(txt_file)
                     print(f"→ Конвертация: {txt_file} → {output_name}")
                     
                     try:
-                        input_file = self.base_dir / 'examples' / txt_file
-                        output_file = self.base_dir / 'results' / output_name
+                        input_file = self.base_dir / PathConfig.EXAMPLES_DIR / txt_file
+                        output_file = self.base_dir / PathConfig.RESULTS_DIR / output_name
                         converter.convert_file(input_file, output_file, self.selected_template)
                         print(f"  ✓ Успешно")
                     except Exception as e:
@@ -158,8 +162,12 @@ class ConsoleMenu:
             
             elif choice == '4':
                 print("\nВалидация последнего результата...")
-                results_dir = self.base_dir / 'results'
-                docx_files = sorted([f for f in results_dir.iterdir() if f.suffix == '.docx'])
+                results_dir = self.base_dir / PathConfig.RESULTS_DIR
+                docx_files = (
+                    sorted([f for f in results_dir.iterdir() if f.suffix == ".docx"])
+                    if results_dir.exists()
+                    else []
+                )
                 
                 if docx_files:
                     last_file = docx_files[-1]

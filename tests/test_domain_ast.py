@@ -19,6 +19,7 @@ from sfu_converter.domain.ast_nodes import (
     PageBreakNode,
     ParagraphNode,
     RawBlockNode,
+    ReferenceNode,
     SourceSpan,
     StructuralSectionNode,
     StructuralSectionType,
@@ -64,6 +65,7 @@ def test_ast_nodes_are_frozen_dataclasses():
     list_node = ListNode(list_type=ListType.BULLET, items=(list_item,), source=span)
     appendix = AppendixNode(title="Appendix A", blocks=(paragraph,), source=span)
     bibliography = BibliographyEntryNode(number=1, text="Source", source=span)
+    reference = ReferenceNode(target="fig:overview", source=span)
     raw = RawBlockNode(text="[literal]", source=span)
     metadata = MetadataNode(key="title", value="Report", source=span)
     structural = StructuralSectionNode(
@@ -86,6 +88,7 @@ def test_ast_nodes_are_frozen_dataclasses():
         PageBreakNode(source=span),
         appendix,
         bibliography,
+        reference,
         raw,
         metadata,
         structural,
@@ -105,6 +108,7 @@ def test_document_accepts_supported_block_types_and_freezes_metadata():
         PageBreakNode(),
         AppendixNode(title="Appendix", blocks=(RawBlockNode("raw"),)),
         BibliographyEntryNode(number=1, text="Book"),
+        ReferenceNode(target="fig:overview"),
         MetadataNode(key="author", value="Student"),
         StructuralSectionNode(
             section_type=StructuralSectionType.CONCLUSION,
@@ -135,6 +139,7 @@ def test_blocknode_union_contains_all_supported_block_classes():
         PageBreakNode,
         AppendixNode,
         BibliographyEntryNode,
+        ReferenceNode,
         RawBlockNode,
         MetadataNode,
         StructuralSectionNode,

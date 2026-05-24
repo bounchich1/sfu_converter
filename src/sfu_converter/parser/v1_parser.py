@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 
+from sfu_converter.config import SyntaxConfig
 from sfu_converter.domain.ast_nodes import (
     AppendixNode,
     BibliographyEntryNode,
@@ -27,10 +28,10 @@ from sfu_converter.domain.ast_nodes import (
     TitlePageNode,
 )
 from sfu_converter.domain.diagnostics import Diagnostic, DiagnosticCodes, Severity
+from sfu_converter.parser.attributes import parse_attributes
 from sfu_converter.parser.base import BaseParser, ParserResult
 
 _IMAGE_RE = re.compile(r"\[IMAGE(?:=([^\]]+))?\]")
-_ATTR_RE = re.compile(r'(\w+)=(?:"([^"]*)"|([^\s\]]+))')
 _INLINE_FORMATTING_RE = re.compile(
     r"\*\*\*(\S(?:.*?\S)?)\*\*\*"
     r"|\*\*(\S(?:.*?\S)?)\*\*"
@@ -781,10 +782,7 @@ def _collect_metadata(blocks: list) -> dict[str, str]:
 
 
 def _parse_attributes(text: str) -> dict[str, str]:
-    return {
-        match.group(1): match.group(2) if match.group(2) is not None else match.group(3)
-        for match in _ATTR_RE.finditer(text)
-    }
+    return parse_attributes(text)
 
 
 def _parse_section_marker(
@@ -858,7 +856,7 @@ def _caption_after_image(lines: list[str], image_index: int) -> tuple[str | None
     if image_index + 1 >= len(lines):
         return None, 0
     next_line = lines[image_index + 1].strip()
-    if next_line.startswith("Рисунок") or next_line.startswith("Figure"):
+    if next_line.startswith(SyntaxConfig.FIGURE_CAPTION_PREFIXES):
         return next_line, 1
     return None, 0
 

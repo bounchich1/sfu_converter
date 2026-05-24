@@ -16,6 +16,7 @@ from pathlib import Path
 from docx import Document as DocxDocument
 from docx.oxml.ns import qn
 
+from sfu_converter.config import PathConfig
 from sfu_converter.domain.diagnostics import Diagnostic, Severity
 from sfu_converter.ports.template import (
     InsertionPoint,
@@ -110,10 +111,13 @@ class DocxTemplateAdapter(TemplatePort):
         candidate = Path(path)
         if candidate.is_absolute():
             return candidate
-        for base in (self.base_dir / "templates" / candidate, self.base_dir / candidate):
+        for base in (
+            self.base_dir / PathConfig.TEMPLATES_DIR / candidate,
+            self.base_dir / candidate,
+        ):
             if base.exists():
                 return base
-        return self.base_dir / "templates" / candidate
+        return self.base_dir / PathConfig.TEMPLATES_DIR / candidate
 
     def _find_bookmark(
         self,

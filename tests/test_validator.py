@@ -3,7 +3,16 @@ from docx import Document
 from docx.shared import Pt, Cm
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 
+from sfu_converter.domain.diagnostics import DiagnosticCodes
 from sfu_converter.validator import StyleValidator
+
+
+def _set_standard_margins(doc):
+    section = doc.sections[0]
+    section.top_margin = Cm(2)
+    section.bottom_margin = Cm(2)
+    section.left_margin = Cm(3)
+    section.right_margin = Cm(1)
 
 
 class TestStyleValidator:
@@ -18,6 +27,7 @@ class TestStyleValidator:
     def valid_doc(self, tmp_path):
         """Создает валидный документ с правильными стилями"""
         doc = Document()
+        _set_standard_margins(doc)
         para = doc.add_paragraph("Тестовый текст")
         run = para.runs[0]
         run.font.name = 'Times New Roman'
@@ -37,6 +47,7 @@ class TestStyleValidator:
     def invalid_doc_wrong_font(self, tmp_path):
         """Создает документ с неправильным шрифтом"""
         doc = Document()
+        _set_standard_margins(doc)
         para = doc.add_paragraph("Текст")
         run = para.runs[0]
         run.font.name = 'Arial'
@@ -50,6 +61,7 @@ class TestStyleValidator:
     def invalid_doc_spacing(self, tmp_path):
         """Создает документ с неправильными интервалами"""
         doc = Document()
+        _set_standard_margins(doc)
         para = doc.add_paragraph("Текст")
         run = para.runs[0]
         run.font.name = 'Times New Roman'
@@ -140,7 +152,10 @@ class TestStyleValidator:
         """Тест: Валидация документа с неправильными интервалами"""
         result = validator.validate_file(str(invalid_doc_spacing))
         assert result is False
-        assert any('Интервал' in err for err in validator.errors)
+        assert any(
+            diagnostic.code == DiagnosticCodes.FORMAT_PARAGRAPH_SPACING
+            for diagnostic in validator.diagnostics
+        )
     
     def test_validate_file_not_exists(self, validator):
         """Тест: Валидация несуществующего файла"""
@@ -160,6 +175,7 @@ class TestStyleValidator:
     def test_validate_document_with_table(self, validator, tmp_path):
         """Тест: Валидация документа с таблицей"""
         doc = Document()
+        _set_standard_margins(doc)
         table = doc.add_table(rows=2, cols=2)
         
         for row in table.rows:
@@ -167,7 +183,7 @@ class TestStyleValidator:
                 para = cell.paragraphs[0]
                 run = para.runs[0] if para.runs else para.add_run()
                 run.font.name = 'Times New Roman'
-                run.font.size = Pt(14)
+                run.font.size = Pt(12)
         
         doc_path = tmp_path / 'with_table.docx'
         doc.save(str(doc_path))
@@ -188,11 +204,13 @@ class TestStyleValidator:
     def test_full_validation_workflow(self, tmp_path):
         """Тест: Полный рабочий процесс валидации с заголовком и обычным текстом"""
         doc = Document()
+        _set_standard_margins(doc)
         
         # Заголовок (по центру, без отступа первой строки)
         para1 = doc.add_paragraph("Заголовок")
         para1.runs[0].font.name = 'Times New Roman'
         para1.runs[0].font.size = Pt(14)
+        para1.runs[0].bold = True
         para1.paragraph_format.alignment = WD_ALIGN_PARAGRAPH.CENTER
         para1.paragraph_format.first_line_indent = Cm(0)
         

@@ -1,5 +1,7 @@
 import logging
 from pathlib import Path
+
+from sfu_converter.config import PathConfig
 from sfu_converter.converter import TextToDocxConverter
 from sfu_converter.menu import ConsoleMenu
 from sfu_converter.validator import StyleValidator
@@ -8,7 +10,7 @@ from sfu_converter.validator import StyleValidator
 def setup_logging(log_dir):
     """Настраивает логирование в файл и консоль"""
     log_dir.mkdir(parents=True, exist_ok=True)
-    log_file = log_dir / 'converter.log'
+    log_file = log_dir / PathConfig.LOG_FILENAME
     
     logging.basicConfig(
         level=logging.INFO,
@@ -26,7 +28,7 @@ def main():
     """Точка входа в приложение"""
     base_dir = Path.cwd()
     
-    logger = setup_logging(base_dir / 'logs')
+    logger = setup_logging(base_dir / PathConfig.LOGS_DIR)
     logger.info("Запуск приложения")
     
     converter = TextToDocxConverter(base_dir=base_dir)

@@ -66,6 +66,49 @@ def test_convert_command_writes_docx_and_json_result(tmp_path, capsys):
     ]
 
 
+def test_convert_command_uses_v2_parser_when_requested(tmp_path, capsys):
+    input_file = tmp_path / "report-v2.txt"
+    input_file.write_text(
+        "\n".join(
+            [
+                "[DOC syntax=2]",
+                '[H level=1 title="Report title" number=auto]',
+                "[P] Body text",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    exit_code = cli.main(
+        [
+            "--format",
+            "json",
+            "--workdir",
+            str(tmp_path),
+            "convert",
+            "--input",
+            "report-v2.txt",
+            "--output",
+            "out/report-v2.docx",
+            "--syntax-version",
+            "2",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+    output_file = tmp_path / "out" / "report-v2.docx"
+
+    assert exit_code == cli.ExitCodes.SUCCESS
+    assert payload["syntaxVersion"] == 2
+
+    doc = Document(str(output_file))
+    assert [para.text for para in doc.paragraphs if para.text] == [
+        "1 Report title",
+        "Body text",
+    ]
+
+
 def test_convert_accepts_common_options_after_subcommand(tmp_path, capsys):
     input_file = tmp_path / "report.txt"
     input_file.write_text("Body text", encoding="utf-8")

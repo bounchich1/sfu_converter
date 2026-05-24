@@ -4,6 +4,8 @@
 import re
 from pathlib import Path
 
+from sfu_converter.config import PathConfig
+
 
 CYRILLIC_LETTERS = {
     'А': 'A', 'В': 'B', 'Е': 'E', 'К': 'K', 'М': 'M',
@@ -44,7 +46,7 @@ def main():
     print("=" * 70)
     
     # Директория с примерами
-    examples_dir = Path.cwd() / 'examples'
+    examples_dir = Path.cwd() / PathConfig.EXAMPLES_DIR
     
     if not examples_dir.exists():
         print(f"\nWARNING: Директория не найдена: {examples_dir}")

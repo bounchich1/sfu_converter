@@ -11,7 +11,7 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Cm, Pt, RGBColor
 
-from sfu_converter.config import SIBFUConfig
+from sfu_converter.config import PathConfig, SIBFUConfig
 from sfu_converter.domain.ast_nodes import (
     AppendixNode,
     BibliographyEntryNode,
@@ -26,6 +26,7 @@ from sfu_converter.domain.ast_nodes import (
     PageBreakNode,
     ParagraphNode,
     RawBlockNode,
+    ReferenceNode,
     StructuralSectionNode,
     StructuralSectionType,
     TableCaptionNode,
@@ -549,6 +550,8 @@ class DocxRenderer(RendererPort):
                 self._render_bibliography_entry(block)
             elif isinstance(block, RawBlockNode):
                 self._render_text_block(block.text)
+            elif isinstance(block, ReferenceNode):
+                self._render_text_block(f"[{block.target}]")
             elif isinstance(block, TitlePageNode):
                 self._render_title_page(document.metadata, block.profile)
             elif isinstance(block, MetadataNode):
@@ -897,17 +900,20 @@ class DocxRenderer(RendererPort):
         path = Path(image_path)
         if path.is_absolute():
             return path
-        return self.base_dir / "images" / path
+        return self.base_dir / PathConfig.IMAGES_DIR / path
 
     def _resolve_template_path(self, template_path):
         path = Path(template_path)
         if path.is_absolute():
             return path
 
-        for candidate in (self.base_dir / "templates" / path, self.base_dir / path):
+        for candidate in (
+            self.base_dir / PathConfig.TEMPLATES_DIR / path,
+            self.base_dir / path,
+        ):
             if candidate.exists():
                 return candidate
-        return self.base_dir / "templates" / path
+        return self.base_dir / PathConfig.TEMPLATES_DIR / path
 
 
 def _normalize_list_item_punctuation(

@@ -13,8 +13,11 @@ from docx.document import Document
 from docx.shared import Pt, Cm, Inches, Emu
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 
+from sfu_converter.config import MeasurementConfig
+
 
 logger = logging.getLogger(__name__)
+DEFAULT_DPI = MeasurementConfig.DEFAULT_DPI
 
 
 # ============================================================================
@@ -62,7 +65,10 @@ def convert_image_to_rgb(img: Image.Image) -> Image.Image:
 # 2. РАСЧЁТ РАЗМЕРОВ С УЧЁТОМ ПРОПОРЦИЙ И ОГРАНИЧЕНИЙ
 # ============================================================================
 
-def _to_emu(value: Union[Cm, Inches, int, float, None], dpi: int = 96) -> Optional[int]:
+def _to_emu(
+    value: Union[Cm, Inches, int, float, None],
+    dpi: int = DEFAULT_DPI,
+) -> Optional[int]:
     """Приводит значение к EMU (English Metric Units) для внутренних расчётов."""
     if value is None:
         return None
@@ -73,12 +79,12 @@ def _to_emu(value: Union[Cm, Inches, int, float, None], dpi: int = 96) -> Option
     if isinstance(value, Emu):
         return int(value)
     # Если передано число — считаем, что это пиксели при заданном DPI
-    return int(value * 914400 / dpi)
+    return int(value * MeasurementConfig.EMU_PER_INCH / dpi)
 
 
 def _from_emu_to_cm(emu: int) -> Cm:
     """Конвертирует EMU обратно в Cm."""
-    return Cm(emu / 360000)  # 360000 EMU = 1 cm
+    return Cm(emu / MeasurementConfig.EMU_PER_CM)
 
 
 def calculate_image_dimensions(
@@ -86,7 +92,7 @@ def calculate_image_dimensions(
     width: Optional[Union[Cm, Inches, int]] = None,
     height: Optional[Union[Cm, Inches, int]] = None,
     max_width: Optional[Union[Cm, Inches, int]] = None,
-    dpi: int = 96
+    dpi: int = DEFAULT_DPI
 ) -> tuple[Optional[Union[Cm, Inches]], Optional[Union[Cm, Inches]]]:
     """
     Рассчитывает финальные размеры изображения с учётом:
@@ -120,7 +126,7 @@ def calculate_image_dimensions(
     # 2. Если задана только ширина — вычисляем высоту
     if width is not None and height is None:
         if isinstance(width, Cm):
-            height = Cm(width.emu * aspect_ratio / 360000)
+            height = Cm(width.emu * aspect_ratio / MeasurementConfig.EMU_PER_CM)
         elif isinstance(width, Inches):
             height = Inches(width.inches * aspect_ratio)
         else:
@@ -130,7 +136,7 @@ def calculate_image_dimensions(
     elif height is not None and width is None:
         inv_aspect = orig_w / orig_h if orig_h > 0 else 1
         if isinstance(height, Cm):
-            width = Cm(height.emu * inv_aspect / 360000)
+            width = Cm(height.emu * inv_aspect / MeasurementConfig.EMU_PER_CM)
         elif isinstance(height, Inches):
             width = Inches(height.inches * inv_aspect)
         else:
@@ -146,7 +152,7 @@ def calculate_image_dimensions(
 def save_image_to_buffer(
     img: Image.Image,
     format: str = 'PNG',
-    dpi: tuple[int, int] = (96, 96),
+    dpi: tuple[int, int] = (DEFAULT_DPI, DEFAULT_DPI),
     quality: int = 95
 ) -> io.BytesIO:
     """
@@ -266,14 +272,14 @@ def insert_image(
                 width=config.get('width'),
                 height=config.get('height'),
                 max_width=config.get('max_width'),
-                dpi=config.get('dpi', (96, 96))[0]
+                dpi=config.get('dpi', (DEFAULT_DPI, DEFAULT_DPI))[0]
             )
             
             # 3. Сохраняем в буфер
             buffer = save_image_to_buffer(
                 img_rgb,
                 format=config.get('format', 'PNG'),
-                dpi=config.get('dpi', (96, 96)),
+                dpi=config.get('dpi', (DEFAULT_DPI, DEFAULT_DPI)),
                 quality=config.get('quality', 95)
             )
             

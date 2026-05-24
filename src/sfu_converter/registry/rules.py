@@ -26,7 +26,7 @@ COMMON_RULES: tuple[FormattingRule, ...] = (
         severity=RuleSeverity.REQUIRED,
         parameters={"top_mm": 20, "bottom_mm": 20, "left_mm": 30, "right_mm": 10},
         renderer_status=RuleStatus.IMPLEMENTED,
-        validator_status=RuleStatus.NOT_SUPPORTED,
+        validator_status=RuleStatus.IMPLEMENTED,
         description="A4 portrait margins: top 20mm, bottom 20mm, left 30mm, right 10mm",
     ),
     FormattingRule(
@@ -56,7 +56,7 @@ COMMON_RULES: tuple[FormattingRule, ...] = (
         severity=RuleSeverity.REQUIRED,
         parameters={"color_rgb": (0, 0, 0)},
         renderer_status=RuleStatus.IMPLEMENTED,
-        validator_status=RuleStatus.NOT_SUPPORTED,
+        validator_status=RuleStatus.IMPLEMENTED,
         description="Body text color: black",
     ),
     FormattingRule(
@@ -66,7 +66,7 @@ COMMON_RULES: tuple[FormattingRule, ...] = (
         severity=RuleSeverity.REQUIRED,
         parameters={"alignment": "justify"},
         renderer_status=RuleStatus.IMPLEMENTED,
-        validator_status=RuleStatus.NOT_SUPPORTED,
+        validator_status=RuleStatus.IMPLEMENTED,
         description="Body text alignment: justified",
     ),
     FormattingRule(
@@ -86,7 +86,7 @@ COMMON_RULES: tuple[FormattingRule, ...] = (
         severity=RuleSeverity.REQUIRED,
         parameters={"spacing": 1.5},
         renderer_status=RuleStatus.IMPLEMENTED,
-        validator_status=RuleStatus.NOT_SUPPORTED,
+        validator_status=RuleStatus.IMPLEMENTED,
         description="Line spacing: 1.5",
     ),
     FormattingRule(
@@ -131,7 +131,7 @@ COMMON_RULES: tuple[FormattingRule, ...] = (
             "page_break_before": True,
         },
         renderer_status=RuleStatus.IMPLEMENTED,
-        validator_status=RuleStatus.NOT_SUPPORTED,
+        validator_status=RuleStatus.IMPLEMENTED,
         description="Structural section headings: new page, centered, bold, uppercase",
     ),
     FormattingRule(
@@ -148,7 +148,7 @@ COMMON_RULES: tuple[FormattingRule, ...] = (
             "space_after_pt": 0,
         },
         renderer_status=RuleStatus.IMPLEMENTED,
-        validator_status=RuleStatus.NOT_SUPPORTED,
+        validator_status=RuleStatus.IMPLEMENTED,
         description="H1 heading: centered, bold, single line spacing",
     ),
     FormattingRule(
@@ -165,7 +165,7 @@ COMMON_RULES: tuple[FormattingRule, ...] = (
             "space_after_pt": 0,
         },
         renderer_status=RuleStatus.IMPLEMENTED,
-        validator_status=RuleStatus.NOT_SUPPORTED,
+        validator_status=RuleStatus.IMPLEMENTED,
         description="H2 heading: left-aligned, bold, single line spacing",
     ),
     FormattingRule(
@@ -182,8 +182,18 @@ COMMON_RULES: tuple[FormattingRule, ...] = (
             "space_after_pt": 0,
         },
         renderer_status=RuleStatus.IMPLEMENTED,
-        validator_status=RuleStatus.NOT_SUPPORTED,
+        validator_status=RuleStatus.IMPLEMENTED,
         description="H3 heading: left-aligned, single line spacing",
+    ),
+    FormattingRule(
+        id="common.heading.no_period",
+        source_doc=_COMMON_DOC,
+        source_section="Headings",
+        severity=RuleSeverity.REQUIRED,
+        parameters={},
+        renderer_status=RuleStatus.IMPLEMENTED,
+        validator_status=RuleStatus.IMPLEMENTED,
+        description="Headings must not end with a period",
     ),
     FormattingRule(
         id="common.heading.spacing_before",
@@ -395,6 +405,16 @@ COMMON_RULES: tuple[FormattingRule, ...] = (
         renderer_status=RuleStatus.IMPLEMENTED,
         validator_status=RuleStatus.NOT_SUPPORTED,
         description="Table cell vertical padding: 6pt before/after",
+    ),
+    FormattingRule(
+        id="common.table.font.size",
+        source_doc=_COMMON_DOC,
+        source_section="Tables",
+        severity=RuleSeverity.REQUIRED,
+        parameters={"min_size_pt": 10, "max_size_pt": 12},
+        renderer_status=RuleStatus.IMPLEMENTED,
+        validator_status=RuleStatus.IMPLEMENTED,
+        description="Table text font size must be 10-12pt",
     ),
     FormattingRule(
         id="common.table.body",

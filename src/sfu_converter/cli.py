@@ -6,7 +6,7 @@ import sys
 import time
 from pathlib import Path
 
-from sfu_converter.config import SIBFUConfig
+from sfu_converter.config import PathConfig, SIBFUConfig
 
 
 class ExitCodes:
@@ -175,6 +175,8 @@ def cmd_convert(args) -> int:
             template_mode=args.template_mode,
             insert_after_page=args.insert_after_page,
             insert_at_bookmark=args.insert_at_bookmark,
+            syntax_version=args.syntax_version,
+            strict=args.strict,
         )
     except OSError as exc:
         _emit_write_failure(args, "convert", str(exc))
@@ -271,7 +273,11 @@ def _resolve_path(workdir: Path, path: Path) -> Path:
 def _template_exists(workdir: Path, template: Path) -> bool:
     if template.is_absolute():
         return template.exists()
-    candidates = (workdir / "templates" / template, workdir / template, template)
+    candidates = (
+        workdir / PathConfig.TEMPLATES_DIR / template,
+        workdir / template,
+        template,
+    )
     return any(candidate.exists() for candidate in candidates)
 
 
@@ -310,6 +316,9 @@ def _emit_write_failure(args, command: str, message: str) -> None:
 
 
 def _validation_diagnostics(report):
+    if "diagnostics" in report:
+        return report["diagnostics"]
+
     diagnostics = []
     diagnostics.extend(
         {"code": "VALIDATION_ERROR", "message": message, "severity": "error"}

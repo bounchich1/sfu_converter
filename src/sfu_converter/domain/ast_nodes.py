@@ -25,6 +25,7 @@ class BlockType(Enum):
     METADATA = auto()
     TABLE_OF_CONTENTS = auto()
     TITLE_PAGE = auto()
+    REFERENCE = auto()
 
 
 class HeadingLevel(Enum):
@@ -209,6 +210,12 @@ class BibliographyEntryNode:
 
 
 @dataclass(frozen=True)
+class ReferenceNode:
+    target: str
+    source: SourceSpan | None = None
+
+
+@dataclass(frozen=True)
 class RawBlockNode:
     """Literal/escaped text that should not be parsed."""
 
@@ -243,6 +250,7 @@ BlockNode = (
     | StructuralSectionNode
     | AppendixNode
     | BibliographyEntryNode
+    | ReferenceNode
     | RawBlockNode
     | MetadataNode
     | TableOfContentsNode

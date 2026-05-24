@@ -12,6 +12,31 @@ from sfu_converter.registry.loader import build_legacy_config
 _LEGACY_CONFIG = build_legacy_config()
 
 
+class PathConfig:
+    """Canonical relative directories and filenames used by legacy entrypoints."""
+
+    EXAMPLES_DIR = "examples"
+    TEMPLATES_DIR = "templates"
+    RESULTS_DIR = "results"
+    IMAGES_DIR = "images"
+    LOGS_DIR = "logs"
+    LOG_FILENAME = "converter.log"
+
+
+class MeasurementConfig:
+    """Document-unit conversion constants shared by rendering helpers."""
+
+    EMU_PER_INCH = 914400
+    EMU_PER_CM = 360000
+    DEFAULT_DPI = 96
+
+
+class SyntaxConfig:
+    """Syntax-level constants shared by parser implementations."""
+
+    FIGURE_CAPTION_PREFIXES = ("Рисунок", "Figure", "Рис.")
+
+
 class SIBFUConfig:
     """Конфигурация стандартов оформления СФУ.
 
