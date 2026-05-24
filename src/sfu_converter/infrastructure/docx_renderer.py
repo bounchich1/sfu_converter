@@ -6,6 +6,7 @@ from pathlib import Path
 
 from docx import Document as DocxDocument
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Cm, Pt, RGBColor
 
@@ -23,6 +24,7 @@ from sfu_converter.domain.ast_nodes import (
     PageBreakNode,
     ParagraphNode,
     RawBlockNode,
+    StructuralSectionNode,
     TableCaptionNode,
     TableNode,
 )
@@ -41,7 +43,7 @@ class DocxRenderer(RendererPort):
         self.doc = None
         self.logger = logger or logging.getLogger(__name__)
         self._style_map = self._build_style_map()
-        self._bold_styles = frozenset({"h1", "h2"})
+        self._bold_styles = frozenset({"h1", "h2", "structural_section"})
 
     def render(
         self,
@@ -120,6 +122,13 @@ class DocxRenderer(RendererPort):
                 "line_spacing": cfg.H3["line_spacing"],
                 "space_before": cfg.H3["space_before"],
                 "space_after": cfg.H3["space_after"],
+            },
+            "structural_section": {
+                "align": cfg.STRUCTURAL_SECTION["align"],
+                "indent": cfg.STRUCTURAL_SECTION["indent"],
+                "line_spacing": cfg.STRUCTURAL_SECTION["line_spacing"],
+                "space_before": cfg.STRUCTURAL_SECTION["space_before"],
+                "space_after": cfg.STRUCTURAL_SECTION["space_after"],
             },
             "caption_img": {
                 "align": cfg.CAPTION_IMAGE["align"],
@@ -298,6 +307,54 @@ class DocxRenderer(RendererPort):
             section.left_margin = self.config.MARGINS["left"]
             section.right_margin = self.config.MARGINS["right"]
 
+    def _add_page_numbering(self):
+        page_cfg = self.config.PAGE_NUMBERING
+
+        for section in self.doc.sections:
+            section.different_first_page_header_footer = page_cfg["skip_first_page"]
+
+            footer = section.footer
+            footer.is_linked_to_previous = False
+
+            paragraph = footer.paragraphs[0] if footer.paragraphs else footer.add_paragraph()
+            paragraph.clear()
+            pf = paragraph.paragraph_format
+            pf.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            pf.first_line_indent = Cm(0)
+            pf.space_before = Pt(0)
+            pf.space_after = Pt(0)
+
+            run = paragraph.add_run()
+            run.font.name = page_cfg["font_name"]
+            run.font.size = page_cfg["font_size"]
+            run.font.color.rgb = RGBColor(*self.config.FONT_COLOR_RGB)
+            run._element.get_or_add_rPr().rFonts.set(
+                qn("w:eastAsia"),
+                page_cfg["font_name"],
+            )
+
+            field_begin = OxmlElement("w:fldChar")
+            field_begin.set(qn("w:fldCharType"), "begin")
+            run._element.append(field_begin)
+
+            instruction = OxmlElement("w:instrText")
+            instruction.set(qn("xml:space"), "preserve")
+            instruction.text = " PAGE "
+            run._element.append(instruction)
+
+            field_end = OxmlElement("w:fldChar")
+            field_end.set(qn("w:fldCharType"), "end")
+            run._element.append(field_end)
+
+            first_footer = section.first_page_footer
+            first_footer.is_linked_to_previous = False
+            first_paragraph = (
+                first_footer.paragraphs[0]
+                if first_footer.paragraphs
+                else first_footer.add_paragraph()
+            )
+            first_paragraph.clear()
+
     def _load_template(self, template_path):
         template_file = self._resolve_template_path(template_path)
         if template_file.exists():
@@ -313,11 +370,14 @@ class DocxRenderer(RendererPort):
             self._load_template(template)
         else:
             self.doc = DocxDocument()
-            self._setup_document_margins()
+        self._setup_document_margins()
+        self._add_page_numbering()
 
     def _render_from_ast(self, document):
         for block in document.blocks:
-            if isinstance(block, HeadingNode):
+            if isinstance(block, StructuralSectionNode):
+                self._render_structural_section(block)
+            elif isinstance(block, HeadingNode):
                 self._render_heading(block)
             elif isinstance(block, ParagraphNode):
                 self._render_paragraph(block)
@@ -357,6 +417,21 @@ class DocxRenderer(RendererPort):
         }[block.level]
         p = self.doc.add_paragraph(block.text)
         self._set_paragraph_format(p, style_type)
+        self._add_empty_paragraph("empty_after_header")
+
+    def _render_structural_section(self, block):
+        if self.config.STRUCTURAL_SECTION["page_break_before"]:
+            self.doc.add_page_break()
+
+        title = (
+            block.title.upper()
+            if self.config.STRUCTURAL_SECTION["uppercase"]
+            else block.title
+        )
+        p = self.doc.add_paragraph()
+        run = p.add_run(title)
+        self._set_paragraph_format(p, "structural_section")
+        run.underline = False
         self._add_empty_paragraph("empty_after_header")
 
     def _render_paragraph(self, block):

@@ -8,6 +8,8 @@ from sfu_converter.domain.ast_nodes import (
     HeadingLevel,
     HeadingNode,
     ParagraphNode,
+    StructuralSectionNode,
+    StructuralSectionType,
     TableNode,
 )
 from sfu_converter.domain.diagnostics import DiagnosticCodes, Severity
@@ -37,14 +39,14 @@ def test_parse_v1_headings_plain_text_image_and_table():
     assert result.document.syntax_version == 1
     assert result.document.source_file == "report.txt"
     assert [type(block) for block in result.document.blocks] == [
-        HeadingNode,
+        StructuralSectionNode,
         ParagraphNode,
         HeadingNode,
         HeadingNode,
         FigureNode,
         TableNode,
     ]
-    assert result.document.blocks[0].level is HeadingLevel.H1
+    assert result.document.blocks[0].section_type is StructuralSectionType.INTRODUCTION
     assert result.document.blocks[1].runs[0].text == "Обычный текст"
     assert result.document.blocks[4].src == "diagram.png"
     assert result.document.blocks[4].caption == "Рисунок 1 - Схема"
@@ -60,7 +62,7 @@ def test_parse_complete_fixture_file_to_expected_logical_blocks():
     assert result.diagnostics == []
     assert len(result.document.blocks) == 12
     assert [type(block).__name__ for block in result.document.blocks] == [
-        "HeadingNode",
+        "StructuralSectionNode",
         "ParagraphNode",
         "HeadingNode",
         "ParagraphNode",
@@ -73,6 +75,43 @@ def test_parse_complete_fixture_file_to_expected_logical_blocks():
         "HeadingNode",
         "ParagraphNode",
     ]
+
+
+def test_parser_converts_known_h1_to_structural_section():
+    result = V1Parser().parse("[H1] введение\n[H1] Обычный раздел")
+
+    assert result.diagnostics == []
+    structural, regular = result.document.blocks
+    assert isinstance(structural, StructuralSectionNode)
+    assert structural.section_type is StructuralSectionType.INTRODUCTION
+    assert structural.title == "введение"
+    assert isinstance(regular, HeadingNode)
+    assert regular.level is HeadingLevel.H1
+    assert regular.text == "Обычный раздел"
+
+
+def test_parser_recognizes_explicit_structural_markers():
+    result = V1Parser().parse(
+        "\n".join(
+            [
+                "[SECTION type=conclusion]",
+                '[STRUCTURAL title="СПИСОК СОКРАЩЕНИЙ"]',
+            ]
+        )
+    )
+
+    assert result.diagnostics == []
+    first, second = result.document.blocks
+    assert first == StructuralSectionNode(
+        section_type=StructuralSectionType.CONCLUSION,
+        title="ЗАКЛЮЧЕНИЕ",
+        source=first.source,
+    )
+    assert second == StructuralSectionNode(
+        section_type=StructuralSectionType.ABBREVIATIONS,
+        title="СПИСОК СОКРАЩЕНИЙ",
+        source=second.source,
+    )
 
 
 def test_parser_reports_cyrillic_marker_lookalikes_with_line_numbers():

@@ -20,6 +20,8 @@ from sfu_converter.domain.ast_nodes import (
     ParagraphNode,
     RawBlockNode,
     SourceSpan,
+    StructuralSectionNode,
+    StructuralSectionType,
     TableCaptionNode,
     TableCell,
     TableNode,
@@ -62,6 +64,11 @@ def test_ast_nodes_are_frozen_dataclasses():
     bibliography = BibliographyEntryNode(number=1, text="Source", source=span)
     raw = RawBlockNode(text="[literal]", source=span)
     metadata = MetadataNode(key="title", value="Report", source=span)
+    structural = StructuralSectionNode(
+        section_type=StructuralSectionType.INTRODUCTION,
+        title="ВВЕДЕНИЕ",
+        source=span,
+    )
 
     for instance in (
         span,
@@ -79,6 +86,7 @@ def test_ast_nodes_are_frozen_dataclasses():
         bibliography,
         raw,
         metadata,
+        structural,
     ):
         _assert_frozen(instance)
 
@@ -96,6 +104,10 @@ def test_document_accepts_supported_block_types_and_freezes_metadata():
         AppendixNode(title="Appendix", blocks=(RawBlockNode("raw"),)),
         BibliographyEntryNode(number=1, text="Book"),
         MetadataNode(key="author", value="Student"),
+        StructuralSectionNode(
+            section_type=StructuralSectionType.CONCLUSION,
+            title="ЗАКЛЮЧЕНИЕ",
+        ),
     )
 
     document = Document(blocks=blocks, metadata={"title": "Report"}, source_file="input.txt")
@@ -123,7 +135,14 @@ def test_blocknode_union_contains_all_supported_block_classes():
         BibliographyEntryNode,
         RawBlockNode,
         MetadataNode,
+        StructuralSectionNode,
     }
+
+
+def test_structural_section_types_use_standard_titles():
+    assert StructuralSectionType.ABSTRACT.value == "РЕФЕРАТ"
+    assert StructuralSectionType.INTRODUCTION.value == "ВВЕДЕНИЕ"
+    assert StructuralSectionType.SOURCES.value == "СПИСОК ИСПОЛЬЗОВАННЫХ ИСТОЧНИКОВ"
 
 
 def test_diagnostic_creation_with_all_severity_levels_and_source_span():

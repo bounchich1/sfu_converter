@@ -16,6 +16,7 @@ class BlockType(Enum):
     LIST = auto()
     LIST_ITEM = auto()
     PAGE_BREAK = auto()
+    STRUCTURAL_SECTION = auto()
     APPENDIX = auto()
     BIBLIOGRAPHY_ENTRY = auto()
     RAW_BLOCK = auto()
@@ -28,6 +29,17 @@ class HeadingLevel(Enum):
     H1 = 1
     H2 = 2
     H3 = 3
+
+
+class StructuralSectionType(Enum):
+    ABSTRACT = "РЕФЕРАТ"
+    ANNOTATION = "АННОТАЦИЯ"
+    CONTENTS = "СОДЕРЖАНИЕ"
+    INTRODUCTION = "ВВЕДЕНИЕ"
+    CONCLUSION = "ЗАКЛЮЧЕНИЕ"
+    ABBREVIATIONS = "СПИСОК СОКРАЩЕНИЙ"
+    SOURCES = "СПИСОК ИСПОЛЬЗОВАННЫХ ИСТОЧНИКОВ"
+    APPENDIX = "ПРИЛОЖЕНИЕ"
 
 
 class ListType(Enum):
@@ -75,6 +87,15 @@ class HeadingNode:
     level: HeadingLevel
     text: str
     number: str | None = None
+    source: SourceSpan | None = None
+
+
+@dataclass(frozen=True)
+class StructuralSectionNode:
+    """A standard structural section heading such as introduction or sources."""
+
+    section_type: StructuralSectionType
+    title: str
     source: SourceSpan | None = None
 
 
@@ -197,6 +218,7 @@ BlockNode = (
     | FormulaNode
     | ListNode
     | PageBreakNode
+    | StructuralSectionNode
     | AppendixNode
     | BibliographyEntryNode
     | RawBlockNode

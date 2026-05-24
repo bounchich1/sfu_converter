@@ -15,6 +15,7 @@ ALL_STYLE_TYPES = (
     "h1",
     "h2",
     "h3",
+    "structural_section",
     "caption_img",
     "caption_table",
     "empty_before_header",
@@ -92,6 +93,19 @@ def test_h3_style_is_not_bold(tmp_path):
     renderer._set_paragraph_format(para, "h3")
 
     assert para.runs[0].bold is False
+
+
+def test_structural_section_style_centered_bold_no_indent(tmp_path):
+    renderer = _make_renderer(tmp_path)
+    para = _new_para(renderer)
+
+    renderer._set_paragraph_format(para, "structural_section")
+    pf = para.paragraph_format
+
+    assert pf.alignment == WD_ALIGN_PARAGRAPH.CENTER
+    assert pf.line_spacing == 1.0
+    assert abs(pf.first_line_indent - Cm(0)) < 1000
+    assert para.runs[0].bold is True
 
 
 def test_caption_table_style_left_aligned(tmp_path):

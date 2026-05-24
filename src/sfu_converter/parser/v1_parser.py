@@ -9,6 +9,8 @@ from sfu_converter.domain.ast_nodes import (
     HeadingNode,
     ParagraphNode,
     SourceSpan,
+    StructuralSectionNode,
+    StructuralSectionType,
     TableCaptionNode,
     TableCell,
     TableNode,
@@ -19,6 +21,7 @@ from sfu_converter.domain.diagnostics import Diagnostic, DiagnosticCodes, Severi
 from sfu_converter.parser.base import BaseParser, ParserResult
 
 _IMAGE_RE = re.compile(r"\[IMAGE(?:=([^\]]+))?\]")
+_ATTR_RE = re.compile(r'(\w+)=(?:"([^"]*)"|([^\s\]]+))')
 _CYRILLIC_LATIN_MAP = {
     "А": "A",
     "В": "B",
@@ -38,10 +41,29 @@ _KNOWN_MARKERS = (
     "[H2]",
     "[H3]",
     "[IMAGE",
+    "[SECTION",
+    "[STRUCTURAL",
     "[TABLE_START]",
     "[TABLE_END]",
     "[TABLE_CAPTION]",
 )
+_STRUCTURAL_SECTIONS_BY_TITLE = {
+    section_type.value: section_type for section_type in StructuralSectionType
+}
+_STRUCTURAL_TYPE_ALIASES = {
+    "abstract": StructuralSectionType.ABSTRACT,
+    "referat": StructuralSectionType.ABSTRACT,
+    "annotation": StructuralSectionType.ANNOTATION,
+    "contents": StructuralSectionType.CONTENTS,
+    "content": StructuralSectionType.CONTENTS,
+    "introduction": StructuralSectionType.INTRODUCTION,
+    "intro": StructuralSectionType.INTRODUCTION,
+    "conclusion": StructuralSectionType.CONCLUSION,
+    "abbreviations": StructuralSectionType.ABBREVIATIONS,
+    "sources": StructuralSectionType.SOURCES,
+    "bibliography": StructuralSectionType.SOURCES,
+    "appendix": StructuralSectionType.APPENDIX,
+}
 
 
 class V1Parser(BaseParser):
@@ -65,13 +87,18 @@ class V1Parser(BaseParser):
                 self._check_cyrillic(stripped, span, diagnostics)
 
             if stripped.startswith("[H1]"):
-                blocks.append(
-                    HeadingNode(
-                        level=HeadingLevel.H1,
-                        text=stripped.replace("[H1]", "", 1).strip(),
-                        source=span,
+                title = stripped.replace("[H1]", "", 1).strip()
+                structural = _structural_section_from_title(title, span)
+                if structural is not None:
+                    blocks.append(structural)
+                else:
+                    blocks.append(
+                        HeadingNode(
+                            level=HeadingLevel.H1,
+                            text=title,
+                            source=span,
+                        )
                     )
-                )
             elif stripped.startswith("[H2]"):
                 blocks.append(
                     HeadingNode(
@@ -96,6 +123,14 @@ class V1Parser(BaseParser):
                         figure = FigureNode(src=figure.src, caption=caption, source=span)
                         i += consumed
                     blocks.append(figure)
+            elif stripped.startswith("[SECTION"):
+                structural = _parse_section_marker(stripped, span, diagnostics)
+                if structural is not None:
+                    blocks.append(structural)
+            elif stripped.startswith("[STRUCTURAL"):
+                structural = _parse_structural_marker(stripped, span, diagnostics)
+                if structural is not None:
+                    blocks.append(structural)
             elif stripped.startswith("[TABLE_START]"):
                 table, table_diagnostics, end_index = self._parse_table(lines, i, filename)
                 diagnostics.extend(table_diagnostics)
@@ -244,6 +279,7 @@ class V1Parser(BaseParser):
             marker_text = text[1:]
         else:
             marker_text = text[1:bracket_end]
+        marker_text = re.split(r"[\s=]", marker_text, maxsplit=1)[0]
 
         if _CYRILLIC_RE.search(marker_text):
             diagnostics.append(
@@ -274,6 +310,80 @@ def _parse_table_row(stripped: str) -> TableRow | None:
     if not cells:
         return None
     return TableRow(cells=tuple(TableCell(text=cell) for cell in cells))
+
+
+def _parse_attributes(text: str) -> dict[str, str]:
+    return {
+        match.group(1): match.group(2) if match.group(2) is not None else match.group(3)
+        for match in _ATTR_RE.finditer(text)
+    }
+
+
+def _parse_section_marker(
+    stripped: str,
+    span: SourceSpan,
+    diagnostics: list[Diagnostic],
+) -> StructuralSectionNode | None:
+    attrs = _parse_attributes(stripped)
+    section_type_name = attrs.get("type", "").strip().lower()
+    section_type = _STRUCTURAL_TYPE_ALIASES.get(section_type_name)
+    if section_type is None:
+        diagnostics.append(
+            Diagnostic(
+                code=DiagnosticCodes.TXT_MALFORMED_ATTRIBUTE,
+                message=(
+                    "Unknown structural section type: "
+                    f"{section_type_name or '<empty>'}"
+                ),
+                severity=Severity.ERROR,
+                source=span,
+            )
+        )
+        return None
+    return StructuralSectionNode(
+        section_type=section_type,
+        title=section_type.value,
+        source=span,
+    )
+
+
+def _parse_structural_marker(
+    stripped: str,
+    span: SourceSpan,
+    diagnostics: list[Diagnostic],
+) -> StructuralSectionNode | None:
+    attrs = _parse_attributes(stripped)
+    title = attrs.get("title", "").strip()
+    structural = _structural_section_from_title(title, span)
+    if structural is None:
+        diagnostics.append(
+            Diagnostic(
+                code=DiagnosticCodes.TXT_MALFORMED_ATTRIBUTE,
+                message=f"Unknown structural section title: {title or '<empty>'}",
+                severity=Severity.ERROR,
+                source=span,
+            )
+        )
+    return structural
+
+
+def _structural_section_from_title(
+    title: str,
+    span: SourceSpan,
+) -> StructuralSectionNode | None:
+    normalized = _normalize_structural_title(title)
+    section_type = _STRUCTURAL_SECTIONS_BY_TITLE.get(normalized)
+    if section_type is None:
+        return None
+    return StructuralSectionNode(
+        section_type=section_type,
+        title=title.strip(),
+        source=span,
+    )
+
+
+def _normalize_structural_title(title: str) -> str:
+    return " ".join(title.strip().upper().split())
 
 
 def _caption_after_image(lines: list[str], image_index: int) -> tuple[str | None, int]:

@@ -95,6 +95,8 @@ def build_legacy_config() -> MutableMapping[str, object]:
 
     margins = _params("common.page.margins.portrait")
     image = _params("common.figure.image")
+    page_numbering = _params("common.page.numbering")
+    structural = _params("common.structural.heading")
     return {
         "FONT_NAME": _params("common.text.font.name")["font_name"],
         "FONT_SIZE": Pt(_params("common.text.font.size")["font_size_pt"]),
@@ -105,6 +107,17 @@ def build_legacy_config() -> MutableMapping[str, object]:
         "H1": _heading_block("common.heading.h1"),
         "H2": _heading_block("common.heading.h2"),
         "H3": _heading_block("common.heading.h3"),
+        "STRUCTURAL_SECTION": {
+            "align": _alignment(structural["alignment"]),
+            "bold": bool(structural["bold"]),
+            "line_spacing": structural["line_spacing"],
+            "indent": Cm(structural["indent_cm"]),
+            "space_before": Pt(structural["space_before_pt"]),
+            "space_after": Pt(structural["space_after_pt"]),
+            "uppercase": bool(structural["uppercase"]),
+            "page_break_before": bool(structural["page_break_before"]),
+        },
+        "STRUCTURAL_HEADINGS": tuple(structural["headings"]),
         "CAPTION_IMAGE": _heading_block("common.figure.caption"),
         "CAPTION_TABLE": _heading_block("common.table.caption"),
         "EMPTY_BEFORE_HEADER": _spacing_block("common.heading.spacing_before"),
@@ -118,6 +131,13 @@ def build_legacy_config() -> MutableMapping[str, object]:
             "bottom": Cm(margins["bottom_mm"] / 10),
             "left": Cm(margins["left_mm"] / 10),
             "right": Cm(margins["right_mm"] / 10),
+        },
+        "PAGE_NUMBERING": {
+            "position": page_numbering["position"],
+            "font_name": page_numbering["font_name"],
+            "font_size": Pt(page_numbering["font_size_pt"]),
+            "format": page_numbering["format"],
+            "skip_first_page": bool(page_numbering["skip_first_page"]),
         },
         "IMAGE": {
             "line_spacing": image["line_spacing"],

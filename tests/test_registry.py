@@ -96,8 +96,10 @@ def test_profiles_inherit_common_rules():
 
 def test_rules_with_status_filters_by_renderer():
     not_supported = rules_with_status(renderer=RuleStatus.NOT_SUPPORTED)
-    assert any(rule.id == "common.page.numbering" for rule in not_supported)
     assert all(rule.renderer_status is RuleStatus.NOT_SUPPORTED for rule in not_supported)
+
+    implemented = rules_with_status(renderer=RuleStatus.IMPLEMENTED)
+    assert any(rule.id == "common.page.numbering" for rule in implemented)
 
 
 def test_required_severity_is_used_for_core_rules():
@@ -151,3 +153,24 @@ def test_heading_blocks_round_trip_through_config():
     assert legacy["H2"]["align"] == WD_ALIGN_PARAGRAPH.LEFT
     assert legacy["H2"]["bold"] is True
     assert legacy["H3"]["bold"] is False
+
+
+def test_page_numbering_and_structural_sections_round_trip_through_config():
+    legacy = build_legacy_config()
+
+    page_numbering = legacy["PAGE_NUMBERING"]
+    assert page_numbering["position"] == "bottom_center"
+    assert page_numbering["format"] == "arabic"
+    assert page_numbering["skip_first_page"] is True
+    assert page_numbering["font_name"] == SIBFUConfig.FONT_NAME
+    assert page_numbering["font_size"] == Pt(14)
+
+    structural = legacy["STRUCTURAL_SECTION"]
+    assert structural["align"] == WD_ALIGN_PARAGRAPH.CENTER
+    assert structural["bold"] is True
+    assert_close(structural["indent"], Cm(0))
+    assert structural["uppercase"] is True
+    assert structural["page_break_before"] is True
+
+    assert "ВВЕДЕНИЕ" in legacy["STRUCTURAL_HEADINGS"]
+    assert "СПИСОК ИСПОЛЬЗОВАННЫХ ИСТОЧНИКОВ" in SIBFUConfig.STRUCTURAL_HEADINGS
