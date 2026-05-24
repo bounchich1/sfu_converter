@@ -17,6 +17,7 @@ class ConvertTextToDocx:
         profile: FormattingProfile,
         output_path: str,
         template_path: str | None = None,
+        template_mode: str = "append",
         filename: str | None = None,
     ) -> list[Diagnostic]:
         result = self._parser.parse(source, filename)
@@ -27,6 +28,7 @@ class ConvertTextToDocx:
                 profile,
                 output_path,
                 template_path,
+                template_mode,
             )
         )
         return diagnostics

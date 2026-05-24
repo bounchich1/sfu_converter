@@ -13,6 +13,7 @@ from sfu_converter.domain.ast_nodes import (
     ListItemNode,
     ListNode,
     ListType,
+    MetadataNode,
     ParagraphNode,
     SourceSpan,
     StructuralSectionNode,
@@ -23,6 +24,7 @@ from sfu_converter.domain.ast_nodes import (
     TableOfContentsNode,
     TableRow,
     TextRun,
+    TitlePageNode,
 )
 from sfu_converter.domain.diagnostics import Diagnostic, DiagnosticCodes, Severity
 from sfu_converter.parser.base import BaseParser, ParserResult
@@ -66,6 +68,8 @@ _KNOWN_MARKERS = (
     "[FORMULA_EXPLANATION",
     "[FORMULA_EXPLANATION_END]",
     "[TOC",
+    "[META",
+    "[TITLE_PAGE",
 )
 _STRUCTURAL_SECTIONS_BY_TITLE = {
     section_type.value: section_type for section_type in StructuralSectionType
@@ -218,6 +222,12 @@ class V1Parser(BaseParser):
             elif stripped.startswith("[TOC"):
                 toc_node = _parse_toc_marker(stripped, span)
                 blocks.append(toc_node)
+            elif stripped.startswith("[TITLE_PAGE"):
+                blocks.append(_parse_title_page_marker(stripped, span))
+            elif stripped.startswith("[META"):
+                metadata_node = _parse_metadata_marker(stripped, span, diagnostics)
+                if metadata_node is not None:
+                    blocks.append(metadata_node)
             elif stripped.startswith("[FORMULA_END]") or stripped.startswith(
                 "[FORMULA_EXPLANATION_END]"
             ) or stripped.startswith("[FORMULA_EXPLANATION]"):
@@ -284,6 +294,7 @@ class V1Parser(BaseParser):
             document=Document(
                 blocks=tuple(blocks),
                 syntax_version=1,
+                metadata=_collect_metadata(blocks),
                 source_file=filename,
             ),
             diagnostics=diagnostics,
@@ -730,6 +741,43 @@ def _parse_toc_marker(stripped: str, span: SourceSpan) -> TableOfContentsNode:
         levels = 3
     levels = max(1, min(9, levels))
     return TableOfContentsNode(title=title, levels=levels, source=span)
+
+
+def _parse_title_page_marker(stripped: str, span: SourceSpan) -> TitlePageNode:
+    attrs = _parse_attributes(stripped)
+    profile = attrs.get("profile")
+    if profile is not None:
+        profile = profile.strip() or None
+    return TitlePageNode(profile=profile, source=span)
+
+
+def _parse_metadata_marker(
+    stripped: str,
+    span: SourceSpan,
+    diagnostics: list[Diagnostic],
+) -> MetadataNode | None:
+    attrs = _parse_attributes(stripped)
+    key = (attrs.get("key") or "").strip()
+    if not key:
+        diagnostics.append(
+            Diagnostic(
+                code=DiagnosticCodes.TXT_MALFORMED_ATTRIBUTE,
+                message="META marker missing required 'key' attribute",
+                severity=Severity.ERROR,
+                source=span,
+            )
+        )
+        return None
+    value = attrs.get("value", "")
+    return MetadataNode(key=key, value=value, source=span)
+
+
+def _collect_metadata(blocks: list) -> dict[str, str]:
+    metadata: dict[str, str] = {}
+    for block in blocks:
+        if isinstance(block, MetadataNode):
+            metadata[block.key] = block.value
+    return metadata
 
 
 def _parse_attributes(text: str) -> dict[str, str]:

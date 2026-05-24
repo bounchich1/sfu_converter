@@ -612,3 +612,49 @@ def test_parser_default_toc_marker_uses_three_levels_and_default_title():
     (toc,) = result.document.blocks
     assert toc.levels == 3
     assert toc.title == "СОДЕРЖАНИЕ"
+
+
+def test_parser_recognises_metadata_marker_and_collects_metadata():
+    source = "\n".join(
+        [
+            '[META key=title value="Отчёт"]',
+            '[META key=year value="2026"]',
+            "Текст",
+        ]
+    )
+
+    result = V1Parser().parse(source)
+
+    assert result.diagnostics == []
+    assert result.document.metadata["title"] == "Отчёт"
+    assert result.document.metadata["year"] == "2026"
+
+
+def test_parser_meta_marker_without_key_emits_diagnostic():
+    result = V1Parser().parse('[META value="Без ключа"]')
+
+    assert any(
+        diag.code == "TXT_MALFORMED_ATTRIBUTE" for diag in result.diagnostics
+    )
+
+
+def test_parser_recognises_title_page_marker():
+    from sfu_converter.domain.ast_nodes import TitlePageNode
+
+    result = V1Parser().parse("[TITLE_PAGE]")
+
+    assert result.diagnostics == []
+    (title_page,) = result.document.blocks
+    assert isinstance(title_page, TitlePageNode)
+    assert title_page.profile is None
+
+
+def test_parser_title_page_marker_accepts_profile_attribute():
+    from sfu_converter.domain.ast_nodes import TitlePageNode
+
+    result = V1Parser().parse("[TITLE_PAGE profile=lab_practical_project_reports]")
+
+    assert result.diagnostics == []
+    (title_page,) = result.document.blocks
+    assert isinstance(title_page, TitlePageNode)
+    assert title_page.profile == "lab_practical_project_reports"

@@ -28,6 +28,7 @@ from sfu_converter.domain.ast_nodes import (
     TableOfContentsNode,
     TableRow,
     TextRun,
+    TitlePageNode,
     Document,
 )
 from sfu_converter.domain.diagnostics import Diagnostic, DiagnosticCodes, Severity
@@ -138,6 +139,7 @@ def test_blocknode_union_contains_all_supported_block_classes():
         MetadataNode,
         StructuralSectionNode,
         TableOfContentsNode,
+        TitlePageNode,
     }
 
 

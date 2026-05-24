@@ -24,6 +24,7 @@ class BlockType(Enum):
     FIGURE_CAPTION = auto()
     METADATA = auto()
     TABLE_OF_CONTENTS = auto()
+    TITLE_PAGE = auto()
 
 
 class HeadingLevel(Enum):
@@ -222,6 +223,14 @@ class MetadataNode:
     source: SourceSpan | None = None
 
 
+@dataclass(frozen=True)
+class TitlePageNode:
+    """Insertion point for a generated title page based on document metadata."""
+
+    profile: str | None = None
+    source: SourceSpan | None = None
+
+
 BlockNode = (
     ParagraphNode
     | HeadingNode
@@ -237,6 +246,7 @@ BlockNode = (
     | RawBlockNode
     | MetadataNode
     | TableOfContentsNode
+    | TitlePageNode
 )
 
 

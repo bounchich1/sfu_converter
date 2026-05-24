@@ -26,6 +26,7 @@ from .ast_nodes import (
     TableOfContentsNode,
     TableRow,
     TextRun,
+    TitlePageNode,
 )
 from .diagnostics import Diagnostic, DiagnosticCodes, Severity
 from .formatting import FormattingProfile, FormattingRule, RuleSeverity, RuleStatus
@@ -63,4 +64,5 @@ __all__ = [
     "TableOfContentsNode",
     "TableRow",
     "TextRun",
+    "TitlePageNode",
 ]
