@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 
 from sfu_converter.domain.ast_nodes import (
+    AppendixNode,
     BibliographyEntryNode,
     Document,
     FigureNode,
@@ -19,6 +20,7 @@ from sfu_converter.domain.ast_nodes import (
     TableCaptionNode,
     TableCell,
     TableNode,
+    TableOfContentsNode,
     TableRow,
     TextRun,
 )
@@ -63,6 +65,7 @@ _KNOWN_MARKERS = (
     "[FORMULA_END]",
     "[FORMULA_EXPLANATION",
     "[FORMULA_EXPLANATION_END]",
+    "[TOC",
 )
 _STRUCTURAL_SECTIONS_BY_TITLE = {
     section_type.value: section_type for section_type in StructuralSectionType
@@ -90,6 +93,17 @@ _LIST_TYPE_ALIASES = {
 }
 _EXPLICIT_LIST_ITEM_RE = re.compile(r"^\[(?:-|[^\]]+\))\]\s*(.*)$")
 
+APPENDIX_LETTERS: tuple[str, ...] = (
+    "А", "Б", "В", "Г", "Д", "Е", "Ж", "И", "К", "Л", "М", "Н",
+    "П", "Р", "С", "Т", "У", "Ф", "Х", "Ц", "Ш", "Щ",
+)
+_APPENDIX_LETTER_SET = frozenset(APPENDIX_LETTERS)
+_APPENDIX_TYPES = frozenset({"обязательное", "справочное", "рекомендуемое"})
+_APPENDIX_HEADER_RE = re.compile(
+    r"^\[H1\]\s*ПРИЛОЖЕНИЕ(?:\s+(\S+))?\s*$",
+    re.IGNORECASE,
+)
+
 
 class V1Parser(BaseParser):
     """Parser for v1 TXT syntax."""
@@ -114,6 +128,14 @@ class V1Parser(BaseParser):
 
             if stripped.startswith("[H1]"):
                 title = stripped.replace("[H1]", "", 1).strip()
+                appendix_node, consumed = self._try_parse_appendix(
+                    lines, i, filename
+                )
+                if appendix_node is not None:
+                    blocks.append(appendix_node)
+                    in_bibliography = False
+                    i += consumed
+                    continue
                 structural = _structural_section_from_title(title, span)
                 if structural is not None:
                     blocks.append(structural)
@@ -193,6 +215,9 @@ class V1Parser(BaseParser):
                         source=span,
                     )
                 )
+            elif stripped.startswith("[TOC"):
+                toc_node = _parse_toc_marker(stripped, span)
+                blocks.append(toc_node)
             elif stripped.startswith("[FORMULA_END]") or stripped.startswith(
                 "[FORMULA_EXPLANATION_END]"
             ) or stripped.startswith("[FORMULA_EXPLANATION]"):
@@ -565,6 +590,80 @@ class V1Parser(BaseParser):
                 )
             )
 
+    def _try_parse_appendix(
+        self,
+        lines: list[str],
+        start_index: int,
+        filename: str | None,
+    ) -> tuple[AppendixNode | None, int]:
+        """Detect ``[H1] ПРИЛОЖЕНИЕ X`` plus optional type and subtitle lines.
+
+        Returns the parsed node and the number of consumed lines (>= 1) so the
+        outer loop can advance past the heading and any companion lines.
+        """
+
+        first_line = lines[start_index].strip()
+        match = _APPENDIX_HEADER_RE.match(first_line)
+        if match is None:
+            return None, 0
+
+        letter = match.group(1).upper() if match.group(1) else None
+        if letter is not None and letter not in _APPENDIX_LETTER_SET:
+            return None, 0
+
+        consumed = 1
+        appendix_type: str | None = None
+        subtitle: str | None = None
+        cursor = start_index + 1
+
+        while cursor < len(lines) and not lines[cursor].strip():
+            cursor += 1
+
+        if cursor < len(lines):
+            candidate = lines[cursor].strip()
+            if candidate.lower() in _APPENDIX_TYPES and not candidate.startswith("["):
+                appendix_type = candidate.lower()
+                consumed = cursor - start_index + 1
+                cursor += 1
+                while cursor < len(lines) and not lines[cursor].strip():
+                    cursor += 1
+
+        if cursor < len(lines):
+            candidate = lines[cursor].strip()
+            if (
+                candidate
+                and not candidate.startswith("[")
+                and not _BIBLIOGRAPHY_ENTRY_RE.match(candidate)
+                and appendix_type is not None
+            ):
+                subtitle = candidate
+                consumed = cursor - start_index + 1
+
+        title_parts = ["ПРИЛОЖЕНИЕ"]
+        if letter:
+            title_parts.append(letter)
+        title = " ".join(title_parts)
+        appendix_id = f"app:{letter.lower()}" if letter else None
+
+        span = SourceSpan(
+            line_start=start_index + 1,
+            line_end=start_index + consumed,
+            col_start=1,
+            col_end=len(lines[start_index]),
+            filename=filename,
+        )
+        return (
+            AppendixNode(
+                title=title,
+                id=appendix_id,
+                letter=letter,
+                appendix_type=appendix_type,
+                subtitle=subtitle,
+                source=span,
+            ),
+            consumed,
+        )
+
 
 def _span_for_line(line: str, index: int, filename: str | None) -> SourceSpan:
     return SourceSpan(
@@ -619,6 +718,18 @@ def _parse_dash_list(
 
 def _is_list_start(stripped: str) -> bool:
     return stripped == "[LIST]" or stripped.startswith("[LIST ")
+
+
+def _parse_toc_marker(stripped: str, span: SourceSpan) -> TableOfContentsNode:
+    attrs = _parse_attributes(stripped)
+    title = attrs.get("title", "СОДЕРЖАНИЕ").strip() or "СОДЕРЖАНИЕ"
+    levels_value = attrs.get("levels", "3")
+    try:
+        levels = int(levels_value)
+    except (TypeError, ValueError):
+        levels = 3
+    levels = max(1, min(9, levels))
+    return TableOfContentsNode(title=title, levels=levels, source=span)
 
 
 def _parse_attributes(text: str) -> dict[str, str]:

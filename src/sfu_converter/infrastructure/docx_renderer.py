@@ -27,8 +27,10 @@ from sfu_converter.domain.ast_nodes import (
     ParagraphNode,
     RawBlockNode,
     StructuralSectionNode,
+    StructuralSectionType,
     TableCaptionNode,
     TableNode,
+    TableOfContentsNode,
 )
 from sfu_converter.domain.diagnostics import Diagnostic
 from sfu_converter.domain.formatting import FormattingProfile
@@ -535,8 +537,9 @@ class DocxRenderer(RendererPort):
             elif isinstance(block, ListNode):
                 self._render_list(block)
             elif isinstance(block, AppendixNode):
-                self._render_heading(HeadingNode(level=HeadingLevel.H1, text=block.title))
-                self._render_from_ast(Document(blocks=block.blocks))
+                self._render_appendix(block)
+            elif isinstance(block, TableOfContentsNode):
+                self._render_table_of_contents(block)
             elif isinstance(block, BibliographyEntryNode):
                 self._render_bibliography_entry(block)
             elif isinstance(block, RawBlockNode):
@@ -570,6 +573,12 @@ class DocxRenderer(RendererPort):
         return f"{number} {title}"
 
     def _render_structural_section(self, block):
+        if block.section_type is StructuralSectionType.CONTENTS:
+            self._render_table_of_contents(
+                TableOfContentsNode(title=block.title, source=block.source)
+            )
+            return
+
         if self.config.STRUCTURAL_SECTION["page_break_before"]:
             self.doc.add_page_break()
 
@@ -582,8 +591,107 @@ class DocxRenderer(RendererPort):
         run = p.add_run(title)
         self._set_paragraph_format(p, "structural_section")
         run.underline = False
+        self._apply_word_heading_style(p, "Heading 1")
         self._add_empty_paragraph("empty_after_header")
         self._rendered_body_blocks = True
+
+    def _render_appendix(self, block):
+        """Render ``ПРИЛОЖЕНИЕ X`` on a new page with the standard heading layout.
+
+        STU 7.5-07-2021 requires: page break before, centered bold heading using
+        Russian uppercase letters (no Ё, З, Й, О, Ч, Ъ, Ы, Ь), optional content
+        type below, and an optional appendix title separated by one blank line.
+        """
+
+        self.doc.add_page_break()
+
+        heading_text = block.title or "ПРИЛОЖЕНИЕ"
+        if block.letter and block.letter not in heading_text:
+            heading_text = f"ПРИЛОЖЕНИЕ {block.letter}"
+
+        heading_para = self.doc.add_paragraph()
+        heading_run = heading_para.add_run(heading_text.upper())
+        self._set_paragraph_format(heading_para, "structural_section")
+        heading_run.underline = False
+        self._apply_word_heading_style(heading_para, "Heading 1")
+
+        if block.appendix_type:
+            type_para = self.doc.add_paragraph()
+            type_run = type_para.add_run(f"({block.appendix_type})")
+            self._set_paragraph_format(type_para, "caption_img")
+            type_run.bold = False
+            type_run.italic = False
+
+        if block.subtitle:
+            self._add_empty_paragraph("empty_after_header")
+            subtitle_para = self.doc.add_paragraph()
+            subtitle_run = subtitle_para.add_run(block.subtitle)
+            self._set_paragraph_format(subtitle_para, "structural_section")
+            subtitle_run.underline = False
+
+        self._add_empty_paragraph("empty_after_header")
+        if block.blocks:
+            self._render_from_ast(Document(blocks=block.blocks))
+        self._rendered_body_blocks = True
+
+    def _render_table_of_contents(self, block):
+        """Insert a ``СОДЕРЖАНИЕ`` heading and a Word TOC field.
+
+        ``python-docx`` does not support TOCs natively, so we emit raw OOXML
+        ``w:fldChar`` / ``w:instrText`` elements that Word recognises and
+        updates on open (or via Ctrl+A, F9).
+        """
+
+        self.doc.add_page_break()
+
+        heading_para = self.doc.add_paragraph()
+        heading_run = heading_para.add_run((block.title or "СОДЕРЖАНИЕ").upper())
+        self._set_paragraph_format(heading_para, "structural_section")
+        heading_run.underline = False
+        self._apply_word_heading_style(heading_para, "Heading 1")
+
+        self._add_empty_paragraph("empty_after_header")
+
+        toc_para = self.doc.add_paragraph()
+        toc_para.paragraph_format.first_line_indent = Cm(0)
+        begin_run = toc_para.add_run()
+        self._set_run_style(begin_run, bold=False)
+        fld_begin = OxmlElement("w:fldChar")
+        fld_begin.set(qn("w:fldCharType"), "begin")
+        begin_run._element.append(fld_begin)
+
+        instr = OxmlElement("w:instrText")
+        instr.set(qn("xml:space"), "preserve")
+        instr.text = f' TOC \\o "1-{block.levels}" \\h \\z \\u '
+        begin_run._element.append(instr)
+
+        fld_separate = OxmlElement("w:fldChar")
+        fld_separate.set(qn("w:fldCharType"), "separate")
+        begin_run._element.append(fld_separate)
+
+        placeholder_run = toc_para.add_run("Обновите оглавление (Ctrl+A, F9)")
+        self._set_run_style(placeholder_run, bold=False)
+
+        fld_end = OxmlElement("w:fldChar")
+        fld_end.set(qn("w:fldCharType"), "end")
+        placeholder_run._element.append(fld_end)
+
+        self._rendered_body_blocks = True
+
+    def _apply_word_heading_style(self, paragraph, style_name):
+        """Attach a built-in heading style so the TOC field can find the entry.
+
+        We only assign ``pStyle``; the formatting parameters from the registry
+        already win because ``_set_paragraph_format`` overrides spacing,
+        alignment, and run properties after the style is applied.
+        """
+
+        if self.doc is None:
+            return
+        try:
+            paragraph.style = self.doc.styles[style_name]
+        except KeyError:
+            return
 
     def _render_paragraph(self, block):
         para = self.doc.add_paragraph()
