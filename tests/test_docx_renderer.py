@@ -58,7 +58,7 @@ def test_docx_renderer_renders_ast_to_file(tmp_path):
     assert [para.text for para in doc.paragraphs if para.text] == [
         "Title",
         "Body",
-        "Table 1",
+        "Таблица 1 — Table 1",
     ]
     assert doc.paragraphs[0].paragraph_format.alignment == WD_ALIGN_PARAGRAPH.CENTER
     assert len(doc.tables) == 1
@@ -227,3 +227,169 @@ def test_docx_renderer_renders_structural_sections_with_special_formatting(tmp_p
 
 def test_docx_renderer_implements_renderer_port():
     assert issubclass(DocxRenderer, RendererPort)
+
+
+def test_docx_renderer_renders_paragraph_with_bold_and_italic_runs(tmp_path):
+    renderer = DocxRenderer(config_class=SIBFUConfig, base_dir=tmp_path)
+    profile = FormattingProfile(
+        name="common",
+        display_name="Common",
+        source_docs=("standard",),
+    )
+    ast = Document(
+        blocks=(
+            ParagraphNode(
+                runs=(
+                    TextRun(text="Plain "),
+                    TextRun(text="bold", bold=True),
+                    TextRun(text=" and "),
+                    TextRun(text="italic", italic=True),
+                    TextRun(text=" and "),
+                    TextRun(text="both", bold=True, italic=True),
+                    TextRun(text="."),
+                ),
+            ),
+        )
+    )
+    output_path = tmp_path / "inline.docx"
+
+    renderer.render_to_file(ast, profile, str(output_path))
+
+    doc = DocxDocument(str(output_path))
+    paragraph = next(p for p in doc.paragraphs if p.text)
+    assert paragraph.text == "Plain bold and italic and both."
+    assert [
+        (run.text, bool(run.bold), bool(run.font.italic))
+        for run in paragraph.runs
+    ] == [
+        ("Plain ", False, False),
+        ("bold", True, False),
+        (" and ", False, False),
+        ("italic", False, True),
+        (" and ", False, False),
+        ("both", True, True),
+        (".", False, False),
+    ]
+
+
+def test_docx_renderer_paragraph_runs_share_font_settings(tmp_path):
+    renderer = DocxRenderer(config_class=SIBFUConfig, base_dir=tmp_path)
+    profile = FormattingProfile(
+        name="common",
+        display_name="Common",
+        source_docs=("standard",),
+    )
+    ast = Document(
+        blocks=(
+            ParagraphNode(
+                runs=(
+                    TextRun(text="Жирный фрагмент", bold=True),
+                    TextRun(text=" и обычный текст."),
+                ),
+            ),
+        )
+    )
+    output_path = tmp_path / "inline_font.docx"
+
+    renderer.render_to_file(ast, profile, str(output_path))
+
+    doc = DocxDocument(str(output_path))
+    paragraph = next(p for p in doc.paragraphs if p.text)
+    for run in paragraph.runs:
+        assert run.font.name == SIBFUConfig.FONT_NAME
+        assert run.font.size == SIBFUConfig.FONT_SIZE
+        assert run.font.color.rgb == RGBColor(*SIBFUConfig.FONT_COLOR_RGB)
+
+
+def test_docx_renderer_table_uses_configured_font_size_and_header_bold(tmp_path):
+    renderer = DocxRenderer(config_class=SIBFUConfig, base_dir=tmp_path)
+    profile = FormattingProfile(
+        name="common",
+        display_name="Common",
+        source_docs=("standard",),
+    )
+    ast = Document(
+        blocks=(
+            TableNode(
+                rows=(
+                    TableRow(cells=(TableCell("H1"), TableCell("H2"))),
+                    TableRow(cells=(TableCell("A"), TableCell("B"))),
+                ),
+            ),
+        )
+    )
+    output_path = tmp_path / "table_font.docx"
+
+    renderer.render_to_file(ast, profile, str(output_path))
+
+    doc = DocxDocument(str(output_path))
+    table = doc.tables[0]
+    header_run = table.rows[0].cells[0].paragraphs[0].runs[0]
+    body_run = table.rows[1].cells[0].paragraphs[0].runs[0]
+
+    assert header_run.font.size == SIBFUConfig.TABLE["font_size"]
+    assert body_run.font.size == SIBFUConfig.TABLE["font_size"]
+    assert header_run.bold is True
+    assert body_run.bold is False
+    assert header_run.font.italic is not True
+    body_para = table.rows[1].cells[0].paragraphs[0]
+    assert body_para.paragraph_format.line_spacing == SIBFUConfig.TABLE["line_spacing"]
+
+
+def test_docx_renderer_table_caption_normalizes_to_em_dash(tmp_path):
+    renderer = DocxRenderer(config_class=SIBFUConfig, base_dir=tmp_path)
+    profile = FormattingProfile(
+        name="common",
+        display_name="Common",
+        source_docs=("standard",),
+    )
+    ast = Document(
+        blocks=(
+            TableNode(
+                caption="Данные",
+                rows=(TableRow(cells=(TableCell("A"),)),),
+            ),
+            TableNode(
+                caption="Таблица 7 - Существующая",
+                rows=(TableRow(cells=(TableCell("B"),)),),
+            ),
+        )
+    )
+    output_path = tmp_path / "captions.docx"
+
+    renderer.render_to_file(ast, profile, str(output_path))
+
+    doc = DocxDocument(str(output_path))
+    captions = [p.text for p in doc.paragraphs if p.text.startswith("Таблица")]
+    assert captions == [
+        "Таблица 1 — Данные",
+        "Таблица 7 — Существующая",
+    ]
+
+
+def test_docx_renderer_sets_repeat_header_row_property_on_tables(tmp_path):
+    renderer = DocxRenderer(config_class=SIBFUConfig, base_dir=tmp_path)
+    profile = FormattingProfile(
+        name="common",
+        display_name="Common",
+        source_docs=("standard",),
+    )
+    ast = Document(
+        blocks=(
+            TableNode(
+                rows=(
+                    TableRow(cells=(TableCell("H1"), TableCell("H2"))),
+                    TableRow(cells=(TableCell("A"), TableCell("B"))),
+                ),
+            ),
+        )
+    )
+    output_path = tmp_path / "repeat_header.docx"
+
+    renderer.render_to_file(ast, profile, str(output_path))
+
+    doc = DocxDocument(str(output_path))
+    header_row = doc.tables[0].rows[0]
+    assert "tblHeader" in header_row._tr.xml
+    body_row = doc.tables[0].rows[1]
+    assert "tblHeader" not in body_row._tr.xml

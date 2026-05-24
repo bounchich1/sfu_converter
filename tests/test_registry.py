@@ -184,3 +184,16 @@ def test_page_numbering_and_structural_sections_round_trip_through_config():
 
     assert "ВВЕДЕНИЕ" in legacy["STRUCTURAL_HEADINGS"]
     assert "СПИСОК ИСПОЛЬЗОВАННЫХ ИСТОЧНИКОВ" in SIBFUConfig.STRUCTURAL_HEADINGS
+
+
+def test_table_body_block_round_trips_through_config():
+    legacy = build_legacy_config()
+    table = legacy["TABLE"]
+
+    assert table["font_size"] == Pt(12)
+    assert table["header_font_size"] == Pt(12)
+    assert table["header_bold"] is True
+    assert table["line_spacing"] == 1.0
+    assert table["header_repeat_on_pages"] is True
+    assert table["cell_padding"] == Pt(6)
+    assert SIBFUConfig.TABLE == table

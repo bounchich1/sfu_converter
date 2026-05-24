@@ -289,6 +289,46 @@ def test_parser_reports_malformed_image_tag():
     assert result.diagnostics[0].source.line_start == 1
 
 
+def test_parser_splits_paragraph_into_bold_italic_runs():
+    result = V1Parser().parse(
+        "Hello **bold** and *italic* and ***bold italic*** done."
+    )
+
+    assert result.diagnostics == []
+    (paragraph,) = result.document.blocks
+    assert isinstance(paragraph, ParagraphNode)
+    assert [
+        (run.text, run.bold, run.italic) for run in paragraph.runs
+    ] == [
+        ("Hello ", False, False),
+        ("bold", True, False),
+        (" and ", False, False),
+        ("italic", False, True),
+        (" and ", False, False),
+        ("bold italic", True, True),
+        (" done.", False, False),
+    ]
+
+
+def test_parser_returns_single_run_when_no_inline_formatting():
+    result = V1Parser().parse("Просто обычный текст без форматирования.")
+
+    (paragraph,) = result.document.blocks
+    assert len(paragraph.runs) == 1
+    assert paragraph.runs[0].text == "Просто обычный текст без форматирования."
+    assert paragraph.runs[0].bold is False
+    assert paragraph.runs[0].italic is False
+
+
+def test_parser_treats_unmatched_asterisks_as_literal_text():
+    result = V1Parser().parse("Простой * одиночный знак и **незакрытый текст")
+
+    (paragraph,) = result.document.blocks
+    rendered = "".join(run.text for run in paragraph.runs)
+    assert rendered == "Простой * одиночный знак и **незакрытый текст"
+    assert all(run.bold is False and run.italic is False for run in paragraph.runs)
+
+
 def test_empty_input_returns_empty_document_without_diagnostics():
     result = V1Parser().parse("")
 

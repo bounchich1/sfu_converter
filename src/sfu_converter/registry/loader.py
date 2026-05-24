@@ -150,6 +150,20 @@ def build_legacy_config() -> MutableMapping[str, object]:
             "max_width": Cm(image["max_width_cm"]),
         },
         "TABLE_CELL_PADDING": Pt(_params("common.table.cell_padding")["padding_pt"]),
+        "TABLE": _table_block(),
+    }
+
+
+def _table_block() -> dict:
+    body = _params("common.table.body")
+    cell_padding = _params("common.table.cell_padding")
+    return {
+        "font_size": Pt(body["font_size_pt"]),
+        "header_font_size": Pt(body["header_font_size_pt"]),
+        "header_bold": bool(body["header_bold"]),
+        "line_spacing": body["line_spacing"],
+        "header_repeat_on_pages": bool(body["header_repeat_on_pages"]),
+        "cell_padding": Pt(cell_padding["padding_pt"]),
     }
 
 

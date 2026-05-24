@@ -25,6 +25,11 @@ from sfu_converter.parser.base import BaseParser, ParserResult
 
 _IMAGE_RE = re.compile(r"\[IMAGE(?:=([^\]]+))?\]")
 _ATTR_RE = re.compile(r'(\w+)=(?:"([^"]*)"|([^\s\]]+))')
+_INLINE_FORMATTING_RE = re.compile(
+    r"\*\*\*(\S(?:.*?\S)?)\*\*\*"
+    r"|\*\*(\S(?:.*?\S)?)\*\*"
+    r"|\*(\S(?:[^*]*?\S)?)\*"
+)
 _CYRILLIC_LATIN_MAP = {
     "А": "A",
     "В": "B",
@@ -186,7 +191,10 @@ class V1Parser(BaseParser):
                     i = end_index
                 else:
                     blocks.append(
-                        ParagraphNode(runs=(TextRun(text=stripped),), source=span)
+                        ParagraphNode(
+                            runs=_parse_inline_formatting(stripped),
+                            source=span,
+                        )
                     )
 
             i += 1
@@ -539,3 +547,27 @@ def _caption_after_image(lines: list[str], image_index: int) -> tuple[str | None
     if next_line.startswith("Рисунок") or next_line.startswith("Figure"):
         return next_line, 1
     return None, 0
+
+
+def _parse_inline_formatting(text: str) -> tuple[TextRun, ...]:
+    """Split text into TextRuns by ``***bi***``, ``**bold**``, ``*italic*``."""
+
+    runs: list[TextRun] = []
+    cursor = 0
+    for match in _INLINE_FORMATTING_RE.finditer(text):
+        start, end = match.span()
+        if start > cursor:
+            runs.append(TextRun(text=text[cursor:start]))
+        bi, bold, italic = match.group(1), match.group(2), match.group(3)
+        if bi is not None:
+            runs.append(TextRun(text=bi, bold=True, italic=True))
+        elif bold is not None:
+            runs.append(TextRun(text=bold, bold=True))
+        else:
+            runs.append(TextRun(text=italic, italic=True))
+        cursor = end
+    if cursor < len(text):
+        runs.append(TextRun(text=text[cursor:]))
+    if not runs:
+        return (TextRun(text=text),)
+    return tuple(runs)

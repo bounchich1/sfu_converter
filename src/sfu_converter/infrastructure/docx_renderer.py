@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from io import BytesIO
 from pathlib import Path
 
@@ -128,11 +129,12 @@ class DocxRenderer(RendererPort):
         self.doc.save(str(destination))
         return []
 
-    def _set_run_style(self, run, bold=False):
+    def _set_run_style(self, run, bold=False, italic=False):
         run.font.name = self.config.FONT_NAME
         run.font.size = self.config.FONT_SIZE
         run.font.color.rgb = RGBColor(*self.config.FONT_COLOR_RGB)
         run.bold = bold
+        run.italic = italic
         run._element.rPr.rFonts.set(qn("w:eastAsia"), self.config.FONT_NAME)
 
     def _build_style_map(self):
@@ -336,6 +338,7 @@ class DocxRenderer(RendererPort):
             p = self.doc.add_paragraph(caption)
             self._set_paragraph_format(p, "caption_table")
 
+        table_cfg = self.config.TABLE
         num_cols = len(rows_data[0])
         table = self.doc.add_table(rows=len(rows_data), cols=num_cols)
         table.style = "Table Grid"
@@ -343,29 +346,59 @@ class DocxRenderer(RendererPort):
 
         for row_idx, row_cells in enumerate(rows_data):
             row = table.rows[row_idx]
+            is_header = row_idx == 0
             for col_idx, text in enumerate(row_cells):
                 if col_idx < len(row.cells):
                     cell = row.cells[col_idx]
                     cell.text = text
                     for para in cell.paragraphs:
-                        is_header = row_idx == 0
                         pf = para.paragraph_format
                         pf.alignment = (
                             WD_ALIGN_PARAGRAPH.CENTER
                             if is_header
                             else WD_ALIGN_PARAGRAPH.LEFT
                         )
-                        pf.space_before = self.config.TABLE_CELL_PADDING
-                        pf.space_after = self.config.TABLE_CELL_PADDING
+                        pf.space_before = table_cfg["cell_padding"]
+                        pf.space_after = table_cfg["cell_padding"]
                         pf.first_line_indent = Cm(0)
+                        pf.line_spacing = table_cfg["line_spacing"]
 
                         if not para.runs:
                             para.add_run()
                         for run in para.runs:
-                            self._set_run_style(run, bold=is_header)
+                            self._set_run_style(
+                                run,
+                                bold=is_header and table_cfg["header_bold"],
+                            )
+                            run.font.size = (
+                                table_cfg["header_font_size"]
+                                if is_header
+                                else table_cfg["font_size"]
+                            )
+
+        if table_cfg["header_repeat_on_pages"]:
+            self._set_repeat_header_row(table.rows[0])
 
         self._add_empty_paragraph("empty_after_table")
         self._rendered_body_blocks = True
+
+    def _set_repeat_header_row(self, row):
+        """Mark a row so Word repeats it on every continuation page."""
+
+        tr = row._tr
+        tr_pr = tr.get_or_add_trPr()
+        tbl_header = OxmlElement("w:tblHeader")
+        tr_pr.append(tbl_header)
+
+    def _format_table_caption(self, caption, table_number):
+        if not caption:
+            return None
+        text = caption.strip()
+        if not text:
+            return None
+        if text.startswith("Таблица"):
+            return _normalize_caption_dashes(text)
+        return f"Таблица {table_number} — {text}"
 
     def _setup_document_margins(self):
         for section in self.doc.sections:
@@ -441,6 +474,7 @@ class DocxRenderer(RendererPort):
         self._add_page_numbering()
         self._section_numberer.reset()
         self._rendered_body_blocks = False
+        self._table_counter = 0
 
     def _render_from_ast(self, document):
         for block in document.blocks:
@@ -452,7 +486,9 @@ class DocxRenderer(RendererPort):
                 self._render_paragraph(block)
             elif isinstance(block, TableNode):
                 rows = [[cell.text for cell in row.cells] for row in block.rows]
-                self._create_table(rows, block.caption)
+                self._table_counter += 1
+                caption = self._format_table_caption(block.caption, self._table_counter)
+                self._create_table(rows, caption)
             elif isinstance(block, TableCaptionNode):
                 p = self.doc.add_paragraph(block.text)
                 self._set_paragraph_format(p, "caption_table")
@@ -516,7 +552,17 @@ class DocxRenderer(RendererPort):
         self._rendered_body_blocks = True
 
     def _render_paragraph(self, block):
-        self._render_text_block("".join(run.text for run in block.runs))
+        para = self.doc.add_paragraph()
+        for text_run in block.runs:
+            para.add_run(text_run.text)
+        self._set_paragraph_format(para, "normal")
+        for docx_run, text_run in zip(para.runs, block.runs):
+            self._set_run_style(
+                docx_run,
+                bold=text_run.bold,
+                italic=text_run.italic,
+            )
+        self._rendered_body_blocks = True
 
     def _render_text_block(self, text):
         p = self.doc.add_paragraph(text)
@@ -585,3 +631,9 @@ def _russian_list_letter(index: int) -> str:
     if index < len(_RUSSIAN_LIST_LETTERS):
         return _RUSSIAN_LIST_LETTERS[index]
     return str(index + 1)
+
+
+def _normalize_caption_dashes(text: str) -> str:
+    """Replace ASCII hyphens used as dash separators with em-dash (U+2014)."""
+
+    return re.sub(r"\s[-–]\s", " — ", text)

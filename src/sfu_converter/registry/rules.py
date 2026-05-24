@@ -322,6 +322,24 @@ COMMON_RULES: tuple[FormattingRule, ...] = (
         validator_status=RuleStatus.NOT_SUPPORTED,
         description="Table cell vertical padding: 6pt before/after",
     ),
+    FormattingRule(
+        id="common.table.body",
+        source_doc=_COMMON_DOC,
+        source_section="Tables",
+        severity=RuleSeverity.RECOMMENDED,
+        parameters={
+            "font_size_pt": 12,
+            "header_font_size_pt": 12,
+            "header_bold": True,
+            "line_spacing": 1.0,
+            "header_repeat_on_pages": True,
+        },
+        renderer_status=RuleStatus.IMPLEMENTED,
+        validator_status=RuleStatus.NOT_SUPPORTED,
+        description=(
+            "Table body: 12pt font, single spacing, bold header repeated on continuation pages"
+        ),
+    ),
 )
 
 
