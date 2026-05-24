@@ -4,7 +4,9 @@ from docx import Document as DocxDocument
 
 from sfu_converter.converter import TextToDocxConverter
 from sfu_converter.domain.ast_nodes import (
+    BibliographyEntryNode,
     FigureNode,
+    FormulaNode,
     HeadingLevel,
     HeadingNode,
     ListNode,
@@ -370,3 +372,159 @@ def test_converter_renders_preparsed_ast(tmp_path):
         "Абзац",
     ]
     assert doc.tables[0].rows[1].cells[1].text == "D"
+
+
+def test_parser_parses_formula_block_with_explanation():
+    result = V1Parser().parse(
+        "\n".join(
+            [
+                "[FORMULA]",
+                "E = mc^2",
+                "[FORMULA_END]",
+                "[FORMULA_EXPLANATION]",
+                "где E — энергия, Дж;",
+                "    m — масса, кг;",
+                "[FORMULA_EXPLANATION_END]",
+            ]
+        )
+    )
+
+    assert result.diagnostics == []
+    (formula,) = result.document.blocks
+    assert isinstance(formula, FormulaNode)
+    assert formula.content == "E = mc^2"
+    assert formula.explanation == "где E — энергия, Дж;\n    m — масса, кг;"
+    assert formula.source.line_start == 1
+    assert formula.source.line_end == 7
+
+
+def test_parser_parses_formula_without_explanation():
+    result = V1Parser().parse(
+        "\n".join(
+            [
+                "Перед формулой",
+                "[FORMULA]",
+                "a + b = c",
+                "[FORMULA_END]",
+                "После формулы",
+            ]
+        )
+    )
+
+    assert result.diagnostics == []
+    before, formula, after = result.document.blocks
+    assert before.runs[0].text == "Перед формулой"
+    assert isinstance(formula, FormulaNode)
+    assert formula.content == "a + b = c"
+    assert formula.explanation is None
+    assert after.runs[0].text == "После формулы"
+
+
+def test_parser_supports_formula_attributes():
+    result = V1Parser().parse(
+        "\n".join(
+            [
+                "[FORMULA id=eq:energy number=auto]",
+                "E = mc^2",
+                "[FORMULA_END]",
+            ]
+        )
+    )
+
+    assert result.diagnostics == []
+    (formula,) = result.document.blocks
+    assert formula.id == "eq:energy"
+    assert formula.number == "auto"
+
+
+def test_parser_reports_unterminated_formula_block():
+    result = V1Parser().parse("[FORMULA]\nE = mc^2\n")
+
+    assert result.has_errors is True
+    assert result.diagnostics[0].code == DiagnosticCodes.TXT_MISSING_BLOCK_END
+    assert result.diagnostics[0].source.line_start == 1
+    (formula,) = result.document.blocks
+    assert formula.content == "E = mc^2"
+
+
+def test_parser_reports_orphan_formula_explanation_marker():
+    result = V1Parser().parse("[FORMULA_EXPLANATION]\nне ожидается")
+
+    assert result.has_errors is True
+    assert result.diagnostics[0].code == DiagnosticCodes.TXT_UNKNOWN_MARKER
+    assert "Unexpected marker" in result.diagnostics[0].message
+
+
+def test_parser_parses_numbered_lines_after_sources_heading_as_bibliography_entries():
+    result = V1Parser().parse(
+        "\n".join(
+            [
+                "[H1] СПИСОК ИСПОЛЬЗОВАННЫХ ИСТОЧНИКОВ",
+                "1 Иванов И.И. Основы программирования. — М.: Наука, 2023.",
+                "2 Петров П.П. Алгоритмы и структуры данных. — СПб.: БХВ, 2022.",
+            ]
+        )
+    )
+
+    assert result.diagnostics == []
+    sources_heading, first, second = result.document.blocks
+    assert isinstance(sources_heading, StructuralSectionNode)
+    assert sources_heading.section_type is StructuralSectionType.SOURCES
+    assert isinstance(first, BibliographyEntryNode)
+    assert first.number == 1
+    assert first.text == "Иванов И.И. Основы программирования. — М.: Наука, 2023."
+    assert isinstance(second, BibliographyEntryNode)
+    assert second.number == 2
+
+
+def test_parser_does_not_treat_numbered_lines_outside_sources_as_bibliography():
+    result = V1Parser().parse(
+        "\n".join(
+            [
+                "1 это просто абзац который начинается с цифры",
+            ]
+        )
+    )
+
+    assert result.diagnostics == []
+    (paragraph,) = result.document.blocks
+    assert isinstance(paragraph, ParagraphNode)
+
+
+def test_parser_resets_bibliography_mode_on_next_h1():
+    result = V1Parser().parse(
+        "\n".join(
+            [
+                "[H1] СПИСОК ИСПОЛЬЗОВАННЫХ ИСТОЧНИКОВ",
+                "1 Иванов И.И. Книга. — М., 2023.",
+                "[H1] Дополнения",
+                "1 этот текст не должен стать записью библиографии",
+            ]
+        )
+    )
+
+    assert result.diagnostics == []
+    sources, entry, heading, paragraph = result.document.blocks
+    assert isinstance(sources, StructuralSectionNode)
+    assert isinstance(entry, BibliographyEntryNode)
+    assert isinstance(heading, HeadingNode)
+    assert heading.level is HeadingLevel.H1
+    assert isinstance(paragraph, ParagraphNode)
+    assert paragraph.runs[0].text.startswith("1 этот текст")
+
+
+def test_parser_recognises_section_marker_for_bibliography_mode():
+    result = V1Parser().parse(
+        "\n".join(
+            [
+                "[SECTION type=sources]",
+                "1 Иванов И.И. Книга. — М., 2023.",
+            ]
+        )
+    )
+
+    assert result.diagnostics == []
+    section, entry = result.document.blocks
+    assert section.section_type is StructuralSectionType.SOURCES
+    assert isinstance(entry, BibliographyEntryNode)
+    assert entry.number == 1

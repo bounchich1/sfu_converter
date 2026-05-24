@@ -246,6 +246,39 @@ class DocxRenderer(RendererPort):
                 "space_before": zero,
                 "space_after": zero,
             },
+            "empty_before_formula": {
+                "indent": no_indent,
+                "line_spacing": cfg.EMPTY_BEFORE_FORMULA["line_spacing"],
+                "space_before": zero,
+                "space_after": zero,
+            },
+            "empty_after_formula": {
+                "indent": no_indent,
+                "line_spacing": cfg.EMPTY_AFTER_FORMULA["line_spacing"],
+                "space_before": zero,
+                "space_after": zero,
+            },
+            "formula": {
+                "align": cfg.FORMULA["align"],
+                "indent": cfg.FORMULA["indent"],
+                "line_spacing": cfg.FORMULA["line_spacing"],
+                "space_before": cfg.FORMULA["space_before"],
+                "space_after": cfg.FORMULA["space_after"],
+            },
+            "formula_explanation": {
+                "align": cfg.FORMULA_EXPLANATION["align"],
+                "indent": cfg.FORMULA_EXPLANATION["indent"],
+                "line_spacing": cfg.FORMULA_EXPLANATION["line_spacing"],
+                "space_before": cfg.FORMULA_EXPLANATION["space_before"],
+                "space_after": cfg.FORMULA_EXPLANATION["space_after"],
+            },
+            "bibliography_entry": {
+                "align": cfg.BIBLIOGRAPHY_ENTRY["align"],
+                "indent": cfg.BIBLIOGRAPHY_ENTRY["indent"],
+                "line_spacing": cfg.BIBLIOGRAPHY_ENTRY["line_spacing"],
+                "space_before": cfg.BIBLIOGRAPHY_ENTRY["space_before"],
+                "space_after": cfg.BIBLIOGRAPHY_ENTRY["space_after"],
+            },
         }
 
     def _set_paragraph_format(self, para, style_type="normal"):
@@ -475,6 +508,7 @@ class DocxRenderer(RendererPort):
         self._section_numberer.reset()
         self._rendered_body_blocks = False
         self._table_counter = 0
+        self._formula_counter = 0
 
     def _render_from_ast(self, document):
         for block in document.blocks:
@@ -497,14 +531,14 @@ class DocxRenderer(RendererPort):
             elif isinstance(block, PageBreakNode):
                 self.doc.add_page_break()
             elif isinstance(block, FormulaNode):
-                self._render_text_block(block.content)
+                self._render_formula(block)
             elif isinstance(block, ListNode):
                 self._render_list(block)
             elif isinstance(block, AppendixNode):
                 self._render_heading(HeadingNode(level=HeadingLevel.H1, text=block.title))
                 self._render_from_ast(Document(blocks=block.blocks))
             elif isinstance(block, BibliographyEntryNode):
-                self._render_text_block(f"{block.number}. {block.text}")
+                self._render_bibliography_entry(block)
             elif isinstance(block, RawBlockNode):
                 self._render_text_block(block.text)
             elif isinstance(block, MetadataNode):
@@ -567,6 +601,63 @@ class DocxRenderer(RendererPort):
     def _render_text_block(self, text):
         p = self.doc.add_paragraph(text)
         self._set_paragraph_format(p, "normal")
+        self._rendered_body_blocks = True
+
+    def _render_formula(self, block):
+        """Render a formula on its own line with right-aligned auto-number."""
+
+        if block.number == "auto" or block.number is None:
+            self._formula_counter += 1
+            number_text = str(self._formula_counter)
+        else:
+            number_text = str(block.number)
+
+        self._add_empty_paragraph("empty_before_formula")
+
+        para = self.doc.add_paragraph()
+        self._set_paragraph_format(para, "formula")
+        # Replace the placeholder run created by _set_paragraph_format with
+        # explicit content + tab + number runs so styling stays consistent.
+        for run in list(para.runs):
+            run._element.getparent().remove(run._element)
+
+        content_run = para.add_run(block.content or "")
+        self._set_run_style(content_run, bold=False)
+
+        number_run = para.add_run(f"\t({number_text})")
+        self._set_run_style(number_run, bold=False)
+
+        self._set_formula_number_tab(para)
+
+        if block.explanation:
+            expl_para = self.doc.add_paragraph(block.explanation)
+            self._set_paragraph_format(expl_para, "formula_explanation")
+
+        self._add_empty_paragraph("empty_after_formula")
+        self._rendered_body_blocks = True
+
+    def _set_formula_number_tab(self, para):
+        """Add a right-aligned tab stop so ``\\t(N)`` lands at the right margin."""
+
+        tab_pos = self.config.FORMULA["number_tab_pos"]
+        ppr = para._p.get_or_add_pPr()
+        existing = ppr.find(qn("w:tabs"))
+        if existing is not None:
+            ppr.remove(existing)
+
+        tab_stops = OxmlElement("w:tabs")
+        tab = OxmlElement("w:tab")
+        tab.set(qn("w:val"), "right")
+        tab.set(qn("w:pos"), str(int(tab_pos.emu / 635)))
+        tab_stops.append(tab)
+        ppr.append(tab_stops)
+
+    def _render_bibliography_entry(self, block):
+        """Render a single source list entry with hanging-paragraph layout."""
+
+        text = f"{block.number} {block.text}"
+        para = self.doc.add_paragraph(text)
+        self._set_paragraph_format(para, "bibliography_entry")
         self._rendered_body_blocks = True
 
     def _render_list(self, block):

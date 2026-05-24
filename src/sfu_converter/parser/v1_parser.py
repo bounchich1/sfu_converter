@@ -3,8 +3,10 @@ from __future__ import annotations
 import re
 
 from sfu_converter.domain.ast_nodes import (
+    BibliographyEntryNode,
     Document,
     FigureNode,
+    FormulaNode,
     HeadingLevel,
     HeadingNode,
     ListItemNode,
@@ -30,6 +32,7 @@ _INLINE_FORMATTING_RE = re.compile(
     r"|\*\*(\S(?:.*?\S)?)\*\*"
     r"|\*(\S(?:[^*]*?\S)?)\*"
 )
+_BIBLIOGRAPHY_ENTRY_RE = re.compile(r"^(\d+)\s+(.+)$")
 _CYRILLIC_LATIN_MAP = {
     "А": "A",
     "В": "B",
@@ -56,6 +59,10 @@ _KNOWN_MARKERS = (
     "[TABLE_START]",
     "[TABLE_END]",
     "[TABLE_CAPTION]",
+    "[FORMULA",
+    "[FORMULA_END]",
+    "[FORMULA_EXPLANATION",
+    "[FORMULA_EXPLANATION_END]",
 )
 _STRUCTURAL_SECTIONS_BY_TITLE = {
     section_type.value: section_type for section_type in StructuralSectionType
@@ -91,6 +98,7 @@ class V1Parser(BaseParser):
         lines = source.splitlines()
         blocks = []
         diagnostics: list[Diagnostic] = []
+        in_bibliography = False
         i = 0
 
         while i < len(lines):
@@ -109,6 +117,9 @@ class V1Parser(BaseParser):
                 structural = _structural_section_from_title(title, span)
                 if structural is not None:
                     blocks.append(structural)
+                    in_bibliography = (
+                        structural.section_type is StructuralSectionType.SOURCES
+                    )
                 else:
                     blocks.append(
                         HeadingNode(
@@ -118,6 +129,7 @@ class V1Parser(BaseParser):
                             source=span,
                         )
                     )
+                    in_bibliography = False
             elif stripped.startswith("[H2]"):
                 blocks.append(
                     HeadingNode(
@@ -158,10 +170,16 @@ class V1Parser(BaseParser):
                 structural = _parse_section_marker(stripped, span, diagnostics)
                 if structural is not None:
                     blocks.append(structural)
+                    in_bibliography = (
+                        structural.section_type is StructuralSectionType.SOURCES
+                    )
             elif stripped.startswith("[STRUCTURAL"):
                 structural = _parse_structural_marker(stripped, span, diagnostics)
                 if structural is not None:
                     blocks.append(structural)
+                    in_bibliography = (
+                        structural.section_type is StructuralSectionType.SOURCES
+                    )
             elif stripped.startswith("[TABLE_START]"):
                 table, table_diagnostics, end_index = self._parse_table(lines, i, filename)
                 diagnostics.extend(table_diagnostics)
@@ -175,6 +193,27 @@ class V1Parser(BaseParser):
                         source=span,
                     )
                 )
+            elif stripped.startswith("[FORMULA_END]") or stripped.startswith(
+                "[FORMULA_EXPLANATION_END]"
+            ) or stripped.startswith("[FORMULA_EXPLANATION]"):
+                diagnostics.append(
+                    Diagnostic(
+                        code=DiagnosticCodes.TXT_UNKNOWN_MARKER,
+                        message=f"Unexpected marker outside formula block: {stripped}",
+                        severity=Severity.ERROR,
+                        source=span,
+                    )
+                )
+            elif stripped.startswith("[FORMULA"):
+                formula_node, formula_diagnostics, end_index = self._parse_formula(
+                    lines,
+                    i,
+                    filename,
+                )
+                diagnostics.extend(formula_diagnostics)
+                if formula_node is not None:
+                    blocks.append(formula_node)
+                i = end_index
             elif stripped.startswith("[") and not stripped.startswith(_KNOWN_MARKERS):
                 diagnostics.append(
                     Diagnostic(
@@ -189,6 +228,23 @@ class V1Parser(BaseParser):
                     list_node, end_index = _parse_dash_list(lines, i, filename)
                     blocks.append(list_node)
                     i = end_index
+                elif in_bibliography:
+                    bibliography_match = _BIBLIOGRAPHY_ENTRY_RE.match(stripped)
+                    if bibliography_match is not None:
+                        blocks.append(
+                            BibliographyEntryNode(
+                                number=int(bibliography_match.group(1)),
+                                text=bibliography_match.group(2).strip(),
+                                source=span,
+                            )
+                        )
+                    else:
+                        blocks.append(
+                            ParagraphNode(
+                                runs=_parse_inline_formatting(stripped),
+                                source=span,
+                            )
+                        )
                 else:
                     blocks.append(
                         ParagraphNode(
@@ -228,6 +284,105 @@ class V1Parser(BaseParser):
 
         image_path = match.group(1).strip() if match.group(1) else None
         return FigureNode(src=image_path, source=span)
+
+    def _parse_formula(
+        self,
+        lines: list[str],
+        start_index: int,
+        filename: str | None,
+    ) -> tuple[FormulaNode | None, list[Diagnostic], int]:
+        """Parse ``[FORMULA]...[FORMULA_END]`` and optional explanation block."""
+
+        diagnostics: list[Diagnostic] = []
+        formula_start_span = _span_for_line(lines[start_index], start_index, filename)
+        attrs = _parse_attributes(lines[start_index].strip())
+
+        formula_lines: list[str] = []
+        i = start_index + 1
+        found_end = False
+        while i < len(lines):
+            stripped = lines[i].strip()
+            if stripped.startswith("[FORMULA_END]"):
+                found_end = True
+                break
+            formula_lines.append(lines[i])
+            i += 1
+
+        if not found_end:
+            diagnostics.append(
+                Diagnostic(
+                    code=DiagnosticCodes.TXT_MISSING_BLOCK_END,
+                    message="FORMULA without matching FORMULA_END",
+                    severity=Severity.ERROR,
+                    source=formula_start_span,
+                )
+            )
+            line_end = len(lines)
+            return (
+                FormulaNode(
+                    content="\n".join(formula_lines).strip("\n"),
+                    id=attrs.get("id"),
+                    number=attrs.get("number"),
+                    source=SourceSpan(
+                        line_start=formula_start_span.line_start,
+                        line_end=line_end,
+                        filename=filename,
+                    ),
+                ),
+                diagnostics,
+                i,
+            )
+
+        explanation: str | None = None
+        explanation_end_index = i
+        next_index = i + 1
+        while next_index < len(lines) and not lines[next_index].strip():
+            next_index += 1
+        if (
+            next_index < len(lines)
+            and lines[next_index].strip().startswith("[FORMULA_EXPLANATION]")
+        ):
+            explanation_lines: list[str] = []
+            j = next_index + 1
+            explanation_found_end = False
+            while j < len(lines):
+                stripped_expl = lines[j].strip()
+                if stripped_expl.startswith("[FORMULA_EXPLANATION_END]"):
+                    explanation_found_end = True
+                    break
+                explanation_lines.append(lines[j])
+                j += 1
+            if not explanation_found_end:
+                expl_start_span = _span_for_line(lines[next_index], next_index, filename)
+                diagnostics.append(
+                    Diagnostic(
+                        code=DiagnosticCodes.TXT_MISSING_BLOCK_END,
+                        message=(
+                            "FORMULA_EXPLANATION without matching FORMULA_EXPLANATION_END"
+                        ),
+                        severity=Severity.ERROR,
+                        source=expl_start_span,
+                    )
+                )
+            explanation = "\n".join(explanation_lines).strip("\n")
+            explanation_end_index = j
+
+        line_end = explanation_end_index + 1
+        return (
+            FormulaNode(
+                content="\n".join(formula_lines).strip("\n"),
+                id=attrs.get("id"),
+                number=attrs.get("number"),
+                explanation=explanation,
+                source=SourceSpan(
+                    line_start=formula_start_span.line_start,
+                    line_end=line_end,
+                    filename=filename,
+                ),
+            ),
+            diagnostics,
+            explanation_end_index,
+        )
 
     def _parse_table(
         self,

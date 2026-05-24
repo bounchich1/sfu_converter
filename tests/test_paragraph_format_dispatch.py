@@ -25,6 +25,11 @@ ALL_STYLE_TYPES = (
     "empty_after_image",
     "empty_before_table",
     "empty_after_table",
+    "empty_before_formula",
+    "empty_after_formula",
+    "formula",
+    "formula_explanation",
+    "bibliography_entry",
 )
 
 
