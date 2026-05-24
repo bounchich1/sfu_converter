@@ -97,6 +97,7 @@ def build_legacy_config() -> MutableMapping[str, object]:
     image = _params("common.figure.image")
     page_numbering = _params("common.page.numbering")
     structural = _params("common.structural.heading")
+    formula_body = _params("common.formula.body")
     return {
         "FONT_NAME": _params("common.text.font.name")["font_name"],
         "FONT_SIZE": Pt(_params("common.text.font.size")["font_size_pt"]),
@@ -127,6 +128,14 @@ def build_legacy_config() -> MutableMapping[str, object]:
         "EMPTY_AFTER_IMAGE": _spacing_block("common.figure.spacing_after"),
         "EMPTY_BEFORE_TABLE": _spacing_block("common.table.spacing_before"),
         "EMPTY_AFTER_TABLE": _spacing_block("common.table.spacing_after"),
+        "EMPTY_BEFORE_FORMULA": _spacing_block("common.formula.spacing_before"),
+        "EMPTY_AFTER_FORMULA": _spacing_block("common.formula.spacing_after"),
+        "FORMULA": {
+            **_heading_block("common.formula.body"),
+            "number_tab_pos": Cm(formula_body["number_tab_pos_cm"]),
+        },
+        "FORMULA_EXPLANATION": _heading_block("common.formula.explanation"),
+        "BIBLIOGRAPHY_ENTRY": _heading_block("common.bibliography.entry"),
         "MARGINS": {
             "top": Cm(margins["top_mm"] / 10),
             "bottom": Cm(margins["bottom_mm"] / 10),

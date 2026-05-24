@@ -4,7 +4,9 @@ from docx.shared import Cm, Pt, RGBColor
 
 from sfu_converter.config import SIBFUConfig
 from sfu_converter.domain.ast_nodes import (
+    BibliographyEntryNode,
     Document,
+    FormulaNode,
     HeadingLevel,
     HeadingNode,
     ListItemNode,
@@ -393,3 +395,120 @@ def test_docx_renderer_sets_repeat_header_row_property_on_tables(tmp_path):
     assert "tblHeader" in header_row._tr.xml
     body_row = doc.tables[0].rows[1]
     assert "tblHeader" not in body_row._tr.xml
+
+
+def _common_profile():
+    return FormattingProfile(
+        name="common",
+        display_name="Common",
+        source_docs=("standard",),
+    )
+
+
+def test_docx_renderer_centers_formula_with_auto_number(tmp_path):
+    renderer = DocxRenderer(config_class=SIBFUConfig, base_dir=tmp_path)
+    ast = Document(blocks=(FormulaNode(content="E = mc^2"),))
+    output_path = tmp_path / "formula.docx"
+
+    renderer.render_to_file(ast, _common_profile(), str(output_path))
+
+    doc = DocxDocument(str(output_path))
+    formula_para = next(p for p in doc.paragraphs if p.text)
+    assert formula_para.text == "E = mc^2\t(1)"
+    assert formula_para.paragraph_format.alignment == WD_ALIGN_PARAGRAPH.CENTER
+    assert formula_para.paragraph_format.line_spacing == 1.5
+    assert "<w:tabs" in formula_para._p.xml
+    assert 'w:val="right"' in formula_para._p.xml
+
+
+def test_docx_renderer_assigns_sequential_formula_numbers(tmp_path):
+    renderer = DocxRenderer(config_class=SIBFUConfig, base_dir=tmp_path)
+    ast = Document(
+        blocks=(
+            FormulaNode(content="x + y = z"),
+            ParagraphNode(runs=(TextRun("Между формулами"),)),
+            FormulaNode(content="a^2 + b^2 = c^2"),
+        )
+    )
+    output_path = tmp_path / "formulas.docx"
+
+    renderer.render_to_file(ast, _common_profile(), str(output_path))
+
+    doc = DocxDocument(str(output_path))
+    texts = [p.text for p in doc.paragraphs if p.text]
+    assert "x + y = z\t(1)" in texts
+    assert "a^2 + b^2 = c^2\t(2)" in texts
+
+
+def test_docx_renderer_renders_formula_explanation_with_left_alignment(tmp_path):
+    renderer = DocxRenderer(config_class=SIBFUConfig, base_dir=tmp_path)
+    explanation = "где E — энергия, Дж;\n    m — масса, кг;\n    c — скорость света, м/с."
+    ast = Document(
+        blocks=(FormulaNode(content="E = mc^2", explanation=explanation),)
+    )
+    output_path = tmp_path / "formula_explanation.docx"
+
+    renderer.render_to_file(ast, _common_profile(), str(output_path))
+
+    doc = DocxDocument(str(output_path))
+    paragraphs = [p for p in doc.paragraphs if p.text]
+    formula_para = next(p for p in paragraphs if p.text.endswith("(1)"))
+    explanation_para = next(p for p in paragraphs if p.text.startswith("где"))
+
+    assert formula_para is not paragraphs[-1] or len(paragraphs) >= 2
+    assert explanation_para.paragraph_format.alignment == WD_ALIGN_PARAGRAPH.LEFT
+    assert_close(explanation_para.paragraph_format.first_line_indent, Cm(0))
+    assert explanation_para.paragraph_format.line_spacing == 1.5
+    assert "масса, кг" in explanation_para.text
+
+
+def test_docx_renderer_resets_formula_counter_per_document(tmp_path):
+    renderer = DocxRenderer(config_class=SIBFUConfig, base_dir=tmp_path)
+
+    first_path = tmp_path / "first.docx"
+    second_path = tmp_path / "second.docx"
+    profile = _common_profile()
+    renderer.render_to_file(
+        Document(blocks=(FormulaNode(content="A"),)), profile, str(first_path)
+    )
+    renderer.render_to_file(
+        Document(blocks=(FormulaNode(content="B"),)), profile, str(second_path)
+    )
+
+    second = DocxDocument(str(second_path))
+    formula_para = next(p for p in second.paragraphs if p.text)
+    assert formula_para.text == "B\t(1)"
+
+
+def test_docx_renderer_renders_bibliography_entries_with_paragraph_indent(tmp_path):
+    renderer = DocxRenderer(config_class=SIBFUConfig, base_dir=tmp_path)
+    ast = Document(
+        blocks=(
+            StructuralSectionNode(
+                section_type=StructuralSectionType.SOURCES,
+                title="СПИСОК ИСПОЛЬЗОВАННЫХ ИСТОЧНИКОВ",
+            ),
+            BibliographyEntryNode(
+                number=1,
+                text="Иванов И.И. Основы программирования. — М.: Наука, 2023.",
+            ),
+            BibliographyEntryNode(
+                number=2,
+                text="Петров П.П. Алгоритмы и структуры данных. — СПб.: БХВ, 2022.",
+            ),
+        )
+    )
+    output_path = tmp_path / "sources.docx"
+
+    renderer.render_to_file(ast, _common_profile(), str(output_path))
+
+    doc = DocxDocument(str(output_path))
+    entries = [p for p in doc.paragraphs if p.text.startswith(("1 ", "2 "))]
+    assert [p.text for p in entries] == [
+        "1 Иванов И.И. Основы программирования. — М.: Наука, 2023.",
+        "2 Петров П.П. Алгоритмы и структуры данных. — СПб.: БХВ, 2022.",
+    ]
+    for entry in entries:
+        assert entry.paragraph_format.alignment == WD_ALIGN_PARAGRAPH.JUSTIFY
+        assert_close(entry.paragraph_format.first_line_indent, Cm(1.25))
+        assert entry.paragraph_format.line_spacing == 1.5
