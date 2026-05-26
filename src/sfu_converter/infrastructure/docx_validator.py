@@ -9,7 +9,7 @@ from docx.shared import Cm
 from sfu_converter.config import SIBFUConfig
 from sfu_converter.domain.ast_nodes import SourceSpan
 from sfu_converter.domain.diagnostics import Diagnostic, DiagnosticCodes, Severity
-from sfu_converter.domain.formatting import FormattingProfile, FormattingRule
+from sfu_converter.domain.formatting import FormattingProfile, FormattingRule, unsupported_rule_diagnostics
 from sfu_converter.registry import get_profile, get_rule
 
 _LENGTH_TOLERANCE_EMU = 1000
@@ -58,6 +58,7 @@ class DocxValidator:
             )
             return self.diagnostics
 
+        self.diagnostics.extend(unsupported_rule_diagnostics(self.profile, component="validator"))
         self._validate_margins(doc)
 
         for index, paragraph in enumerate(doc.paragraphs, start=1):
@@ -364,8 +365,12 @@ def diagnostic_to_json(diagnostic: Diagnostic) -> dict[str, object]:
     }
     if diagnostic.rule_id:
         payload["ruleId"] = diagnostic.rule_id
-        rule = get_rule(diagnostic.rule_id)
-        payload["source"] = f"{rule.source_doc}#{_slug(rule.source_section)}"
+        try:
+            rule = get_rule(diagnostic.rule_id)
+        except KeyError:
+            rule = None
+        if rule is not None:
+            payload["source"] = f"{rule.source_doc}#{_slug(rule.source_section)}"
     if diagnostic.suggestion:
         payload["suggestion"] = diagnostic.suggestion
     return payload

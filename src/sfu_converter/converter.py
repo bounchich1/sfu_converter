@@ -7,9 +7,9 @@ from sfu_converter.application.convert import ConvertTextToDocx
 from sfu_converter.config import PathConfig, SIBFUConfig
 from sfu_converter.domain.ast_nodes import Document as AstDocument
 from sfu_converter.domain.diagnostics import Severity
-from sfu_converter.domain.formatting import FormattingProfile
 from sfu_converter.infrastructure.docx_renderer import DocxRenderer
 from sfu_converter.parser import V1Parser, get_parser
+from sfu_converter.registry import get_profile
 
 
 class TextToDocxConverter:
@@ -19,6 +19,7 @@ class TextToDocxConverter:
         self.config = config_class
         self.base_dir = Path(base_dir) if base_dir else Path.cwd()
         self.logger = logging.getLogger(__name__)
+        self.diagnostics = []
         self._renderer = DocxRenderer(
             config_class=self.config,
             base_dir=self.base_dir,
@@ -99,10 +100,12 @@ class TextToDocxConverter:
         insert_at_bookmark: str | None = None,
         syntax_version: int = 1,
         strict: bool = False,
+        profile=None,
     ):
         """Convert a TXT file by explicit input and output paths."""
         input_file = Path(input_file)
         output_file = Path(output_file)
+        profile = profile or get_profile("common")
 
         self.logger.info(f"Начало конвертации: {input_file}")
         source = input_file.read_text(encoding="utf-8")
@@ -121,12 +124,13 @@ class TextToDocxConverter:
 
         diagnostics = use_case.execute(
             source=source,
-            profile=self._default_profile(),
+            profile=profile,
             output_path=str(output_file),
             template_path=renderer_template,
             template_mode=template_mode,
             filename=str(input_file),
         )
+        self.diagnostics = diagnostics
         self._log_parser_diagnostics(diagnostics)
 
         if composing_into_template:
@@ -164,8 +168,4 @@ class TextToDocxConverter:
         return self.convert_file(input_file, output_file, template)
 
     def _default_profile(self):
-        return FormattingProfile(
-            name="common",
-            display_name="Common",
-            source_docs=("SIBFUConfig",),
-        )
+        return get_profile("common")

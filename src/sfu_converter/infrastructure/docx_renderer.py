@@ -34,7 +34,7 @@ from sfu_converter.domain.ast_nodes import (
     TitlePageNode,
 )
 from sfu_converter.domain.diagnostics import Diagnostic
-from sfu_converter.domain.formatting import FormattingProfile
+from sfu_converter.domain.formatting import FormattingProfile, unsupported_rule_diagnostics
 from sfu_converter.ports.renderer import RendererPort
 from sfu_converter.utils_image_insert import insert_image
 
@@ -127,12 +127,13 @@ class DocxRenderer(RendererPort):
         template_path: str | None = None,
         template_mode: str = "append",
     ) -> list[Diagnostic]:
+        diagnostics = unsupported_rule_diagnostics(profile, component="renderer")
         self._initialize_document(template_path, template_mode=template_mode)
         self._render_from_ast(document)
         destination = Path(output_path)
         destination.parent.mkdir(parents=True, exist_ok=True)
         self.doc.save(str(destination))
-        return []
+        return diagnostics
 
     def _set_run_style(self, run, bold=False, italic=False):
         run.font.name = self.config.FONT_NAME

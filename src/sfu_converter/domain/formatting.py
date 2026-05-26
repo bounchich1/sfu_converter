@@ -6,6 +6,8 @@ from enum import Enum
 from types import MappingProxyType
 from typing import Any
 
+from sfu_converter.domain.diagnostics import Diagnostic, DiagnosticCodes, Severity
+
 
 class RuleSeverity(Enum):
     REQUIRED = "required"
@@ -49,3 +51,24 @@ class FormattingProfile:
     def __post_init__(self) -> None:
         object.__setattr__(self, "source_docs", tuple(self.source_docs))
         object.__setattr__(self, "rules", tuple(self.rules))
+
+
+def unsupported_rule_diagnostics(profile: FormattingProfile, *, component: str) -> list[Diagnostic]:
+    """Return warnings for profile rules not supported by a pipeline component."""
+
+    if component not in {"renderer", "validator"}:
+        raise ValueError(f"Unsupported rule support component: {component!r}")
+
+    status_attr = f"{component}_status"
+    diagnostics: list[Diagnostic] = []
+    for rule in profile.rules:
+        if getattr(rule, status_attr) is RuleStatus.NOT_SUPPORTED:
+            diagnostics.append(
+                Diagnostic(
+                    code=DiagnosticCodes.FORMAT_RULE_NOT_SUPPORTED,
+                    message=f"Rule {rule.id} is not supported by the {component}",
+                    severity=Severity.WARNING,
+                    rule_id=rule.id,
+                )
+            )
+    return diagnostics

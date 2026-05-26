@@ -1,7 +1,7 @@
 from sfu_converter.application.convert import ConvertTextToDocx
 from sfu_converter.domain.ast_nodes import Document, ParagraphNode, TextRun
-from sfu_converter.domain.diagnostics import Diagnostic, Severity
-from sfu_converter.domain.formatting import FormattingProfile
+from sfu_converter.domain.diagnostics import Diagnostic, DiagnosticCodes, Severity
+from sfu_converter.domain.formatting import FormattingProfile, FormattingRule, RuleSeverity, RuleStatus
 from sfu_converter.parser.base import ParserResult
 
 
@@ -59,3 +59,44 @@ def test_convert_text_to_docx_parses_source_and_renders_document():
     assert parser.calls == [("source text", "input.txt")]
     assert renderer.calls == [(document, profile, "out.docx", "template.docx", "append")]
     assert diagnostics == [parse_diagnostic, render_diagnostic]
+
+
+def test_convert_text_to_docx_preserves_profile_object_for_renderer():
+    document = Document(blocks=(ParagraphNode(runs=(TextRun("Body"),)),))
+    parser = FakeParser(ParserResult(document, []))
+    renderer = FakeRenderer()
+    profile = FormattingProfile(
+        name="research_reports",
+        display_name="Research Reports",
+        source_docs=("standard",),
+    )
+
+    ConvertTextToDocx(parser, renderer).execute("source text", profile, "out.docx")
+
+    assert renderer.calls[0][1] is profile
+
+
+def test_convert_text_to_docx_reports_unsupported_renderer_rules():
+    document = Document(blocks=(ParagraphNode(runs=(TextRun("Body"),)),))
+    parser = FakeParser(ParserResult(document, []))
+    renderer = FakeRenderer()
+    unsupported_rule = FormattingRule(
+        id="synthetic.renderer.rule",
+        source_doc="docs/formatting requirements/common.md",
+        source_section="Synthetic",
+        severity=RuleSeverity.REQUIRED,
+        renderer_status=RuleStatus.NOT_SUPPORTED,
+        validator_status=RuleStatus.IMPLEMENTED,
+    )
+    profile = FormattingProfile(
+        name="synthetic",
+        display_name="Synthetic",
+        source_docs=("standard",),
+        rules=(unsupported_rule,),
+    )
+
+    diagnostics = ConvertTextToDocx(parser, renderer).execute("source text", profile, "out.docx")
+
+    assert diagnostics[0].code == DiagnosticCodes.FORMAT_RULE_NOT_SUPPORTED
+    assert diagnostics[0].severity is Severity.WARNING
+    assert diagnostics[0].rule_id == "synthetic.renderer.rule"

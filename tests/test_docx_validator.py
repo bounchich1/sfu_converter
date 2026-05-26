@@ -57,6 +57,27 @@ def test_docx_validator_returns_structured_margin_diagnostic_with_rule_id(tmp_pa
     assert payload["source"].startswith("docs/formatting requirements/common.md#")
 
 
+def test_docx_validator_reports_common_unsupported_validator_rules(tmp_path):
+    doc = Document()
+    _body_paragraph(doc)
+    path = _save_doc(tmp_path, doc)
+
+    diagnostics = DocxValidator(get_profile("common")).validate_file(str(path))
+    unsupported = [
+        diagnostic
+        for diagnostic in diagnostics
+        if diagnostic.code == DiagnosticCodes.FORMAT_RULE_NOT_SUPPORTED
+    ]
+
+    assert len(unsupported) == 18
+    assert all(diagnostic.severity is Severity.WARNING for diagnostic in unsupported)
+    assert all("not supported by the validator" in diagnostic.message for diagnostic in unsupported)
+
+    payload = diagnostic_to_json(unsupported[0])
+    assert payload["ruleId"] == unsupported[0].rule_id
+    assert payload["source"].startswith("docs/formatting requirements/common.md#")
+
+
 def test_docx_validator_checks_line_spacing_regression(tmp_path):
     doc = Document()
     paragraph = _body_paragraph(doc)

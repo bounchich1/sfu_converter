@@ -7,6 +7,7 @@ from docx.shared import Cm
 
 from sfu_converter.config import SIBFUConfig
 from sfu_converter.domain.diagnostics import Severity
+from sfu_converter.domain.formatting import FormattingProfile
 from sfu_converter.infrastructure.docx_validator import (
     DocxValidator,
     diagnostic_to_json,
@@ -17,13 +18,20 @@ from sfu_converter.registry import get_profile
 class StyleValidator:
     """Backward-compatible facade over the registry-backed DOCX validator."""
 
-    def __init__(self, config_class=SIBFUConfig):
+    def __init__(
+        self,
+        config_class=SIBFUConfig,
+        profile: FormattingProfile | str | None = None,
+        *,
+        profile_name: str | None = None,
+    ):
         self.config = config_class
         self.errors: list[str] = []
         self.warnings: list[str] = []
         self.diagnostics = []
         self.logger = logging.getLogger(__name__)
-        self._validator = DocxValidator(get_profile("common"), config_class=config_class)
+        selected_profile = _resolve_profile(profile, profile_name)
+        self._validator = DocxValidator(selected_profile, config_class=config_class)
 
     def _get_pt_value(self, value):
         """Конвертирует значение в пункты (pt)."""
@@ -123,3 +131,13 @@ class StyleValidator:
             "warning_list": self.warnings,
             "diagnostics": [diagnostic_to_json(diagnostic) for diagnostic in self.diagnostics],
         }
+
+
+def _resolve_profile(
+    profile: FormattingProfile | str | None,
+    profile_name: str | None,
+) -> FormattingProfile:
+    selected = profile if profile is not None else profile_name
+    if isinstance(selected, FormattingProfile):
+        return selected
+    return get_profile(selected or "common")

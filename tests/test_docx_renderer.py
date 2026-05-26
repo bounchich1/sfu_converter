@@ -31,7 +31,8 @@ from sfu_converter.domain.ast_nodes import (
     TextRun,
     TitlePageNode,
 )
-from sfu_converter.domain.formatting import FormattingProfile
+from sfu_converter.domain.diagnostics import DiagnosticCodes
+from sfu_converter.domain.formatting import FormattingProfile, FormattingRule, RuleSeverity, RuleStatus
 import sfu_converter.infrastructure.docx_renderer as renderer_module
 from sfu_converter.infrastructure.docx_renderer import DocxRenderer, SectionNumberer
 from sfu_converter.infrastructure.docx_renderer import _normalize_list_item_punctuation
@@ -78,6 +79,37 @@ def test_docx_renderer_renders_ast_to_file(tmp_path):
     assert doc.paragraphs[0].paragraph_format.alignment == WD_ALIGN_PARAGRAPH.CENTER
     assert len(doc.tables) == 1
     assert doc.tables[0].rows[1].cells[1].text == "2"
+
+
+def test_docx_renderer_reports_unsupported_renderer_rules(tmp_path):
+    unsupported_rule = FormattingRule(
+        id="synthetic.renderer.rule",
+        source_doc="docs/formatting requirements/common.md",
+        source_section="Synthetic",
+        severity=RuleSeverity.REQUIRED,
+        renderer_status=RuleStatus.NOT_SUPPORTED,
+        validator_status=RuleStatus.IMPLEMENTED,
+    )
+    profile = FormattingProfile(
+        name="synthetic",
+        display_name="Synthetic",
+        source_docs=("standard",),
+        rules=(unsupported_rule,),
+    )
+    renderer = DocxRenderer(config_class=SIBFUConfig, base_dir=tmp_path)
+    output_path = tmp_path / "rendered.docx"
+
+    diagnostics = renderer.render_to_file(
+        Document(blocks=(ParagraphNode(runs=(TextRun("Body"),)),)),
+        profile,
+        str(output_path),
+    )
+
+    assert output_path.exists()
+    assert [diagnostic.code for diagnostic in diagnostics] == [
+        DiagnosticCodes.FORMAT_RULE_NOT_SUPPORTED
+    ]
+    assert diagnostics[0].rule_id == "synthetic.renderer.rule"
 
 
 def test_section_numberer_tracks_hierarchical_numbers():

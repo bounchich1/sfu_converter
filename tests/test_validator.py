@@ -4,6 +4,7 @@ from docx.shared import Pt, Cm
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 
 from sfu_converter.domain.diagnostics import DiagnosticCodes
+from sfu_converter.registry import get_profile
 from sfu_converter.validator import StyleValidator
 
 
@@ -79,6 +80,14 @@ class TestStyleValidator:
         """Тест: Инициализация валидатора"""
         assert validator.errors == []
         assert validator.warnings == []
+
+    def test_validator_accepts_profile_name_and_profile_object(self):
+        """Тест: Инициализация валидатора с профилем"""
+        by_name = StyleValidator(profile_name="coursework")
+        by_object = StyleValidator(profile=get_profile("research_reports"))
+
+        assert by_name._validator.profile.name == "coursework"
+        assert by_object._validator.profile.name == "research_reports"
     
     def test_get_pt_value_with_emu(self, validator):
         """Тест: Конвертация EMU в пункты"""

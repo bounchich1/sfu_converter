@@ -3,6 +3,7 @@ import json
 from docx import Document
 
 from sfu_converter import cli
+from sfu_converter.registry import PROFILES
 
 
 def test_create_parser_parses_convert_command(tmp_path):
@@ -64,6 +65,47 @@ def test_convert_command_writes_docx_and_json_result(tmp_path, capsys):
         "1 Report title",
         "Body text",
     ]
+
+
+def test_convert_command_passes_selected_profile_to_converter(tmp_path, capsys, monkeypatch):
+    input_file = tmp_path / "report.txt"
+    input_file.write_text("Body text", encoding="utf-8")
+    calls = []
+
+    def fake_convert_file(self, input_path, output_path, **kwargs):
+        calls.append(kwargs["profile"].name)
+        self.diagnostics = []
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_bytes(b"fake")
+        return str(output_path)
+
+    monkeypatch.setattr(
+        "sfu_converter.converter.TextToDocxConverter.convert_file",
+        fake_convert_file,
+    )
+
+    exit_code = cli.main(
+        [
+            "--format",
+            "json",
+            "--workdir",
+            str(tmp_path),
+            "convert",
+            "--input",
+            "report.txt",
+            "--output",
+            "out/report.docx",
+            "--profile",
+            "research_reports",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+
+    assert exit_code == cli.ExitCodes.SUCCESS
+    assert calls == ["research_reports"]
+    assert payload["profile"] == "research_reports"
 
 
 def test_convert_command_uses_v2_parser_when_requested(tmp_path, capsys):
@@ -194,7 +236,74 @@ def test_validate_docx_command_reports_valid_document(tmp_path, capsys):
     assert exit_code == cli.ExitCodes.SUCCESS
     assert payload["ok"] is True
     assert payload["command"] == "validate-docx"
-    assert payload["diagnostics"] == []
+    assert all(diagnostic["severity"] == "warning" for diagnostic in payload["diagnostics"])
+
+
+def test_validate_docx_command_uses_selected_profile(tmp_path, capsys, monkeypatch):
+    input_file = tmp_path / "report.docx"
+    input_file.write_bytes(b"placeholder")
+    calls = []
+
+    class FakeStyleValidator:
+        def __init__(self, config_class, *, profile=None, profile_name=None):
+            calls.append(profile.name if profile is not None else profile_name)
+
+        def validate_file(self, file_path):
+            return True
+
+        def get_report(self):
+            return {"diagnostics": []}
+
+    monkeypatch.setattr("sfu_converter.validator.StyleValidator", FakeStyleValidator)
+
+    exit_code = cli.main(
+        [
+            "--format",
+            "json",
+            "--workdir",
+            str(tmp_path),
+            "validate-docx",
+            "--input",
+            "report.docx",
+            "--profile",
+            "coursework",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+
+    assert exit_code == cli.ExitCodes.SUCCESS
+    assert calls == ["coursework"]
+    assert payload["inputs"]["profile"] == "coursework"
+
+
+def test_unknown_profile_returns_missing_profile_diagnostic(tmp_path, capsys):
+    input_file = tmp_path / "report.txt"
+    input_file.write_text("Body text", encoding="utf-8")
+
+    exit_code = cli.main(
+        [
+            "--format",
+            "json",
+            "--workdir",
+            str(tmp_path),
+            "convert",
+            "--input",
+            "report.txt",
+            "--output",
+            "out/report.docx",
+            "--profile",
+            "missing_profile",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+
+    assert exit_code == cli.ExitCodes.MISSING_RESOURCE
+    assert payload["ok"] is False
+    assert payload["diagnostics"][0]["code"] == "MISSING_PROFILE"
 
 
 def test_validate_docx_command_missing_input_returns_missing_resource(tmp_path, capsys):
@@ -231,14 +340,115 @@ def test_interactive_command_launches_legacy_menu(monkeypatch):
     assert calls == ["called"]
 
 
-def test_stub_commands_return_internal_error(capsys):
-    for command_args in (
-        ["parse", "--input", "input.txt"],
-        ["lint", "--input", "input.txt"],
-        ["list-profiles"],
-        ["export-schema", "--schema", "ast"],
-    ):
-        assert cli.main(command_args) == cli.ExitCodes.INTERNAL_ERROR
+def test_parse_command_outputs_json_ast(tmp_path, capsys):
+    input_file = tmp_path / "report.txt"
+    input_file.write_text("[H1] Title\n\nBody text", encoding="utf-8")
+
+    exit_code = cli.main(
+        [
+            "--format",
+            "json",
+            "--workdir",
+            str(tmp_path),
+            "parse",
+            "--input",
+            "report.txt",
+        ]
+    )
 
     captured = capsys.readouterr()
-    assert captured.err.count("Not yet implemented") == 4
+    payload = json.loads(captured.out)
+
+    assert exit_code == cli.ExitCodes.SUCCESS
+    assert payload["ok"] is True
+    assert payload["command"] == "parse"
+    assert payload["syntaxVersion"] == 1
+    assert payload["ast"]["type"] == "document"
+    assert payload["ast"]["blocks"][0]["type"] == "heading"
+    assert payload["diagnostics"] == []
+
+
+def test_lint_reports_malformed_markers_without_writing_docx(tmp_path, capsys):
+    input_file = tmp_path / "broken.txt"
+    input_file.write_text("[TABLE_START]\n| A |\n", encoding="utf-8")
+
+    exit_code = cli.main(
+        [
+            "--format",
+            "json",
+            "--workdir",
+            str(tmp_path),
+            "lint",
+            "--input",
+            "broken.txt",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+
+    assert exit_code == cli.ExitCodes.VALIDATION_ERROR
+    assert payload["ok"] is False
+    assert any(diagnostic["code"] == "TXT_MISSING_BLOCK_END" for diagnostic in payload["diagnostics"])
+    assert not list(tmp_path.glob("*.docx"))
+
+
+def test_lint_strict_returns_warning_exit_for_unsupported_rules(tmp_path, capsys):
+    input_file = tmp_path / "report.txt"
+    input_file.write_text("Body text", encoding="utf-8")
+
+    exit_code = cli.main(
+        [
+            "--format",
+            "json",
+            "--workdir",
+            str(tmp_path),
+            "lint",
+            "--input",
+            "report.txt",
+            "--strict",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+
+    assert exit_code == cli.ExitCodes.WARNINGS_STRICT
+    assert payload["ok"] is False
+    assert any(
+        diagnostic["code"] == "FORMAT_RULE_NOT_SUPPORTED"
+        for diagnostic in payload["diagnostics"]
+    )
+
+
+def test_list_profiles_outputs_registered_profile_keys(capsys):
+    exit_code = cli.main(["--format", "json", "list-profiles"])
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+
+    assert exit_code == cli.ExitCodes.SUCCESS
+    assert set(payload["profiles"]) == set(PROFILES)
+    common = payload["profiles"]["common"]
+    assert common["ruleCount"] > 0
+    assert "renderer" in common["unsupportedRuleIds"]
+    assert "validator" in common["unsupportedRuleIds"]
+
+
+def test_export_schema_diagnostics_contains_required_fields(capsys):
+    exit_code = cli.main(
+        [
+            "--format",
+            "json",
+            "export-schema",
+            "--schema",
+            "diagnostics",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+
+    assert exit_code == cli.ExitCodes.SUCCESS
+    required = set(payload["schema"]["required"])
+    assert {"code", "severity", "message", "ruleId", "source"} <= required
