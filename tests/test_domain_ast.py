@@ -209,3 +209,19 @@ def test_formatting_rule_profile_and_value_objects_are_immutable():
     assert length.unit == "cm"
     with pytest.raises(FrozenInstanceError):
         spacing.line = 1.0
+
+
+def test_mapping_proxy_inputs_are_preserved():
+    metadata = MappingProxyType({"title": "Report"})
+    document = Document(blocks=(), metadata=metadata)
+    assert document.metadata is metadata
+
+    parameters = MappingProxyType({"left": 3})
+    rule = FormattingRule(
+        id="rule",
+        source_doc="doc",
+        source_section="section",
+        severity=RuleSeverity.REQUIRED,
+        parameters=parameters,
+    )
+    assert rule.parameters is parameters

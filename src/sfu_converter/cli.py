@@ -7,6 +7,7 @@ import time
 from pathlib import Path
 
 from sfu_converter.config import PathConfig, SIBFUConfig
+from sfu_converter.parser.syntax_spec import get_syntax_spec
 
 
 class ExitCodes:
@@ -135,7 +136,7 @@ def main(argv: list[str] | None = None) -> int:
         "parse": cmd_not_implemented,
         "lint": cmd_not_implemented,
         "list-profiles": cmd_not_implemented,
-        "explain-syntax": cmd_not_implemented,
+        "explain-syntax": cmd_explain_syntax,
         "export-schema": cmd_not_implemented,
     }
     handler = handlers.get(args.command)
@@ -261,6 +262,29 @@ def cmd_interactive(args) -> int:
     return ExitCodes.SUCCESS
 
 
+def cmd_explain_syntax(args) -> int:
+    spec = get_syntax_spec(args.syntax_version)
+    if args.format == "json":
+        print(
+            json.dumps(
+                make_json_result(
+                    "explain-syntax",
+                    True,
+                    syntaxVersion=spec["syntaxVersion"],
+                    blocks=spec["blocks"],
+                ),
+                ensure_ascii=False,
+            )
+        )
+    elif not args.quiet:
+        print(f"Syntax version {spec['syntaxVersion']}")
+        for block in spec["blocks"]:
+            print(f"{block['name']}: {block['description']}")
+            print(f"  Marker: {block['marker']}")
+            print(f"  Example: {block['example']}")
+    return ExitCodes.SUCCESS
+
+
 def cmd_not_implemented(args) -> int:
     print("Not yet implemented", file=sys.stderr)
     return ExitCodes.INTERNAL_ERROR
@@ -304,9 +328,7 @@ def _emit_write_failure(args, command: str, message: str) -> None:
                 make_json_result(
                     command,
                     False,
-                    diagnostics=[
-                        {"code": "WRITE_FAILURE", "message": message, "severity": "error"}
-                    ],
+                    diagnostics=[{"code": "WRITE_FAILURE", "message": message, "severity": "error"}],
                 ),
                 ensure_ascii=False,
             )
@@ -321,12 +343,10 @@ def _validation_diagnostics(report):
 
     diagnostics = []
     diagnostics.extend(
-        {"code": "VALIDATION_ERROR", "message": message, "severity": "error"}
-        for message in report["error_list"]
+        {"code": "VALIDATION_ERROR", "message": message, "severity": "error"} for message in report["error_list"]
     )
     diagnostics.extend(
-        {"code": "VALIDATION_WARNING", "message": message, "severity": "warning"}
-        for message in report["warning_list"]
+        {"code": "VALIDATION_WARNING", "message": message, "severity": "warning"} for message in report["warning_list"]
     )
     return diagnostics
 

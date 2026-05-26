@@ -24,7 +24,6 @@ from sfu_converter.ports.template import (
     TemplatePort,
 )
 
-
 _TEMPLATE_BOOKMARK_NOT_FOUND = "TEMPLATE_BOOKMARK_NOT_FOUND"
 _TEMPLATE_PAGE_NOT_FOUND = "TEMPLATE_PAGE_NOT_FOUND"
 _TEMPLATE_LOAD_FAILED = "TEMPLATE_LOAD_FAILED"
@@ -59,8 +58,7 @@ class DocxTemplateAdapter(TemplatePort):
                     diagnostic=Diagnostic(
                         code=_TEMPLATE_PAGE_NOT_FOUND,
                         message=(
-                            "Template mode 'preserve-prefix' requires "
-                            "--insert-after-page or --insert-at-bookmark"
+                            "Template mode 'preserve-prefix' requires --insert-after-page or --insert-at-bookmark"
                         ),
                         severity=Severity.ERROR,
                     ),
@@ -85,21 +83,21 @@ class DocxTemplateAdapter(TemplatePort):
         template_doc = template.doc
         body = template_doc.element.body
 
-        sectPr = self._extract_sectPr(body)
+        sect_pr = self._extract_sect_pr(body)
         anchor = insertion_point.element
 
         if insertion_point.truncate:
             if anchor is None:
-                self._truncate_body(body, sectPr)
+                self._truncate_body(body, sect_pr)
             else:
-                self._truncate_after(body, anchor, sectPr)
+                self._truncate_after(body, anchor, sect_pr)
 
         page_break = self._make_page_break_paragraph(template_doc)
         if page_break is not None:
-            self._append_before_sectPr(body, page_break, sectPr)
+            self._append_before_sect_pr(body, page_break, sect_pr)
 
         for element in self._iter_body_blocks(generated_doc.element.body):
-            self._append_before_sectPr(body, deepcopy(element), sectPr)
+            self._append_before_sect_pr(body, deepcopy(element), sect_pr)
 
         buffer = BytesIO()
         template_doc.save(buffer)
@@ -169,44 +167,41 @@ class DocxTemplateAdapter(TemplatePort):
             found=False,
             diagnostic=Diagnostic(
                 code=_TEMPLATE_PAGE_NOT_FOUND,
-                message=(
-                    f"Template has only {breaks_seen} explicit page break(s); "
-                    f"cannot insert after page {page}"
-                ),
+                message=(f"Template has only {breaks_seen} explicit page break(s); cannot insert after page {page}"),
                 severity=Severity.ERROR,
             ),
         )
 
-    def _extract_sectPr(self, body):
-        sectPr = body.find(qn("w:sectPr"))
-        return sectPr
+    def _extract_sect_pr(self, body):
+        sect_pr = body.find(qn("w:sectPr"))
+        return sect_pr
 
     def _iter_body_blocks(self, body):
-        sectPr_tag = qn("w:sectPr")
+        sect_pr_tag = qn("w:sectPr")
         for child in list(body):
-            if child.tag == sectPr_tag:
+            if child.tag == sect_pr_tag:
                 continue
             yield child
 
-    def _truncate_body(self, body, sectPr):
+    def _truncate_body(self, body, sect_pr):
         for child in list(body):
-            if child is sectPr:
+            if child is sect_pr:
                 continue
             body.remove(child)
 
-    def _truncate_after(self, body, anchor, sectPr):
+    def _truncate_after(self, body, anchor, sect_pr):
         seen_anchor = False
         for child in list(body):
-            if child is sectPr:
+            if child is sect_pr:
                 continue
             if seen_anchor:
                 body.remove(child)
             elif child is anchor:
                 seen_anchor = True
 
-    def _append_before_sectPr(self, body, element, sectPr):
-        if sectPr is not None:
-            sectPr.addprevious(element)
+    def _append_before_sect_pr(self, body, element, sect_pr):
+        if sect_pr is not None:
+            sect_pr.addprevious(element)
         else:
             body.append(element)
 

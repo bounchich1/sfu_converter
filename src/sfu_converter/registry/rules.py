@@ -285,9 +285,7 @@ COMMON_RULES: tuple[FormattingRule, ...] = (
         },
         renderer_status=RuleStatus.IMPLEMENTED,
         validator_status=RuleStatus.NOT_SUPPORTED,
-        description=(
-            "Formula paragraph: centered, with auto-number right-aligned in parentheses"
-        ),
+        description=("Formula paragraph: centered, with auto-number right-aligned in parentheses"),
     ),
     FormattingRule(
         id="common.formula.explanation",
@@ -430,9 +428,7 @@ COMMON_RULES: tuple[FormattingRule, ...] = (
         },
         renderer_status=RuleStatus.IMPLEMENTED,
         validator_status=RuleStatus.NOT_SUPPORTED,
-        description=(
-            "Table body: 12pt font, single spacing, bold header repeated on continuation pages"
-        ),
+        description=("Table body: 12pt font, single spacing, bold header repeated on continuation pages"),
     ),
 )
 

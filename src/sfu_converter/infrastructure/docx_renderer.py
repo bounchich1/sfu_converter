@@ -22,7 +22,6 @@ from sfu_converter.domain.ast_nodes import (
     HeadingNode,
     ListNode,
     ListType,
-    MetadataNode,
     PageBreakNode,
     ParagraphNode,
     RawBlockNode,
@@ -392,28 +391,18 @@ class DocxRenderer(RendererPort):
                     cell.text = text
                     for para in cell.paragraphs:
                         pf = para.paragraph_format
-                        pf.alignment = (
-                            WD_ALIGN_PARAGRAPH.CENTER
-                            if is_header
-                            else WD_ALIGN_PARAGRAPH.LEFT
-                        )
+                        pf.alignment = WD_ALIGN_PARAGRAPH.CENTER if is_header else WD_ALIGN_PARAGRAPH.LEFT
                         pf.space_before = table_cfg["cell_padding"]
                         pf.space_after = table_cfg["cell_padding"]
                         pf.first_line_indent = Cm(0)
                         pf.line_spacing = table_cfg["line_spacing"]
 
-                        if not para.runs:
-                            para.add_run()
                         for run in para.runs:
                             self._set_run_style(
                                 run,
                                 bold=is_header and table_cfg["header_bold"],
                             )
-                            run.font.size = (
-                                table_cfg["header_font_size"]
-                                if is_header
-                                else table_cfg["font_size"]
-                            )
+                            run.font.size = table_cfg["header_font_size"] if is_header else table_cfg["font_size"]
 
         if table_cfg["header_repeat_on_pages"]:
             self._set_repeat_header_row(table.rows[0])
@@ -487,11 +476,7 @@ class DocxRenderer(RendererPort):
 
             first_footer = section.first_page_footer
             first_footer.is_linked_to_previous = False
-            first_paragraph = (
-                first_footer.paragraphs[0]
-                if first_footer.paragraphs
-                else first_footer.add_paragraph()
-            )
+            first_paragraph = first_footer.paragraphs[0] if first_footer.paragraphs else first_footer.add_paragraph()
             first_paragraph.clear()
 
     def _load_template(self, template_path):
@@ -554,8 +539,6 @@ class DocxRenderer(RendererPort):
                 self._render_text_block(f"[{block.target}]")
             elif isinstance(block, TitlePageNode):
                 self._render_title_page(document.metadata, block.profile)
-            elif isinstance(block, MetadataNode):
-                continue
 
     def _render_heading(self, block):
         if block.level is HeadingLevel.H1 and self._rendered_body_blocks:
@@ -584,19 +567,13 @@ class DocxRenderer(RendererPort):
 
     def _render_structural_section(self, block):
         if block.section_type is StructuralSectionType.CONTENTS:
-            self._render_table_of_contents(
-                TableOfContentsNode(title=block.title, source=block.source)
-            )
+            self._render_table_of_contents(TableOfContentsNode(title=block.title, source=block.source))
             return
 
         if self.config.STRUCTURAL_SECTION["page_break_before"]:
             self.doc.add_page_break()
 
-        title = (
-            block.title.upper()
-            if self.config.STRUCTURAL_SECTION["uppercase"]
-            else block.title
-        )
+        title = block.title.upper() if self.config.STRUCTURAL_SECTION["uppercase"] else block.title
         p = self.doc.add_paragraph()
         run = p.add_run(title)
         self._set_paragraph_format(p, "structural_section")
@@ -799,7 +776,7 @@ class DocxRenderer(RendererPort):
         for text_run in block.runs:
             para.add_run(text_run.text)
         self._set_paragraph_format(para, "normal")
-        for docx_run, text_run in zip(para.runs, block.runs):
+        for docx_run, text_run in zip(para.runs, block.runs, strict=False):
             self._set_run_style(
                 docx_run,
                 bold=text_run.bold,

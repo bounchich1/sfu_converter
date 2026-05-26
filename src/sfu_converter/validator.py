@@ -3,7 +3,6 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Cm
 
 from sfu_converter.config import SIBFUConfig
@@ -42,17 +41,11 @@ class StyleValidator:
         """Проверяет шрифт и размер текста."""
         issues = []
         if run.font.name and run.font.name != self.config.FONT_NAME:
-            issues.append(
-                f"Абзац {para_index}: Шрифт '{run.font.name}' "
-                f"вместо '{self.config.FONT_NAME}'"
-            )
+            issues.append(f"Абзац {para_index}: Шрифт '{run.font.name}' вместо '{self.config.FONT_NAME}'")
 
         current_size = self._get_pt_value(run.font.size)
         if current_size > 0 and abs(current_size - self.config.FONT_SIZE.pt) > 0.5:
-            issues.append(
-                f"Абзац {para_index}: Размер {current_size}pt "
-                f"вместо {self.config.FONT_SIZE.pt}pt"
-            )
+            issues.append(f"Абзац {para_index}: Размер {current_size}pt вместо {self.config.FONT_SIZE.pt}pt")
 
         return issues
 
@@ -62,16 +55,10 @@ class StyleValidator:
         pf = para.paragraph_format
 
         if pf.space_before and pf.space_before.pt > 1:
-            issues.append(
-                f"Абзац {para_index}: Интервал перед {pf.space_before.pt:.1f}pt "
-                "(должен быть 0)"
-            )
+            issues.append(f"Абзац {para_index}: Интервал перед {pf.space_before.pt:.1f}pt (должен быть 0)")
 
         if pf.space_after and pf.space_after.pt > 1:
-            issues.append(
-                f"Абзац {para_index}: Интервал после {pf.space_after.pt:.1f}pt "
-                "(должен быть 0)"
-            )
+            issues.append(f"Абзац {para_index}: Интервал после {pf.space_after.pt:.1f}pt (должен быть 0)")
 
         return issues
 
@@ -83,18 +70,12 @@ class StyleValidator:
 
         if self._is_header_paragraph(para):
             if current_indent > 5:
-                issues.append(
-                    f"Абзац {para_index}: Заголовок имеет отступ "
-                    f"{current_indent:.1f}pt (должен быть 0)"
-                )
+                issues.append(f"Абзац {para_index}: Заголовок имеет отступ {current_indent:.1f}pt (должен быть 0)")
             return issues
 
         expected_indent_pt = Cm(1.25).pt
         if abs(current_indent - expected_indent_pt) > 5:
-            issues.append(
-                f"Абзац {para_index}: Отступ {current_indent:.1f}pt "
-                f"вместо {expected_indent_pt:.1f}pt"
-            )
+            issues.append(f"Абзац {para_index}: Отступ {current_indent:.1f}pt вместо {expected_indent_pt:.1f}pt")
 
         return issues
 
@@ -106,10 +87,7 @@ class StyleValidator:
         if pf.line_spacing:
             spacing = self._get_pt_value(pf.line_spacing)
             if spacing < 10 and abs(spacing - expected_spacing) > 0.1:
-                issues.append(
-                    f"Абзац {para_index}: Интервал {spacing} "
-                    f"вместо {expected_spacing}"
-                )
+                issues.append(f"Абзац {para_index}: Интервал {spacing} вместо {expected_spacing}")
 
         return issues
 
@@ -123,15 +101,9 @@ class StyleValidator:
         diagnostics = self._validator.validate_file(str(Path(file_path)))
         self.diagnostics = diagnostics
         self.errors = [
-            diagnostic.message
-            for diagnostic in diagnostics
-            if diagnostic.severity in (Severity.ERROR, Severity.FATAL)
+            diagnostic.message for diagnostic in diagnostics if diagnostic.severity in (Severity.ERROR, Severity.FATAL)
         ]
-        self.warnings = [
-            diagnostic.message
-            for diagnostic in diagnostics
-            if diagnostic.severity is Severity.WARNING
-        ]
+        self.warnings = [diagnostic.message for diagnostic in diagnostics if diagnostic.severity is Severity.WARNING]
 
         if self.errors:
             self.logger.warning("Найдено ошибок: %s", len(self.errors))
@@ -149,7 +121,5 @@ class StyleValidator:
             "warnings": len(self.warnings),
             "error_list": self.errors,
             "warning_list": self.warnings,
-            "diagnostics": [
-                diagnostic_to_json(diagnostic) for diagnostic in self.diagnostics
-            ],
+            "diagnostics": [diagnostic_to_json(diagnostic) for diagnostic in self.diagnostics],
         }

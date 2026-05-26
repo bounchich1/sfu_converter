@@ -117,9 +117,7 @@ class TextToDocxConverter:
             or insert_at_bookmark is not None
         )
 
-        renderer_template = None if composing_into_template else (
-            str(template) if template is not None else None
-        )
+        renderer_template = None if composing_into_template else (str(template) if template is not None else None)
 
         diagnostics = use_case.execute(
             source=source,
@@ -147,9 +145,7 @@ class TextToDocxConverter:
             if not insertion.found:
                 if insertion.diagnostic is not None:
                     diagnostics.append(insertion.diagnostic)
-                self.logger.error(
-                    "Template composition aborted: insertion point not found"
-                )
+                self.logger.error("Template composition aborted: insertion point not found")
             else:
                 generated_bytes = output_file.read_bytes()
                 composed = adapter.compose(tmpl, insertion, generated_bytes)

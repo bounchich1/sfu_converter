@@ -23,9 +23,9 @@ from sfu_converter.domain.diagnostics import Diagnostic, DiagnosticCodes, Severi
 from sfu_converter.parser.attributes import parse_attributes
 from sfu_converter.parser.base import BaseParser, ParserResult
 from sfu_converter.parser.v1_parser import (
-    V1Parser,
     _EXPLICIT_LIST_ITEM_RE,
     _LIST_TYPE_ALIASES,
+    V1Parser,
     _parse_inline_formatting,
     _parse_table_row,
     _span_for_line,
@@ -131,9 +131,8 @@ class V2Parser(BaseParser):
                     filename,
                 )
                 diagnostics.extend(formula_diagnostics)
-                if formula is not None:
-                    self._remember_id(formula.id, span, seen_ids, diagnostics)
-                    blocks.append(formula)
+                self._remember_id(formula.id, span, seen_ids, diagnostics)
+                blocks.append(formula)
                 i = end_index
             elif stripped.startswith("[REF"):
                 reference = self._parse_reference(stripped, span, diagnostics)
@@ -280,23 +279,19 @@ class V2Parser(BaseParser):
                 break
             if stripped.startswith("|"):
                 row = _parse_table_row(stripped)
-                if row is not None:
-                    cell_count = len(row.cells)
-                    if expected_cell_count is None:
-                        expected_cell_count = cell_count
-                    elif cell_count != expected_cell_count:
-                        diagnostics.append(
-                            Diagnostic(
-                                code=DiagnosticCodes.TXT_INVALID_TABLE_SHAPE,
-                                message=(
-                                    "Table row has "
-                                    f"{cell_count} cells, expected {expected_cell_count}"
-                                ),
-                                severity=Severity.ERROR,
-                                source=span,
-                            )
+                cell_count = len(row.cells)
+                if expected_cell_count is None:
+                    expected_cell_count = cell_count
+                elif cell_count != expected_cell_count:
+                    diagnostics.append(
+                        Diagnostic(
+                            code=DiagnosticCodes.TXT_INVALID_TABLE_SHAPE,
+                            message=(f"Table row has {cell_count} cells, expected {expected_cell_count}"),
+                            severity=Severity.ERROR,
+                            source=span,
                         )
-                    rows.append(row)
+                    )
+                rows.append(row)
             elif stripped:
                 diagnostics.append(self._unknown_marker(stripped, span))
             i += 1
@@ -574,4 +569,3 @@ class V2Parser(BaseParser):
             severity=Severity.ERROR if self.strict else Severity.WARNING,
             source=span,
         )
-

@@ -12,4 +12,3 @@ def parse_attributes(text: str) -> dict[str, str]:
         match.group(1): match.group(2) if match.group(2) is not None else match.group(3)
         for match in _ATTR_RE.finditer(text)
     }
-

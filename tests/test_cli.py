@@ -236,10 +236,9 @@ def test_stub_commands_return_internal_error(capsys):
         ["parse", "--input", "input.txt"],
         ["lint", "--input", "input.txt"],
         ["list-profiles"],
-        ["explain-syntax"],
         ["export-schema", "--schema", "ast"],
     ):
         assert cli.main(command_args) == cli.ExitCodes.INTERNAL_ERROR
 
     captured = capsys.readouterr()
-    assert captured.err.count("Not yet implemented") == 5
+    assert captured.err.count("Not yet implemented") == 4

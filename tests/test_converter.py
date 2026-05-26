@@ -1,12 +1,16 @@
 import pytest
 import shutil
 import uuid
+from types import SimpleNamespace
 from pathlib import Path
 from docx import Document
 from docx.shared import Pt, Cm
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 
+from sfu_converter.domain.ast_nodes import Document as AstDocument, ParagraphNode, SourceSpan, TextRun
+from sfu_converter.domain.diagnostics import Diagnostic, Severity
 from sfu_converter.converter import TextToDocxConverter
+import sfu_converter.converter as converter_module
 
 
 @pytest.fixture
@@ -200,3 +204,76 @@ class TestTextToDocxConverter:
         assert abs(section.bottom_margin - Cm(2)) < 1000
         assert abs(section.left_margin - Cm(3)) < 1000
         assert abs(section.right_margin - Cm(1)) < 1000
+
+    def test_converter_wrapper_methods_and_line_sources(self, converter, tmp_path, caplog):
+        converter._initialize_document()
+        converter._insert_image(None, "Caption")
+        converter._load_template("missing-template.docx")
+
+        assert converter._lines_to_source("already text") == "already text"
+        assert converter._lines_to_source(["a\n", "b\n"]) == "a\nb\n"
+        assert converter._lines_to_source(["a", "b"]) == "a\nb"
+
+        ast = AstDocument(blocks=(ParagraphNode(runs=(TextRun("From AST"),)),))
+        converter._render_lines(ast)
+        converter._render_lines(["Plain text"])
+        assert any(paragraph.text == "From AST" for paragraph in converter.doc.paragraphs)
+        assert any(paragraph.text == "Plain text" for paragraph in converter.doc.paragraphs)
+
+        converter._log_parser_diagnostics(
+            [
+                Diagnostic(
+                    code="ERR",
+                    message="error",
+                    severity=Severity.ERROR,
+                    source=SourceSpan(1, 1),
+                ),
+                Diagnostic(code="WARN", message="warning", severity=Severity.WARNING),
+            ]
+        )
+        assert "ERR at line 1" in caplog.text
+        assert "WARN at line ?" in caplog.text
+
+        assert converter.convert("input.txt") is None
+
+    def test_converter_template_composition_missing_diagnostic_branch(self, converter, tmp_path, monkeypatch):
+        input_file = tmp_path / "input.txt"
+        input_file.write_text("Body", encoding="utf-8")
+        output_file = tmp_path / "output.docx"
+
+        class UseCase:
+            def __init__(self, *_args, **_kwargs):
+                pass
+
+            def execute(self, *, output_path, **_kwargs):
+                doc = Document()
+                doc.add_paragraph("Generated")
+                doc.save(output_path)
+                return []
+
+        class Adapter:
+            def __init__(self, *_args, **_kwargs):
+                pass
+
+            def load_template(self, _template):
+                return object()
+
+            def find_insertion_point(self, *_args, **_kwargs):
+                return SimpleNamespace(found=False, diagnostic=None)
+
+            def compose(self, *_args, **_kwargs):
+                raise AssertionError("compose should not be called")
+
+        monkeypatch.setattr(converter_module, "ConvertTextToDocx", UseCase)
+        monkeypatch.setattr(
+            "sfu_converter.infrastructure.template_adapter.DocxTemplateAdapter",
+            Adapter,
+        )
+
+        assert converter.convert_file(
+            input_file,
+            output_file,
+            template="template.docx",
+            template_mode="preserve-prefix",
+            insert_after_page=1,
+        ) == str(output_file)

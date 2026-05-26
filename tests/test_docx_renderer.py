@@ -1,6 +1,8 @@
+import pytest
 from docx import Document as DocxDocument
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Cm, Pt, RGBColor
+from PIL import Image
 
 from sfu_converter.config import SIBFUConfig
 from sfu_converter.domain.ast_nodes import (
@@ -8,22 +10,31 @@ from sfu_converter.domain.ast_nodes import (
     BibliographyEntryNode,
     Document,
     FormulaNode,
+    FigureNode,
     HeadingLevel,
     HeadingNode,
     ListItemNode,
     ListNode,
     ListType,
+    MetadataNode,
+    PageBreakNode,
     ParagraphNode,
+    RawBlockNode,
+    ReferenceNode,
     StructuralSectionNode,
     StructuralSectionType,
+    TableCaptionNode,
     TableCell,
     TableNode,
     TableOfContentsNode,
     TableRow,
     TextRun,
+    TitlePageNode,
 )
 from sfu_converter.domain.formatting import FormattingProfile
+import sfu_converter.infrastructure.docx_renderer as renderer_module
 from sfu_converter.infrastructure.docx_renderer import DocxRenderer, SectionNumberer
+from sfu_converter.infrastructure.docx_renderer import _normalize_list_item_punctuation
 from sfu_converter.ports.renderer import RendererPort
 
 
@@ -72,6 +83,8 @@ def test_docx_renderer_renders_ast_to_file(tmp_path):
 def test_section_numberer_tracks_hierarchical_numbers():
     numberer = SectionNumberer()
 
+    assert numberer.next_number(3) == "1.1.1"
+    numberer.reset()
     assert numberer.next_number(1) == "1"
     assert numberer.next_number(2) == "1.1"
     assert numberer.next_number(2) == "1.2"
@@ -82,6 +95,21 @@ def test_section_numberer_tracks_hierarchical_numbers():
     numberer.reset()
 
     assert numberer.next_number(1) == "1"
+
+
+def test_section_numberer_rejects_unsupported_levels():
+    with pytest.raises(ValueError, match="Unsupported heading level"):
+        SectionNumberer().next_number(4)
+
+
+def test_docx_renderer_render_returns_docx_bytes(tmp_path):
+    renderer = DocxRenderer(config_class=SIBFUConfig, base_dir=tmp_path)
+    payload = renderer.render(
+        Document(blocks=(ParagraphNode(runs=(TextRun("Body"),)),)),
+        _common_profile(),
+    )
+
+    assert payload.startswith(b"PK")
 
 
 def test_docx_renderer_renders_auto_numbered_headings_without_trailing_period(tmp_path):
@@ -623,3 +651,207 @@ def test_docx_renderer_attaches_word_heading_style_to_h1_for_toc(tmp_path):
     doc = DocxDocument(str(output_path))
     heading = next(p for p in doc.paragraphs if p.text.startswith("1 "))
     assert "Heading 1" in heading.style.name
+
+
+def test_docx_renderer_covers_image_and_table_edge_paths(tmp_path, monkeypatch, caplog):
+    renderer = DocxRenderer(config_class=SIBFUConfig, base_dir=tmp_path)
+    renderer._initialize_document()
+
+    renderer._set_paragraph_format(renderer.doc.add_paragraph("x"), "unknown")
+    assert "Unknown style_type" in caplog.text
+
+    renderer._style_map["minimal"] = {}
+    renderer._set_paragraph_format(renderer.doc.add_paragraph(), "minimal")
+
+    renderer.doc = None
+    renderer._set_paragraph_format(DocxDocument().add_paragraph("heading"), "h1")
+    renderer._initialize_document()
+
+    renderer._create_table([], caption="ignored")
+    assert renderer._format_table_caption("", 1) is None
+    assert renderer._format_table_caption("   ", 1) is None
+
+    renderer._insert_image(None, None)
+    renderer._insert_image(None, "Caption only")
+    renderer._insert_image("missing.png", "Missing caption")
+
+    monkeypatch.setattr(renderer_module, "insert_image", lambda **_kwargs: True)
+    image_path = tmp_path / "images" / "image.png"
+    image_path.parent.mkdir()
+    Image.new("RGB", (2, 2)).save(str(image_path))
+    renderer._insert_image("image.png", None)
+
+    monkeypatch.setattr(renderer_module, "insert_image", lambda **_kwargs: False)
+    renderer._insert_image("image.png", None)
+
+    def exploding_insert_image(**_kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(renderer_module, "insert_image", exploding_insert_image)
+    renderer._insert_image("image.png", None)
+
+    texts = [paragraph.text for paragraph in renderer.doc.paragraphs]
+    assert "Caption only" in texts
+    assert "[Изображение не найдено: missing.png]" in texts
+    assert "[Ошибка: image.png]" in texts
+
+
+def test_docx_renderer_table_and_config_false_branches(tmp_path):
+    class NoRepeatConfig(SIBFUConfig):
+        TABLE = {**SIBFUConfig.TABLE, "header_repeat_on_pages": False}
+        STRUCTURAL_SECTION = {
+            **SIBFUConfig.STRUCTURAL_SECTION,
+            "page_break_before": False,
+            "uppercase": False,
+        }
+
+    renderer = DocxRenderer(config_class=NoRepeatConfig, base_dir=tmp_path)
+    renderer._initialize_document()
+    renderer._create_table([["H"], ["A", "ignored extra"]])
+    renderer._create_table([[""]])
+    assert "tblHeader" not in renderer.doc.tables[0].rows[0]._tr.xml
+
+    renderer._render_structural_section(
+        StructuralSectionNode(
+            section_type=StructuralSectionType.INTRODUCTION,
+            title="Mixed Case",
+        )
+    )
+    assert any(paragraph.text == "Mixed Case" for paragraph in renderer.doc.paragraphs)
+
+
+def test_docx_renderer_covers_remaining_ast_blocks_and_title_options(tmp_path):
+    renderer = DocxRenderer(config_class=SIBFUConfig, base_dir=tmp_path)
+    ast = Document(
+        metadata={
+            "ministry": "Ministry",
+            "university": "University",
+            "institute": "Institute",
+            "department": "Department",
+            "title": "Title",
+            "subject": "Subject",
+            "student": "Student",
+            "group": "Group",
+            "supervisor": "Supervisor",
+            "supervisor_title": "Professor",
+            "city": "City",
+            "year": "2026",
+        },
+        blocks=(
+            TitlePageNode(profile="common"),
+            MetadataNode(key="ignored", value="ignored"),
+            TableCaptionNode(text="Standalone table caption"),
+            FigureNode(src=None, caption="Standalone figure caption"),
+            PageBreakNode(),
+            RawBlockNode(text="Raw text"),
+            ReferenceNode(target="fig:overview"),
+            FormulaNode(content="x = y", number="A.1"),
+            AppendixNode(
+                title="Appendix",
+                letter="A",
+                blocks=(ParagraphNode(runs=(TextRun("Nested appendix body"),)),),
+            ),
+        ),
+    )
+    output_path = tmp_path / "remaining.docx"
+
+    renderer.render_to_file(ast, _common_profile(), str(output_path))
+
+    doc = DocxDocument(str(output_path))
+    texts = [paragraph.text for paragraph in doc.paragraphs if paragraph.text]
+    assert "UNIVERSITY" in texts
+    assert "Institute" in texts
+    assert "Department" in texts
+    assert "SUBJECT" in texts
+    assert "Title" in texts
+    assert "Руководитель, Professor ____________ Supervisor" in texts
+    assert "Студент Group ____________ Student" in texts
+    assert "City 2026" in texts
+    assert "Standalone table caption" in texts
+    assert "Standalone figure caption" in texts
+    assert "Raw text" in texts
+    assert "[fig:overview]" in texts
+    assert "x = y\t(A.1)" in texts
+    assert "Nested appendix body" in texts
+
+
+def test_docx_renderer_title_page_skip_and_helper_edges(tmp_path):
+    renderer = DocxRenderer(config_class=SIBFUConfig, base_dir=tmp_path)
+    renderer._initialize_document(template_mode="preserve-prefix")
+    renderer._render_title_page({"title": "Skipped"})
+    assert "Skipped" not in [paragraph.text for paragraph in renderer.doc.paragraphs]
+
+    renderer._initialize_document()
+    renderer._render_title_page({"title": "Once"})
+    renderer._render_title_page({"title": "Twice"})
+    assert [paragraph.text for paragraph in renderer.doc.paragraphs].count("Twice") == 0
+
+    renderer._initialize_document()
+    renderer._render_title_page(
+        {
+            "institute": "",
+            "department": "",
+            "title": "",
+            "subject": "",
+            "student": "Student",
+            "group": "",
+            "supervisor": "Supervisor",
+            "supervisor_title": "",
+            "city": "",
+            "year": "",
+        }
+    )
+    texts = [paragraph.text for paragraph in renderer.doc.paragraphs]
+    assert "Руководитель ____________ Supervisor" in texts
+    assert "Студент ____________ Student" in texts
+
+    paragraph = renderer.doc.add_paragraph()
+    renderer._apply_word_heading_style(paragraph, "Missing Word Style")
+    renderer.doc = None
+    renderer._apply_word_heading_style(paragraph, "Heading 1")
+
+    renderer = DocxRenderer(config_class=SIBFUConfig, base_dir=tmp_path)
+    renderer._initialize_document()
+    formula_para = renderer.doc.add_paragraph()
+    renderer._set_formula_number_tab(formula_para)
+    renderer._set_formula_number_tab(formula_para)
+    assert formula_para._p.xml.count("w:tabs") == 2
+
+    assert renderer._resolve_image_path(tmp_path / "image.png") == tmp_path / "image.png"
+    assert renderer._resolve_template_path(tmp_path / "template.docx") == tmp_path / "template.docx"
+    assert renderer._resolve_template_path("missing.docx") == tmp_path / "templates" / "missing.docx"
+
+    renderer._load_template("missing.docx")
+    assert renderer.doc is not None
+
+    renderer._initialize_document()
+    renderer._render_appendix(AppendixNode(title="Data", letter="А"))
+    assert "ПРИЛОЖЕНИЕ А" in [paragraph.text for paragraph in renderer.doc.paragraphs]
+
+    renderer.render_to_file(
+        Document(blocks=(ListNode(list_type=ListType.BULLET, items=()),)),
+        _common_profile(),
+        str(tmp_path / "empty-list.docx"),
+    )
+
+    renderer.render_to_file(
+        Document(blocks=(MetadataNode(key="only", value="metadata"),)),
+        _common_profile(),
+        str(tmp_path / "metadata-only.docx"),
+    )
+    renderer._initialize_document()
+    renderer._render_from_ast(Document(blocks=(MetadataNode(key="direct", value="metadata"),)))
+
+    template = tmp_path / "template.docx"
+    DocxDocument().save(str(template))
+    assert renderer._resolve_template_path("template.docx") == template
+
+    assert renderer._list_item_text(ListType.LETTERED, 50, "item", True) == "51) item."
+    with pytest.raises(ValueError, match="Unsupported list type"):
+        renderer._list_item_text(object(), 0, "item", True)
+
+    assert _normalize_list_item_punctuation("", list_type=ListType.BULLET, is_last=False) == ""
+    assert (
+        _normalize_list_item_punctuation("done.", list_type=ListType.BULLET, is_last=False)
+        == "done."
+    )

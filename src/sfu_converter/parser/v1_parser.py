@@ -72,9 +72,7 @@ _KNOWN_MARKERS = (
     "[META",
     "[TITLE_PAGE",
 )
-_STRUCTURAL_SECTIONS_BY_TITLE = {
-    section_type.value: section_type for section_type in StructuralSectionType
-}
+_STRUCTURAL_SECTIONS_BY_TITLE = {section_type.value: section_type for section_type in StructuralSectionType}
 _STRUCTURAL_TYPE_ALIASES = {
     "abstract": StructuralSectionType.ABSTRACT,
     "referat": StructuralSectionType.ABSTRACT,
@@ -99,8 +97,28 @@ _LIST_TYPE_ALIASES = {
 _EXPLICIT_LIST_ITEM_RE = re.compile(r"^\[(?:-|[^\]]+\))\]\s*(.*)$")
 
 APPENDIX_LETTERS: tuple[str, ...] = (
-    "А", "Б", "В", "Г", "Д", "Е", "Ж", "И", "К", "Л", "М", "Н",
-    "П", "Р", "С", "Т", "У", "Ф", "Х", "Ц", "Ш", "Щ",
+    "А",
+    "Б",
+    "В",
+    "Г",
+    "Д",
+    "Е",
+    "Ж",
+    "И",
+    "К",
+    "Л",
+    "М",
+    "Н",
+    "П",
+    "Р",
+    "С",
+    "Т",
+    "У",
+    "Ф",
+    "Х",
+    "Ц",
+    "Ш",
+    "Щ",
 )
 _APPENDIX_LETTER_SET = frozenset(APPENDIX_LETTERS)
 _APPENDIX_TYPES = frozenset({"обязательное", "справочное", "рекомендуемое"})
@@ -133,9 +151,7 @@ class V1Parser(BaseParser):
 
             if stripped.startswith("[H1]"):
                 title = stripped.replace("[H1]", "", 1).strip()
-                appendix_node, consumed = self._try_parse_appendix(
-                    lines, i, filename
-                )
+                appendix_node, consumed = self._try_parse_appendix(lines, i, filename)
                 if appendix_node is not None:
                     blocks.append(appendix_node)
                     in_bibliography = False
@@ -144,9 +160,7 @@ class V1Parser(BaseParser):
                 structural = _structural_section_from_title(title, span)
                 if structural is not None:
                     blocks.append(structural)
-                    in_bibliography = (
-                        structural.section_type is StructuralSectionType.SOURCES
-                    )
+                    in_bibliography = structural.section_type is StructuralSectionType.SOURCES
                 else:
                     blocks.append(
                         HeadingNode(
@@ -197,16 +211,12 @@ class V1Parser(BaseParser):
                 structural = _parse_section_marker(stripped, span, diagnostics)
                 if structural is not None:
                     blocks.append(structural)
-                    in_bibliography = (
-                        structural.section_type is StructuralSectionType.SOURCES
-                    )
+                    in_bibliography = structural.section_type is StructuralSectionType.SOURCES
             elif stripped.startswith("[STRUCTURAL"):
                 structural = _parse_structural_marker(stripped, span, diagnostics)
                 if structural is not None:
                     blocks.append(structural)
-                    in_bibliography = (
-                        structural.section_type is StructuralSectionType.SOURCES
-                    )
+                    in_bibliography = structural.section_type is StructuralSectionType.SOURCES
             elif stripped.startswith("[TABLE_START]"):
                 table, table_diagnostics, end_index = self._parse_table(lines, i, filename)
                 diagnostics.extend(table_diagnostics)
@@ -229,9 +239,11 @@ class V1Parser(BaseParser):
                 metadata_node = _parse_metadata_marker(stripped, span, diagnostics)
                 if metadata_node is not None:
                     blocks.append(metadata_node)
-            elif stripped.startswith("[FORMULA_END]") or stripped.startswith(
-                "[FORMULA_EXPLANATION_END]"
-            ) or stripped.startswith("[FORMULA_EXPLANATION]"):
+            elif (
+                stripped.startswith("[FORMULA_END]")
+                or stripped.startswith("[FORMULA_EXPLANATION_END]")
+                or stripped.startswith("[FORMULA_EXPLANATION]")
+            ):
                 diagnostics.append(
                     Diagnostic(
                         code=DiagnosticCodes.TXT_UNKNOWN_MARKER,
@@ -247,8 +259,7 @@ class V1Parser(BaseParser):
                     filename,
                 )
                 diagnostics.extend(formula_diagnostics)
-                if formula_node is not None:
-                    blocks.append(formula_node)
+                blocks.append(formula_node)
                 i = end_index
             elif stripped.startswith("[") and not stripped.startswith(_KNOWN_MARKERS):
                 diagnostics.append(
@@ -375,10 +386,7 @@ class V1Parser(BaseParser):
         next_index = i + 1
         while next_index < len(lines) and not lines[next_index].strip():
             next_index += 1
-        if (
-            next_index < len(lines)
-            and lines[next_index].strip().startswith("[FORMULA_EXPLANATION]")
-        ):
+        if next_index < len(lines) and lines[next_index].strip().startswith("[FORMULA_EXPLANATION]"):
             explanation_lines: list[str] = []
             j = next_index + 1
             explanation_found_end = False
@@ -394,9 +402,7 @@ class V1Parser(BaseParser):
                 diagnostics.append(
                     Diagnostic(
                         code=DiagnosticCodes.TXT_MISSING_BLOCK_END,
-                        message=(
-                            "FORMULA_EXPLANATION without matching FORMULA_EXPLANATION_END"
-                        ),
+                        message=("FORMULA_EXPLANATION without matching FORMULA_EXPLANATION_END"),
                         severity=Severity.ERROR,
                         source=expl_start_span,
                     )
@@ -449,23 +455,19 @@ class V1Parser(BaseParser):
                 caption = stripped.replace("[TABLE_CAPTION]", "", 1).strip()
             elif stripped.startswith("|"):
                 row = _parse_table_row(stripped)
-                if row is not None:
-                    cell_count = len(row.cells)
-                    if expected_cell_count is None:
-                        expected_cell_count = cell_count
-                    elif cell_count != expected_cell_count:
-                        diagnostics.append(
-                            Diagnostic(
-                                code=DiagnosticCodes.TXT_INVALID_TABLE_SHAPE,
-                                message=(
-                                    "Table row has "
-                                    f"{cell_count} cells, expected {expected_cell_count}"
-                                ),
-                                severity=Severity.ERROR,
-                                source=span,
-                            )
+                cell_count = len(row.cells)
+                if expected_cell_count is None:
+                    expected_cell_count = cell_count
+                elif cell_count != expected_cell_count:
+                    diagnostics.append(
+                        Diagnostic(
+                            code=DiagnosticCodes.TXT_INVALID_TABLE_SHAPE,
+                            message=(f"Table row has {cell_count} cells, expected {expected_cell_count}"),
+                            severity=Severity.ERROR,
+                            source=span,
                         )
-                    rows.append(row)
+                    )
+                rows.append(row)
             elif stripped.startswith("[") and not stripped.startswith(_KNOWN_MARKERS):
                 diagnostics.append(
                     Diagnostic(
@@ -691,8 +693,6 @@ def _parse_table_row(stripped: str) -> TableRow | None:
     if not stripped.startswith("|"):
         return None
     cells = [cell.strip() for cell in stripped.strip("|").split("|")]
-    if not cells:
-        return None
     return TableRow(cells=tuple(TableCell(text=cell) for cell in cells))
 
 
@@ -797,10 +797,7 @@ def _parse_section_marker(
         diagnostics.append(
             Diagnostic(
                 code=DiagnosticCodes.TXT_MALFORMED_ATTRIBUTE,
-                message=(
-                    "Unknown structural section type: "
-                    f"{section_type_name or '<empty>'}"
-                ),
+                message=(f"Unknown structural section type: {section_type_name or '<empty>'}"),
                 severity=Severity.ERROR,
                 source=span,
             )

@@ -7,7 +7,7 @@ API stable while delegating values to the registry.
 
 from __future__ import annotations
 
-from typing import Iterable, Mapping, MutableMapping
+from collections.abc import Iterable, Mapping, MutableMapping
 
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Cm, Pt
@@ -19,7 +19,6 @@ from sfu_converter.domain.formatting import (
 )
 from sfu_converter.registry.profiles import PROFILES
 from sfu_converter.registry.rules import COMMON_RULES, RULES_BY_ID
-
 
 _ALIGNMENT_MAP = {
     "left": WD_ALIGN_PARAGRAPH.LEFT,

@@ -233,3 +233,102 @@ def test_template_adapter_resolves_relative_path_under_templates_dir(tmp_path):
 
     assert Path(template.path).name == "rel.docx"
     assert template.doc.paragraphs[0].text == "Resolved"
+
+
+def test_template_adapter_covers_replace_body_and_page_edge_paths(tmp_path):
+    template_path = _new_template(tmp_path, pages=1)
+    adapter = DocxTemplateAdapter(base_dir=tmp_path)
+    template = adapter.load_template(str(template_path))
+
+    invalid_page = adapter.find_insertion_point(template, mode="preserve-prefix", page=0)
+    assert invalid_page.found is False
+    assert invalid_page.diagnostic.code == "TEMPLATE_PAGE_NOT_FOUND"
+
+    first_page = adapter.find_insertion_point(template, mode="preserve-prefix", page=1)
+    assert first_page.found is True
+    assert first_page.element is None
+
+    replace_body = adapter.find_insertion_point(template, mode="replace-body")
+    assert replace_body.found is True
+    assert replace_body.truncate is True
+
+    composed_bytes = adapter.compose(
+        template,
+        replace_body,
+        _generated_doc_bytes("Replacement"),
+    )
+    composed = DocxDocument(BytesIO(composed_bytes))
+    texts = [paragraph.text for paragraph in composed.paragraphs if paragraph.text]
+    assert "Template page 1" not in texts
+    assert "Replacement" in texts
+
+
+def test_template_adapter_resolve_fallbacks_and_nested_bookmark(tmp_path):
+    direct_template = tmp_path / "direct.docx"
+    _new_template(tmp_path, pages=1).replace(direct_template)
+    adapter = DocxTemplateAdapter(base_dir=tmp_path)
+
+    assert adapter._resolve(str(direct_template)) == direct_template
+    assert adapter._resolve("missing.docx") == tmp_path / "templates" / "missing.docx"
+
+    doc = DocxDocument()
+    paragraph = doc.add_paragraph()
+    run = paragraph.add_run("anchor")
+    bookmark_start = OxmlElement("w:bookmarkStart")
+    bookmark_start.set(qn("w:id"), "1")
+    bookmark_start.set(qn("w:name"), "NESTED")
+    run._r.append(bookmark_start)
+    template = TemplateDocument(doc=doc, path="memory")
+
+    insertion = adapter.find_insertion_point(template, mode="append", bookmark="NESTED")
+    assert insertion.found is True
+    assert insertion.element.tag.endswith("}p")
+
+    body_bookmark = OxmlElement("w:bookmarkStart")
+    body_bookmark.set(qn("w:id"), "2")
+    body_bookmark.set(qn("w:name"), "BODY")
+    doc.element.body.append(body_bookmark)
+    body_insertion = adapter.find_insertion_point(template, mode="append", bookmark="BODY")
+    assert body_insertion.found is True
+    assert body_insertion.element is None
+
+
+def test_template_adapter_non_page_break_and_compose_without_page_break(tmp_path, monkeypatch):
+    doc = DocxDocument()
+    paragraph = doc.add_paragraph("Line break")
+    run = paragraph.add_run()
+    br = OxmlElement("w:br")
+    run._element.append(br)
+    template = TemplateDocument(doc=doc, path="memory")
+    adapter = DocxTemplateAdapter(base_dir=tmp_path)
+
+    insertion = adapter.find_insertion_point(template, mode="preserve-prefix", page=1)
+    assert insertion.found is True
+    assert insertion.element is None
+
+    monkeypatch.setattr(adapter, "_make_page_break_paragraph", lambda _doc: None)
+    composed_bytes = adapter.compose(
+        template,
+        adapter.find_insertion_point(template, mode="append"),
+        _generated_doc_bytes("Generated"),
+    )
+    composed = DocxDocument(BytesIO(composed_bytes))
+    assert "Generated" in [paragraph.text for paragraph in composed.paragraphs]
+
+
+def test_template_adapter_append_without_section_properties(tmp_path):
+    adapter = DocxTemplateAdapter(base_dir=tmp_path)
+    doc = DocxDocument()
+    body = doc.element.body
+    sect_pr = body.find(qn("w:sectPr"))
+    if sect_pr is not None:
+        body.remove(sect_pr)
+
+    paragraph = doc.add_paragraph("Appended")
+    adapter._append_before_sect_pr(body, paragraph._p, None)
+
+    assert body[-1] is paragraph._p
+
+    external_anchor = OxmlElement("w:p")
+    adapter._truncate_after(body, external_anchor, None)
+    assert body[-1] is paragraph._p

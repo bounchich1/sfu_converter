@@ -25,7 +25,7 @@ from sfu_converter.registry import (
     iter_profiles,
     iter_rules,
 )
-from sfu_converter.registry.loader import rules_with_status
+from sfu_converter.registry.loader import _alignment, rules_with_status
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -100,6 +100,14 @@ def test_rules_with_status_filters_by_renderer():
 
     implemented = rules_with_status(renderer=RuleStatus.IMPLEMENTED)
     assert any(rule.id == "common.page.numbering" for rule in implemented)
+
+    validator_supported = rules_with_status(validator=RuleStatus.IMPLEMENTED)
+    assert all(rule.validator_status is RuleStatus.IMPLEMENTED for rule in validator_supported)
+
+
+def test_alignment_rejects_unknown_values():
+    with pytest.raises(ValueError, match="Unknown alignment value"):
+        _alignment("diagonal")
 
 
 def test_required_severity_is_used_for_core_rules():

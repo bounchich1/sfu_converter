@@ -109,9 +109,7 @@ class DocxValidator:
             paragraph,
             index,
             rule_id="common.text.indent.first_line",
-            expected_cm=self._rule("common.text.indent.first_line").parameters[
-                "indent_cm"
-            ],
+            expected_cm=self._rule("common.text.indent.first_line").parameters["indent_cm"],
         )
         self._validate_line_spacing(
             paragraph,
@@ -210,8 +208,7 @@ class DocxValidator:
             self._add(
                 code=DiagnosticCodes.FORMAT_FONT_NAME,
                 message=(
-                    f"Paragraph {paragraph_index} run {run_index}: "
-                    f"font '{run.font.name}', expected '{expected_name}'"
+                    f"Paragraph {paragraph_index} run {run_index}: font '{run.font.name}', expected '{expected_name}'"
                 ),
                 rule_id=name_rule.id,
                 source=_source_for_index(paragraph_index),
@@ -261,10 +258,7 @@ class DocxValidator:
         if abs(current - expected) > _LENGTH_TOLERANCE_EMU:
             self._add(
                 code=DiagnosticCodes.FORMAT_INDENT,
-                message=(
-                    f"Paragraph {index}: first-line indent {current.pt:.1f}pt, "
-                    f"expected {expected.pt:.1f}pt"
-                ),
+                message=(f"Paragraph {index}: first-line indent {current.pt:.1f}pt, expected {expected.pt:.1f}pt"),
                 rule_id=rule_id,
                 source=SourceSpan(index, index),
             )
@@ -316,10 +310,7 @@ class DocxValidator:
             if current > 1:
                 self._add(
                     code=DiagnosticCodes.FORMAT_PARAGRAPH_SPACING,
-                    message=(
-                        f"Paragraph {index}: spacing {label} {current:.1f}pt, "
-                        "expected 0pt"
-                    ),
+                    message=(f"Paragraph {index}: spacing {label} {current:.1f}pt, expected 0pt"),
                     rule_id=rule_id,
                     source=SourceSpan(index, index),
                 )
@@ -400,4 +391,3 @@ def _spacing_value(value) -> float:
 
 def _slug(value: str) -> str:
     return value.strip().lower().replace(" ", "-")
-

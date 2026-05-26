@@ -90,6 +90,10 @@ class TestStyleValidator:
         """Тест: Обработка None значения"""
         result = validator._get_pt_value(None)
         assert result == 0
+
+    def test_get_pt_value_with_raw_number(self, validator):
+        """Тест: Обработка числового значения"""
+        assert validator._get_pt_value(2.5) == 2.5
     
     def test_validate_font_correct(self, validator):
         """Тест: Валидация правильного шрифта"""
@@ -112,6 +116,19 @@ class TestStyleValidator:
         issues = validator.validate_font(run, 1)
         assert len(issues) == 1
         assert 'Arial' in issues[0]
+
+    def test_validate_font_wrong_size(self, validator):
+        """Тест: Валидация неправильного размера шрифта"""
+        doc = Document()
+        para = doc.add_paragraph("Тест")
+        run = para.runs[0]
+        run.font.name = 'Times New Roman'
+        run.font.size = Pt(16)
+
+        issues = validator.validate_font(run, 1)
+
+        assert len(issues) == 1
+        assert "Размер" in issues[0]
     
     def test_validate_paragraph_spacing_correct(self, validator):
         """Тест: Валидация правильных интервалов (0)"""
@@ -200,6 +217,30 @@ class TestStyleValidator:
         
         issues = validator.validate_line_spacing(para, 1, 1.5)
         assert len(issues) == 0
+
+    def test_legacy_indent_and_line_spacing_helpers_report_errors(self, validator):
+        doc = Document()
+        heading = doc.add_paragraph("Heading")
+        heading.paragraph_format.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        heading.paragraph_format.first_line_indent = Cm(1)
+        heading.runs[0].bold = True
+
+        body = doc.add_paragraph("Body")
+        body.paragraph_format.first_line_indent = Cm(0)
+        body.paragraph_format.line_spacing = 1.0
+
+        assert validator._is_header_paragraph(heading) is True
+        assert "Заголовок имеет отступ" in validator.validate_first_line_indent(heading, 1)[0]
+        assert "Отступ" in validator.validate_first_line_indent(body, 2)[0]
+        assert "Интервал" in validator.validate_line_spacing(body, 2, 1.5)[0]
+
+        heading.paragraph_format.first_line_indent = Cm(0)
+        body.paragraph_format.first_line_indent = Cm(1.25)
+        body.paragraph_format.line_spacing = None
+
+        assert validator.validate_first_line_indent(heading, 1) == []
+        assert validator.validate_first_line_indent(body, 2) == []
+        assert validator.validate_line_spacing(body, 2, 1.5) == []
     
     def test_full_validation_workflow(self, tmp_path):
         """Тест: Полный рабочий процесс валидации с заголовком и обычным текстом"""

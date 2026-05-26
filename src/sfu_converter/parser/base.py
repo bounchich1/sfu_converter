@@ -14,10 +14,7 @@ class ParserResult:
 
     @property
     def has_errors(self) -> bool:
-        return any(
-            diagnostic.severity in (Severity.ERROR, Severity.FATAL)
-            for diagnostic in self.diagnostics
-        )
+        return any(diagnostic.severity in (Severity.ERROR, Severity.FATAL) for diagnostic in self.diagnostics)
 
 
 class BaseParser(ABC):

@@ -2,9 +2,13 @@ from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Cm, Pt, RGBColor
 
-from sfu_converter.domain.diagnostics import DiagnosticCodes
+from sfu_converter.domain.diagnostics import Diagnostic, DiagnosticCodes, Severity
+from sfu_converter.domain.formatting import FormattingProfile
 from sfu_converter.infrastructure.docx_validator import (
     DocxValidator,
+    _pt_value,
+    _slug,
+    _spacing_value,
     diagnostic_to_json,
 )
 from sfu_converter.registry import get_profile
@@ -140,5 +144,83 @@ def test_docx_validator_rejects_heading_period(tmp_path):
         diagnostic.code == DiagnosticCodes.FORMAT_HEADING_NO_PERIOD
         and diagnostic.rule_id == "common.heading.no_period"
         for diagnostic in diagnostics
+    )
+
+
+def test_docx_validator_reports_missing_and_unopenable_files(tmp_path):
+    validator = DocxValidator(get_profile("common"))
+
+    missing = validator.validate_file(str(tmp_path / "missing.docx"))
+    assert missing[0].code == "DOCX_FILE_NOT_FOUND"
+
+    invalid = tmp_path / "invalid.docx"
+    invalid.write_text("not a docx", encoding="utf-8")
+    failed = validator.validate_file(str(invalid))
+    assert failed[0].code == "DOCX_OPEN_FAILED"
+
+
+def test_docx_validator_covers_heading_variants_and_format_errors(tmp_path):
+    doc = Document()
+    h2 = doc.add_paragraph("Heading 2")
+    h2.style = doc.styles["Heading 2"]
+    h2.paragraph_format.first_line_indent = Cm(1)
+    h2.paragraph_format.line_spacing = 2.0
+    h2.paragraph_format.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    h2.runs[0].font.name = "Arial"
+    h2.runs[0].font.size = Pt(16)
+    h2.runs[0].font.color.rgb = RGBColor(255, 0, 0)
+    h2.runs[0].bold = False
+
+    h3 = doc.add_paragraph("Heading 3")
+    h3.style = doc.styles["Heading 3"]
+    h3.paragraph_format.first_line_indent = Cm(0)
+    h3.paragraph_format.line_spacing = 1.0
+    h3.paragraph_format.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    h3.paragraph_format.space_before = Pt(2)
+    h3.paragraph_format.space_after = Pt(2)
+    h3.runs[0].font.name = "Times New Roman"
+    h3.runs[0].font.size = Pt(14)
+
+    path = _save_doc(tmp_path, doc)
+    diagnostics = DocxValidator(get_profile("common")).validate_file(str(path))
+    codes = {diagnostic.code for diagnostic in diagnostics}
+
+    assert DiagnosticCodes.FORMAT_FONT_NAME in codes
+    assert DiagnosticCodes.FORMAT_FONT_SIZE in codes
+    assert DiagnosticCodes.FORMAT_FONT_COLOR in codes
+    assert DiagnosticCodes.FORMAT_INDENT in codes
+    assert DiagnosticCodes.FORMAT_ALIGNMENT in codes
+    assert DiagnosticCodes.FORMAT_HEADING_BOLD in codes
+    assert DiagnosticCodes.FORMAT_PARAGRAPH_SPACING in codes
+
+
+def test_docx_validator_helpers_cover_optional_json_fields():
+    diagnostic = Diagnostic(
+        code="CODE",
+        message="Message",
+        severity=Severity.WARNING,
+        rule_id="common.text.font.name",
+        suggestion="Suggestion",
+    )
+
+    payload = diagnostic_to_json(diagnostic)
+    assert payload["suggestion"] == "Suggestion"
+    assert payload["source"].startswith("docs/formatting requirements/common.md#")
+    assert _pt_value(None) == 0
+    assert _pt_value(2.5) == 2.5
+    assert _spacing_value(Pt(12)) == 12
+    assert _spacing_value(1.5) == 1.5
+    assert _slug(" Section Name ") == "section-name"
+
+    without_rule = diagnostic_to_json(
+        Diagnostic(code="NO_RULE", message="Message", severity=Severity.ERROR)
+    )
+    assert "ruleId" not in without_rule
+
+    assert (
+        DocxValidator(FormattingProfile("empty", "Empty", ()))._rule(
+            "common.text.font.name"
+        ).id
+        == "common.text.font.name"
     )
 
