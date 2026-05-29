@@ -10,6 +10,7 @@ from sfu_converter.config import SIBFUConfig
 from sfu_converter.domain.ast_nodes import SourceSpan
 from sfu_converter.domain.diagnostics import Diagnostic, DiagnosticCodes, Severity
 from sfu_converter.domain.formatting import FormattingProfile, FormattingRule, unsupported_rule_diagnostics
+from sfu_converter.infrastructure.paragraph_roles import ParagraphRole, classify
 from sfu_converter.registry import get_profile, get_rule
 
 _LENGTH_TOLERANCE_EMU = 1000
@@ -21,6 +22,20 @@ _ALIGNMENT_BY_NAME = {
     "center": WD_ALIGN_PARAGRAPH.CENTER,
     "right": WD_ALIGN_PARAGRAPH.RIGHT,
     "justify": WD_ALIGN_PARAGRAPH.JUSTIFY,
+}
+
+_HEADING_ROLES = {
+    ParagraphRole.HEADING_H1,
+    ParagraphRole.HEADING_H2,
+    ParagraphRole.HEADING_H3,
+    ParagraphRole.HEADING_H4,
+}
+
+_HEADING_RULE_BY_ROLE = {
+    ParagraphRole.HEADING_H1: "common.heading.h1",
+    ParagraphRole.HEADING_H2: "common.heading.h2",
+    ParagraphRole.HEADING_H3: "common.heading.h3",
+    ParagraphRole.HEADING_H4: "common.heading.h4",
 }
 
 
@@ -61,8 +76,12 @@ class DocxValidator:
         self.diagnostics.extend(unsupported_rule_diagnostics(self.profile, component="validator"))
         self._validate_margins(doc)
 
-        for index, paragraph in enumerate(doc.paragraphs, start=1):
-            self._validate_paragraph(paragraph, index)
+        paragraphs = list(doc.paragraphs)
+        for index, paragraph in enumerate(paragraphs, start=1):
+            prev = paragraphs[index - 2] if index >= 2 else None
+            nxt = paragraphs[index] if index < len(paragraphs) else None
+            role = classify(paragraph, prev=prev, next=nxt, profile=self.profile)
+            self._validate_paragraph(paragraph, index, role)
 
         for table_index, table in enumerate(doc.tables, start=1):
             self._validate_table(table, table_index)
@@ -93,17 +112,90 @@ class DocxValidator:
                         rule_id=rule_id,
                     )
 
-    def _validate_paragraph(self, paragraph, index: int) -> None:
+    def _validate_paragraph(self, paragraph, index: int, role: ParagraphRole | None = None) -> None:
         if not paragraph.text.strip():
+            return
+
+        if role is None:
+            role = classify(paragraph, profile=self.profile)
+
+        if role is ParagraphRole.FIGURE_PLACEHOLDER:
+            self._add(
+                code=DiagnosticCodes.FIGURE_MISSING_IMAGE,
+                message=f"Paragraph {index}: figure image is missing",
+                severity=Severity.INFO,
+                rule_id="common.figure.image",
+                source=SourceSpan(index, index),
+            )
             return
 
         for run_index, run in enumerate(paragraph.runs, start=1):
             self._validate_run_font(run, index, run_index)
 
-        if self._is_heading_paragraph(paragraph):
-            self._validate_heading(paragraph, index)
-        else:
-            self._validate_body_paragraph(paragraph, index)
+        if role in _HEADING_ROLES:
+            self._validate_heading(paragraph, index, role)
+            return
+        if role is ParagraphRole.STRUCTURAL_HEADING or role is ParagraphRole.TOC_HEADING:
+            self._validate_styled_paragraph(paragraph, index, "common.structural.heading")
+            return
+        if role is ParagraphRole.APPENDIX_HEADING:
+            rule_id = "common.appendix.heading"
+            try:
+                self._validate_styled_paragraph(paragraph, index, rule_id)
+            except KeyError:
+                self._validate_styled_paragraph(paragraph, index, "common.structural.heading")
+            return
+        if role is ParagraphRole.TOC_ENTRY:
+            return
+        if role is ParagraphRole.TABLE_CAPTION:
+            self._validate_styled_paragraph(paragraph, index, "common.table.caption")
+            return
+        if role is ParagraphRole.FIGURE_CAPTION:
+            self._validate_styled_paragraph(paragraph, index, "common.figure.caption")
+            return
+        if role is ParagraphRole.FIGURE_EXPLANATORY:
+            self._validate_styled_paragraph(paragraph, index, "common.figure.explanatory_data")
+            return
+        if role is ParagraphRole.LIST_ITEM:
+            self._validate_styled_paragraph(paragraph, index, "common.list.item")
+            return
+        if role is ParagraphRole.FORMULA_BODY:
+            self._validate_styled_paragraph(paragraph, index, "common.formula.body")
+            return
+        if role is ParagraphRole.FORMULA_EXPLANATION:
+            self._validate_styled_paragraph(paragraph, index, "common.formula.explanation")
+            return
+        if role is ParagraphRole.BIBLIOGRAPHY_ENTRY:
+            self._validate_styled_paragraph(paragraph, index, "common.bibliography.entry")
+            return
+        if role is ParagraphRole.UNKNOWN:
+            self._add(
+                code=DiagnosticCodes.FORMAT_ROLE_UNRECOGNIZED,
+                message=f"Paragraph {index}: paragraph role could not be classified",
+                severity=Severity.WARNING,
+                source=SourceSpan(index, index),
+            )
+            return
+
+        self._validate_body_paragraph(paragraph, index)
+
+    def _validate_styled_paragraph(self, paragraph, index: int, rule_id: str) -> None:
+        """Validate ``paragraph`` against a non-body rule's paragraph format."""
+
+        params = self._rule(rule_id).parameters
+        if "indent_cm" in params:
+            self._validate_first_line_indent(
+                paragraph, index, rule_id=rule_id, expected_cm=params["indent_cm"]
+            )
+        if "line_spacing" in params:
+            self._validate_line_spacing(
+                paragraph, index, rule_id=rule_id, expected=params["line_spacing"]
+            )
+        if "alignment" in params:
+            self._validate_alignment(
+                paragraph, index, rule_id=rule_id, expected=params["alignment"]
+            )
+        self._validate_paragraph_spacing(paragraph, index, rule_id)
 
     def _validate_body_paragraph(self, paragraph, index: int) -> None:
         self._validate_first_line_indent(
@@ -126,8 +218,11 @@ class DocxValidator:
         )
         self._validate_paragraph_spacing(paragraph, index, "common.text.line_spacing")
 
-    def _validate_heading(self, paragraph, index: int) -> None:
-        rule_id = self._heading_rule_id(paragraph)
+    def _validate_heading(self, paragraph, index: int, role: ParagraphRole | None = None) -> None:
+        if role is None or role not in _HEADING_RULE_BY_ROLE:
+            rule_id = self._heading_rule_id(paragraph)
+        else:
+            rule_id = _HEADING_RULE_BY_ROLE[role]
         params = self._rule(rule_id).parameters
 
         self._validate_first_line_indent(

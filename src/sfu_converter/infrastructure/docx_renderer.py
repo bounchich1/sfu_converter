@@ -35,8 +35,20 @@ from sfu_converter.domain.ast_nodes import (
 )
 from sfu_converter.domain.diagnostics import Diagnostic
 from sfu_converter.domain.formatting import FormattingProfile, unsupported_rule_diagnostics
+from sfu_converter.infrastructure import docx_styles
 from sfu_converter.ports.renderer import RendererPort
 from sfu_converter.utils_image_insert import insert_image
+
+
+_SFU_STYLE_BY_TYPE = {
+    "caption_img": docx_styles.FIGURE_CAPTION,
+    "caption_table": docx_styles.TABLE_CAPTION,
+    "formula": docx_styles.FORMULA_BODY,
+    "formula_explanation": docx_styles.FORMULA_EXPLANATION,
+    "bibliography_entry": docx_styles.BIBLIOGRAPHY_ENTRY,
+    "list_item": docx_styles.LIST_ITEM,
+    "structural_section": docx_styles.STRUCTURAL_HEADING,
+}
 
 
 class SectionNumberer:
@@ -294,7 +306,10 @@ class DocxRenderer(RendererPort):
             return
 
         word_style = style.get("word_style")
-        if word_style is not None and self.doc is not None:
+        sfu_style = _SFU_STYLE_BY_TYPE.get(style_type)
+        if sfu_style is not None and self.doc is not None and sfu_style in [s.name for s in self.doc.styles]:
+            para.style = self.doc.styles[sfu_style]
+        elif word_style is not None and self.doc is not None:
             para.style = self.doc.styles[word_style]
 
         pf = para.paragraph_format
@@ -336,6 +351,8 @@ class DocxRenderer(RendererPort):
             self.logger.warning(f"Изображение не найдено: {full_path}")
             p = self.doc.add_paragraph(f"[Изображение не найдено: {image_path}]")
             self._set_paragraph_format(p, "caption_img")
+            if docx_styles.FIGURE_PLACEHOLDER in [s.name for s in self.doc.styles]:
+                p.style = self.doc.styles[docx_styles.FIGURE_PLACEHOLDER]
         else:
             try:
                 success = insert_image(
@@ -352,6 +369,8 @@ class DocxRenderer(RendererPort):
                 self.logger.error(f"Ошибка вставки изображения: {exc}")
                 p = self.doc.add_paragraph(f"[Ошибка: {image_path}]")
                 self._set_paragraph_format(p, "caption_img")
+                if docx_styles.FIGURE_PLACEHOLDER in [s.name for s in self.doc.styles]:
+                    p.style = self.doc.styles[docx_styles.FIGURE_PLACEHOLDER]
 
         if caption:
             p = self.doc.add_paragraph(caption)
@@ -496,6 +515,7 @@ class DocxRenderer(RendererPort):
         else:
             self.doc = DocxDocument()
         self._setup_document_margins()
+        docx_styles.register_styles(self.doc)
         self._add_page_numbering()
         self._section_numberer.reset()
         self._rendered_body_blocks = False
