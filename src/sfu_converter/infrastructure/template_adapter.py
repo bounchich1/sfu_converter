@@ -18,6 +18,7 @@ from docx.oxml.ns import qn
 
 from sfu_converter.config import PathConfig
 from sfu_converter.domain.diagnostics import Diagnostic, Severity
+from sfu_converter.infrastructure import docx_styles
 from sfu_converter.ports.template import (
     InsertionPoint,
     TemplateDocument,
@@ -82,6 +83,12 @@ class DocxTemplateAdapter(TemplatePort):
         generated_doc = DocxDocument(BytesIO(generated_content))
         template_doc = template.doc
         body = template_doc.element.body
+
+        # The generated body references SFU paragraph styles by name. Copying
+        # paragraphs across documents does not copy the style definitions, so
+        # register them on the template or every styled paragraph silently
+        # falls back to Normal and the validator loses its role signal.
+        docx_styles.register_styles(template_doc)
 
         sect_pr = self._extract_sect_pr(body)
         anchor = insertion_point.element

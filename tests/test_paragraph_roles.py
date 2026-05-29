@@ -6,7 +6,24 @@ from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Cm, Pt
 
+from sfu_converter.config import SIBFUConfig
+from sfu_converter.domain.ast_nodes import (
+    BibliographyEntryNode,
+    Document as AstDocument,
+    FigureNode,
+    FormulaNode,
+    ListItemNode,
+    ListNode,
+    ListType,
+    ParagraphNode,
+    TableCell,
+    TableNode,
+    TableRow,
+    TextRun,
+)
+from sfu_converter.domain.formatting import FormattingProfile
 from sfu_converter.infrastructure import docx_styles
+from sfu_converter.infrastructure.docx_renderer import DocxRenderer
 from sfu_converter.infrastructure.paragraph_roles import ParagraphRole, classify
 from sfu_converter.registry import get_profile
 
@@ -150,3 +167,62 @@ def test_classify_recognises_numbered_headings_by_text():
     assert classify(h2) is ParagraphRole.HEADING_H2
     assert classify(h3) is ParagraphRole.HEADING_H3
     assert classify(h4) is ParagraphRole.HEADING_H4
+
+
+# Map every SFU style the renderer applies to the role the validator expects.
+# Structural/TOC/appendix headings are intentionally excluded: the renderer
+# layers the built-in ``Heading 1`` style on top so Word's TOC field can find
+# them, which makes them classify as HEADING_H1 by design.
+_GOLDEN_STYLE_ROLES = {
+    docx_styles.TABLE_CAPTION: ParagraphRole.TABLE_CAPTION,
+    docx_styles.FIGURE_CAPTION: ParagraphRole.FIGURE_CAPTION,
+    docx_styles.FORMULA_BODY: ParagraphRole.FORMULA_BODY,
+    docx_styles.FORMULA_EXPLANATION: ParagraphRole.FORMULA_EXPLANATION,
+    docx_styles.BIBLIOGRAPHY_ENTRY: ParagraphRole.BIBLIOGRAPHY_ENTRY,
+    docx_styles.LIST_ITEM: ParagraphRole.LIST_ITEM,
+}
+
+
+def test_classify_matches_renderer_emitted_styles(tmp_path):
+    """Golden check: every styled paragraph the renderer emits classifies back
+    to the role the validator expects, purely from ``paragraph.style.name``."""
+
+    renderer = DocxRenderer(config_class=SIBFUConfig, base_dir=tmp_path)
+    profile = FormattingProfile(
+        name="common", display_name="Common", source_docs=("standard",)
+    )
+    ast = AstDocument(
+        blocks=(
+            ParagraphNode(runs=(TextRun("Обычный абзац основного текста."),)),
+            TableNode(
+                caption="Данные",
+                rows=(TableRow(cells=(TableCell("A"), TableCell("B"))),),
+            ),
+            FigureNode(src=None, caption="Рисунок 1 — Схема"),
+            FormulaNode(content="E = mc^2", explanation="где E — энергия, Дж."),
+            BibliographyEntryNode(number=1, text="Иванов И.И. Основы. — М., 2023."),
+            ListNode(
+                list_type=ListType.LETTERED,
+                items=(ListItemNode("первый"), ListItemNode("второй")),
+            ),
+        )
+    )
+    output_path = tmp_path / "golden.docx"
+    renderer.render_to_file(ast, profile, str(output_path))
+
+    doc = Document(str(output_path))
+    seen_roles: set[ParagraphRole] = set()
+    for paragraph in doc.paragraphs:
+        style_name = paragraph.style.name if paragraph.style else ""
+        expected = _GOLDEN_STYLE_ROLES.get(style_name)
+        if expected is None:
+            continue
+        assert classify(paragraph) is expected, (
+            f"paragraph {paragraph.text!r} styled {style_name} "
+            f"classified as {classify(paragraph)}, expected {expected}"
+        )
+        seen_roles.add(expected)
+
+    assert seen_roles == set(_GOLDEN_STYLE_ROLES.values()), (
+        f"renderer did not emit all expected styled paragraphs; saw {seen_roles}"
+    )

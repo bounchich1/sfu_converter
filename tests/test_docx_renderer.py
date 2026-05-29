@@ -1,10 +1,11 @@
 import pytest
 from docx import Document as DocxDocument
-from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_TAB_ALIGNMENT
 from docx.shared import Cm, Pt, RGBColor
 from PIL import Image
 
 from sfu_converter.config import SIBFUConfig
+from sfu_converter.infrastructure import docx_styles
 from sfu_converter.domain.ast_nodes import (
     AppendixNode,
     BibliographyEntryNode,
@@ -465,6 +466,60 @@ def _common_profile():
         display_name="Common",
         source_docs=("standard",),
     )
+
+
+def test_register_styles_exposes_all_sfu_styles_on_rendered_document(tmp_path):
+    renderer = DocxRenderer(config_class=SIBFUConfig, base_dir=tmp_path)
+    output_path = tmp_path / "styles.docx"
+
+    renderer.render_to_file(
+        Document(blocks=(ParagraphNode(runs=(TextRun("Body"),)),)),
+        _common_profile(),
+        str(output_path),
+    )
+
+    doc = DocxDocument(str(output_path))
+    names = [style.name for style in doc.styles]
+    for name in docx_styles.ALL_SFU_STYLES:
+        assert name in names, f"{name} missing from rendered document"
+        assert doc.styles[name] is not None
+
+
+def test_caption_styles_are_based_on_caption_builtin():
+    doc = DocxDocument()
+    docx_styles.register_styles(doc)
+
+    for name in (docx_styles.TABLE_CAPTION, docx_styles.FIGURE_CAPTION):
+        base = doc.styles[name].base_style
+        assert base is not None, f"{name} has no base style"
+        assert base.name == "Caption"
+
+
+def test_toc_heading_is_based_on_structural_heading():
+    doc = DocxDocument()
+    docx_styles.register_styles(doc)
+
+    base = doc.styles[docx_styles.TOC_HEADING].base_style
+    assert base is not None
+    assert base.name == docx_styles.STRUCTURAL_HEADING
+
+
+def test_formula_body_style_carries_right_aligned_tab_stop():
+    doc = DocxDocument()
+    docx_styles.register_styles(doc)
+
+    tab_stops = list(doc.styles[docx_styles.FORMULA_BODY].paragraph_format.tab_stops)
+    assert tab_stops, "SFUFormulaBody has no tab stops"
+    assert any(stop.alignment == WD_TAB_ALIGNMENT.RIGHT for stop in tab_stops)
+
+
+def test_register_styles_is_idempotent():
+    doc = DocxDocument()
+    docx_styles.register_styles(doc)
+    before = len([s.name for s in doc.styles])
+    docx_styles.register_styles(doc)
+    after = len([s.name for s in doc.styles])
+    assert before == after
 
 
 def test_docx_renderer_centers_formula_with_auto_number(tmp_path):

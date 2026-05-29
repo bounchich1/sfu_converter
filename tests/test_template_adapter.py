@@ -6,7 +6,12 @@ from docx import Document as DocxDocument
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 
+from sfu_converter.config import SIBFUConfig
+from sfu_converter.domain.ast_nodes import Document, FigureNode
 from sfu_converter.domain.diagnostics import Severity
+from sfu_converter.domain.formatting import FormattingProfile
+from sfu_converter.infrastructure import docx_styles
+from sfu_converter.infrastructure.docx_renderer import DocxRenderer
 from sfu_converter.infrastructure.template_adapter import DocxTemplateAdapter
 from sfu_converter.ports.template import TemplateDocument, TemplatePort
 
@@ -332,3 +337,35 @@ def test_template_adapter_append_without_section_properties(tmp_path):
     external_anchor = OxmlElement("w:p")
     adapter._truncate_after(body, external_anchor, None)
     assert body[-1] is paragraph._p
+
+
+def test_compose_preserves_sfu_style_names_through_round_trip(tmp_path):
+    """A template that lacks the SFU styles must not strip them from the
+    generated body when composed. The renderer assigns SFU styles so the
+    validator can classify paragraphs; compose has to carry the style
+    definitions across or every paragraph collapses to ``Normal``."""
+
+    template_path = tmp_path / "template.docx"
+    DocxDocument().save(str(template_path))
+
+    renderer = DocxRenderer(config_class=SIBFUConfig, base_dir=tmp_path)
+    profile = FormattingProfile(
+        name="common", display_name="Common", source_docs=("standard",)
+    )
+    generated = renderer.render(
+        Document(blocks=(FigureNode(src=None, caption="Рисунок 1 — Схема"),)),
+        profile,
+    )
+
+    adapter = DocxTemplateAdapter(base_dir=tmp_path)
+    template = adapter.load_template(str(template_path))
+    insertion = adapter.find_insertion_point(template, mode="append")
+    composed_bytes = adapter.compose(template, insertion, generated)
+
+    composed = DocxDocument(BytesIO(composed_bytes))
+    style_names = [style.name for style in composed.styles]
+    for name in docx_styles.ALL_SFU_STYLES:
+        assert name in style_names, f"{name} stripped during compose"
+
+    caption = next(p for p in composed.paragraphs if p.text.startswith("Рисунок"))
+    assert caption.style.name == docx_styles.FIGURE_CAPTION

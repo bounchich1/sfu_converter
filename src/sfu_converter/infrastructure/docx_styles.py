@@ -10,8 +10,10 @@ once; subsequent calls are no-ops.
 from __future__ import annotations
 
 from docx.enum.style import WD_STYLE_TYPE
-from docx.enum.text import WD_ALIGN_PARAGRAPH
-from docx.shared import Cm, Pt, RGBColor
+from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_TAB_ALIGNMENT
+from docx.shared import Cm, Emu, Pt, RGBColor
+
+from sfu_converter.config import SIBFUConfig
 
 
 STRUCTURAL_HEADING = "SFUStructuralHeading"
@@ -48,23 +50,24 @@ def register_styles(document) -> None:
 
     _register(document, STRUCTURAL_HEADING, base="Normal", bold=True, all_caps=True,
               alignment=WD_ALIGN_PARAGRAPH.CENTER, first_line_indent=Cm(0))
-    _register(document, TABLE_CAPTION, base="Normal",
+    _register(document, TABLE_CAPTION, base="Caption",
               alignment=WD_ALIGN_PARAGRAPH.LEFT, first_line_indent=Cm(0))
-    _register(document, FIGURE_CAPTION, base="Normal",
+    _register(document, FIGURE_CAPTION, base="Caption",
               alignment=WD_ALIGN_PARAGRAPH.CENTER, first_line_indent=Cm(0))
     _register(document, FIGURE_EXPLANATORY, base="Normal", size=Pt(12),
               alignment=WD_ALIGN_PARAGRAPH.CENTER, first_line_indent=Cm(0))
     _register(document, FIGURE_PLACEHOLDER, base="Normal", italic=True,
               first_line_indent=Cm(0))
     _register(document, FORMULA_BODY, base="Normal",
-              alignment=WD_ALIGN_PARAGRAPH.CENTER, first_line_indent=Cm(1.25))
+              alignment=WD_ALIGN_PARAGRAPH.CENTER, first_line_indent=Cm(1.25),
+              right_tab_pos=SIBFUConfig.FORMULA["number_tab_pos"])
     _register(document, FORMULA_EXPLANATION, base="Normal",
               alignment=WD_ALIGN_PARAGRAPH.LEFT, first_line_indent=Cm(0))
     _register(document, BIBLIOGRAPHY_ENTRY, base="Normal",
               alignment=WD_ALIGN_PARAGRAPH.JUSTIFY, first_line_indent=Cm(1.25))
     _register(document, LIST_ITEM, base="Normal",
               alignment=WD_ALIGN_PARAGRAPH.JUSTIFY, first_line_indent=Cm(1.25))
-    _register(document, TOC_HEADING, base="Normal", bold=True, all_caps=True,
+    _register(document, TOC_HEADING, base=STRUCTURAL_HEADING, bold=True, all_caps=True,
               alignment=WD_ALIGN_PARAGRAPH.CENTER, first_line_indent=Cm(0))
     _register(document, APPENDIX_HEADING, base="Normal", bold=True,
               alignment=WD_ALIGN_PARAGRAPH.CENTER, first_line_indent=Cm(0))
@@ -82,6 +85,7 @@ def _register(
     alignment=None,
     first_line_indent=None,
     size=None,
+    right_tab_pos=None,
 ) -> None:
     styles = document.styles
     if name in [s.name for s in styles]:
@@ -105,3 +109,5 @@ def _register(
         pf.alignment = alignment
     if first_line_indent is not None:
         pf.first_line_indent = first_line_indent
+    if right_tab_pos is not None:
+        pf.tab_stops.add_tab_stop(Emu(int(right_tab_pos)), WD_TAB_ALIGNMENT.RIGHT)
