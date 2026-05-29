@@ -53,10 +53,10 @@ _SFU_STYLE_BY_TYPE = {
 
 
 class SectionNumberer:
-    """Tracks hierarchical section numbers for H1-H3 headings."""
+    """Tracks hierarchical section numbers for H1-H4 headings."""
 
     def __init__(self):
-        self._counters = [0, 0, 0]
+        self._counters = [0, 0, 0, 0]
 
     def next_number(self, level: int) -> str:
         if level < 1 or level > len(self._counters):
@@ -74,7 +74,7 @@ class SectionNumberer:
         return ".".join(str(part) for part in self._counters[:level])
 
     def reset(self):
-        self._counters = [0, 0, 0]
+        self._counters = [0, 0, 0, 0]
 
 
 _RUSSIAN_LIST_LETTERS = (
@@ -200,6 +200,14 @@ class DocxRenderer(RendererPort):
                 "line_spacing": cfg.H3["line_spacing"],
                 "space_before": cfg.H3["space_before"],
                 "space_after": cfg.H3["space_after"],
+            },
+            "h4": {
+                "word_style": "Heading 4",
+                "align": cfg.H4["align"],
+                "indent": cfg.H4["indent"],
+                "line_spacing": cfg.H4["line_spacing"],
+                "space_before": cfg.H4["space_before"],
+                "space_after": cfg.H4["space_after"],
             },
             "list_item": {
                 "align": cfg.LIST_ITEM["align"],
@@ -575,6 +583,7 @@ class DocxRenderer(RendererPort):
             HeadingLevel.H1: "h1",
             HeadingLevel.H2: "h2",
             HeadingLevel.H3: "h3",
+            HeadingLevel.H4: "h4",
         }[block.level]
         p = self.doc.add_paragraph(self._heading_text(block))
         self._set_paragraph_format(p, style_type)

@@ -41,7 +41,6 @@ COMMON_VALIDATOR_UNSUPPORTED_IDS: tuple[str, ...] = (
     "common.table.cell_padding",
     "common.table.body",
     "common.page.margins.landscape",
-    "common.heading.h4",
     "common.heading.no_hyphenation",
     "common.heading.two_sentence_separator",
     "common.heading.point_requires_subpoints",

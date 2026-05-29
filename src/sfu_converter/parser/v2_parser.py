@@ -227,13 +227,26 @@ class V2Parser(BaseParser):
         diagnostics: list[Diagnostic],
     ) -> HeadingNode | None:
         attrs = self._parse_attributes(stripped)
+        raw_level = attrs.get("level", "1")
         try:
-            level = HeadingLevel(int(attrs.get("level", "1")))
+            level_value = int(raw_level)
         except ValueError:
             diagnostics.append(
                 Diagnostic(
                     code=DiagnosticCodes.TXT_MALFORMED_ATTRIBUTE,
-                    message=f"Invalid heading level: {attrs.get('level', '<missing>')}",
+                    message=f"Invalid heading level: {raw_level}",
+                    severity=Severity.ERROR,
+                    source=span,
+                )
+            )
+            return None
+        try:
+            level = HeadingLevel(level_value)
+        except ValueError:
+            diagnostics.append(
+                Diagnostic(
+                    code=DiagnosticCodes.INVALID_HEADING_LEVEL,
+                    message=f"Heading level {level_value} is not allowed (max H4)",
                     severity=Severity.ERROR,
                     source=span,
                 )

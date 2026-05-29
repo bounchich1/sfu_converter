@@ -56,6 +56,7 @@ _KNOWN_MARKERS = (
     "[H1]",
     "[H2]",
     "[H3]",
+    "[H4]",
     "[IMAGE",
     "[LIST",
     "[LIST_END]",
@@ -95,6 +96,12 @@ _LIST_TYPE_ALIASES = {
     "numbered": ListType.NUMBERED,
 }
 _EXPLICIT_LIST_ITEM_RE = re.compile(r"^\[(?:-|[^\]]+\))\]\s*(.*)$")
+_HEADING_MARKER_RE = re.compile(r"^\[H(\d+)\]")
+
+
+def _heading_marker_level(stripped: str) -> int | None:
+    match = _HEADING_MARKER_RE.match(stripped)
+    return int(match.group(1)) if match is not None else None
 
 APPENDIX_LETTERS: tuple[str, ...] = (
     "А",
@@ -136,6 +143,7 @@ class V1Parser(BaseParser):
         blocks = []
         diagnostics: list[Diagnostic] = []
         in_bibliography = False
+        last_heading_level = 0
         i = 0
 
         while i < len(lines):
@@ -149,46 +157,63 @@ class V1Parser(BaseParser):
             if stripped.startswith("["):
                 self._check_cyrillic(stripped, span, diagnostics)
 
-            if stripped.startswith("[H1]"):
-                title = stripped.replace("[H1]", "", 1).strip()
-                appendix_node, consumed = self._try_parse_appendix(lines, i, filename)
-                if appendix_node is not None:
-                    blocks.append(appendix_node)
-                    in_bibliography = False
-                    i += consumed
-                    continue
-                structural = _structural_section_from_title(title, span)
-                if structural is not None:
-                    blocks.append(structural)
-                    in_bibliography = structural.section_type is StructuralSectionType.SOURCES
+            if (heading_level := _heading_marker_level(stripped)) is not None:
+                if heading_level >= 5:
+                    diagnostics.append(
+                        Diagnostic(
+                            code=DiagnosticCodes.INVALID_HEADING_LEVEL,
+                            message=f"Heading level {heading_level} is not allowed (max H4): {stripped}",
+                            severity=Severity.ERROR,
+                            source=span,
+                        )
+                    )
+                elif heading_level == 1:
+                    title = _HEADING_MARKER_RE.sub("", stripped, count=1).strip()
+                    appendix_node, consumed = self._try_parse_appendix(lines, i, filename)
+                    if appendix_node is not None:
+                        blocks.append(appendix_node)
+                        in_bibliography = False
+                        last_heading_level = 1
+                        i += consumed
+                        continue
+                    structural = _structural_section_from_title(title, span)
+                    if structural is not None:
+                        blocks.append(structural)
+                        in_bibliography = structural.section_type is StructuralSectionType.SOURCES
+                        last_heading_level = 1
+                    else:
+                        blocks.append(
+                            HeadingNode(
+                                level=HeadingLevel.H1,
+                                text=title,
+                                number="auto",
+                                source=span,
+                            )
+                        )
+                        in_bibliography = False
+                        last_heading_level = 1
                 else:
+                    if heading_level > last_heading_level + 1:
+                        diagnostics.append(
+                            Diagnostic(
+                                code=DiagnosticCodes.HEADING_LEVEL_SKIPPED,
+                                message=(
+                                    f"Heading jumped from level {last_heading_level} "
+                                    f"to {heading_level}, skipping an intermediate level"
+                                ),
+                                severity=Severity.WARNING,
+                                source=span,
+                            )
+                        )
                     blocks.append(
                         HeadingNode(
-                            level=HeadingLevel.H1,
-                            text=title,
+                            level=HeadingLevel(heading_level),
+                            text=_HEADING_MARKER_RE.sub("", stripped, count=1).strip(),
                             number="auto",
                             source=span,
                         )
                     )
-                    in_bibliography = False
-            elif stripped.startswith("[H2]"):
-                blocks.append(
-                    HeadingNode(
-                        level=HeadingLevel.H2,
-                        text=stripped.replace("[H2]", "", 1).strip(),
-                        number="auto",
-                        source=span,
-                    )
-                )
-            elif stripped.startswith("[H3]"):
-                blocks.append(
-                    HeadingNode(
-                        level=HeadingLevel.H3,
-                        text=stripped.replace("[H3]", "", 1).strip(),
-                        number="auto",
-                        source=span,
-                    )
-                )
+                    last_heading_level = heading_level
             elif _is_list_start(stripped):
                 list_node, list_diagnostics, end_index = self._parse_explicit_list(
                     lines,

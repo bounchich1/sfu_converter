@@ -130,9 +130,80 @@ def test_section_numberer_tracks_hierarchical_numbers():
     assert numberer.next_number(1) == "1"
 
 
+def test_section_numberer_tracks_subpoint_level_four():
+    numberer = SectionNumberer()
+
+    assert numberer.next_number(1) == "1"
+    assert numberer.next_number(2) == "1.1"
+    assert numberer.next_number(3) == "1.1.1"
+    assert numberer.next_number(4) == "1.1.1.1"
+    assert numberer.next_number(1) == "2"
+    assert numberer.next_number(2) == "2.1"
+    assert numberer.next_number(3) == "2.1.1"
+    assert numberer.next_number(4) == "2.1.1.1"
+
+
 def test_section_numberer_rejects_unsupported_levels():
     with pytest.raises(ValueError, match="Unsupported heading level"):
-        SectionNumberer().next_number(4)
+        SectionNumberer().next_number(5)
+
+
+def test_docx_renderer_numbers_h4_subpoints_and_resets(tmp_path):
+    renderer = DocxRenderer(config_class=SIBFUConfig, base_dir=tmp_path)
+    profile = FormattingProfile(
+        name="common",
+        display_name="Common",
+        source_docs=("standard",),
+    )
+    ast = Document(
+        blocks=(
+            HeadingNode(level=HeadingLevel.H1, text="One", number="auto"),
+            HeadingNode(level=HeadingLevel.H2, text="One.One", number="auto"),
+            HeadingNode(level=HeadingLevel.H3, text="One.One.One", number="auto"),
+            HeadingNode(level=HeadingLevel.H4, text="One.One.One.One", number="auto"),
+            HeadingNode(level=HeadingLevel.H1, text="Two", number="auto"),
+            HeadingNode(level=HeadingLevel.H2, text="Two.One", number="auto"),
+            HeadingNode(level=HeadingLevel.H3, text="Two.One.One", number="auto"),
+            HeadingNode(level=HeadingLevel.H4, text="Two.One.One.One", number="auto"),
+        )
+    )
+    output_path = tmp_path / "subpoints.docx"
+
+    renderer.render_to_file(ast, profile, str(output_path))
+
+    doc = DocxDocument(str(output_path))
+    assert [paragraph.text for paragraph in doc.paragraphs if paragraph.text] == [
+        "1 One",
+        "1.1 One.One",
+        "1.1.1 One.One.One",
+        "1.1.1.1 One.One.One.One",
+        "2 Two",
+        "2.1 Two.One",
+        "2.1.1 Two.One.One",
+        "2.1.1.1 Two.One.One.One",
+    ]
+
+
+def test_docx_renderer_output_includes_heading_4_style(tmp_path):
+    renderer = DocxRenderer(config_class=SIBFUConfig, base_dir=tmp_path)
+    profile = FormattingProfile(
+        name="common",
+        display_name="Common",
+        source_docs=("standard",),
+    )
+    ast = Document(
+        blocks=(
+            HeadingNode(level=HeadingLevel.H4, text="Subpoint", number="auto"),
+        )
+    )
+    output_path = tmp_path / "h4_style.docx"
+
+    renderer.render_to_file(ast, profile, str(output_path))
+
+    doc = DocxDocument(str(output_path))
+    assert "Heading 4" in [style.name for style in doc.styles]
+    h4_para = next(p for p in doc.paragraphs if p.text)
+    assert h4_para.style.name == "Heading 4"
 
 
 def test_docx_renderer_render_returns_docx_bytes(tmp_path):

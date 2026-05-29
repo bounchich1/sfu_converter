@@ -15,6 +15,7 @@ ALL_STYLE_TYPES = (
     "h1",
     "h2",
     "h3",
+    "h4",
     "list_item",
     "structural_section",
     "caption_img",

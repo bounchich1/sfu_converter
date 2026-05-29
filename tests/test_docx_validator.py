@@ -82,7 +82,7 @@ def test_docx_validator_reports_common_unsupported_validator_rules(tmp_path):
         if diagnostic.code == DiagnosticCodes.FORMAT_RULE_NOT_SUPPORTED
     ]
 
-    assert len(unsupported) == 68
+    assert len(unsupported) == 67
     assert all(diagnostic.severity is Severity.WARNING for diagnostic in unsupported)
     assert all("not supported by the validator" in diagnostic.message for diagnostic in unsupported)
     unsupported_ids = {diagnostic.rule_id for diagnostic in unsupported}
@@ -90,6 +90,7 @@ def test_docx_validator_reports_common_unsupported_validator_rules(tmp_path):
     assert "common.table.caption" not in unsupported_ids
     assert "common.formula.body" not in unsupported_ids
     assert "common.formula.explanation" not in unsupported_ids
+    assert "common.heading.h4" not in unsupported_ids
     assert "common.list.item" not in unsupported_ids
     assert "common.bibliography.entry" not in unsupported_ids
 

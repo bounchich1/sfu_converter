@@ -107,6 +107,7 @@ def build_legacy_config() -> MutableMapping[str, object]:
         "H1": _heading_block("common.heading.h1"),
         "H2": _heading_block("common.heading.h2"),
         "H3": _heading_block("common.heading.h3"),
+        "H4": _heading_block("common.heading.h4"),
         "LIST_ITEM": _heading_block("common.list.item"),
         "STRUCTURAL_SECTION": {
             "align": _alignment(structural["alignment"]),

@@ -461,9 +461,9 @@ COMMON_RULES: tuple[FormattingRule, ...] = (
             "space_before_pt": 0,
             "space_after_pt": 0,
         },
-        renderer_status=RuleStatus.NOT_SUPPORTED,
-        validator_status=RuleStatus.NOT_SUPPORTED,
         description="H4 subpoint heading: mirrors H3 with paragraph indent 1.25 cm",
+        renderer_status=RuleStatus.IMPLEMENTED,
+        validator_status=RuleStatus.IMPLEMENTED,
     ),
     FormattingRule(
         id="common.heading.no_hyphenation",

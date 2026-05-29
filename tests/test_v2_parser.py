@@ -177,6 +177,24 @@ def test_v2_parser_produces_equivalent_ast_to_v1_for_equivalent_content():
     assert _block_summary(v2_result.document) == _block_summary(v1_result.document)
 
 
+def test_v2_parser_accepts_heading_level_four():
+    result = V2Parser().parse('[H level=4 title="Sub" number=auto]')
+
+    assert result.diagnostics == []
+    heading = result.document.blocks[0]
+    assert isinstance(heading, HeadingNode)
+    assert heading.level is HeadingLevel.H4
+    assert heading.text == "Sub"
+
+
+def test_v2_parser_rejects_heading_level_above_four():
+    result = V2Parser().parse('[H level=5 title="Too deep"]')
+
+    assert result.document.blocks == ()
+    codes = [diagnostic.code for diagnostic in result.diagnostics]
+    assert DiagnosticCodes.INVALID_HEADING_LEVEL in codes
+
+
 def test_v2_attribute_parser_supports_quoted_values_with_spaces():
     attrs = V2Parser()._parse_attributes(
         '[META key=title value="A title with spaces" language=ru]'

@@ -10,7 +10,7 @@ _SYNTAX_SPECS = {
                 "name": "heading",
                 "marker": "[H1] Title",
                 "node": "HeadingNode",
-                "description": "Create a numbered heading. [H2] and [H3] create lower levels.",
+                "description": "Create a numbered heading. [H2], [H3], and [H4] create lower levels.",
                 "example": "[H1] Introduction",
             },
             {
@@ -92,7 +92,7 @@ _SYNTAX_SPECS = {
                 "name": "heading",
                 "marker": '[H level=1 title="..." number=auto]',
                 "node": "HeadingNode",
-                "description": "Create a heading with explicit level, title, and numbering mode.",
+                "description": "Create a heading with explicit level (1-4), title, and numbering mode.",
                 "example": '[H level=1 title="Introduction" number=auto]',
             },
             {

@@ -119,6 +119,61 @@ def test_parser_marks_regular_headings_for_auto_numbering():
     ]
 
 
+def test_parser_accepts_h4_subpoint_marker():
+    result = V1Parser().parse(
+        "\n".join(
+            [
+                "[H1] One",
+                "[H2] One.One",
+                "[H3] One.One.One",
+                "[H4] One.One.One.One",
+            ]
+        )
+    )
+
+    assert result.diagnostics == []
+    assert [
+        (block.level, block.text, block.number)
+        for block in result.document.blocks
+    ] == [
+        (HeadingLevel.H1, "One", "auto"),
+        (HeadingLevel.H2, "One.One", "auto"),
+        (HeadingLevel.H3, "One.One.One", "auto"),
+        (HeadingLevel.H4, "One.One.One.One", "auto"),
+    ]
+
+
+def test_parser_rejects_heading_level_above_four():
+    result = V1Parser().parse("[H5] Too deep")
+
+    assert [block for block in result.document.blocks] == []
+    codes = [diagnostic.code for diagnostic in result.diagnostics]
+    assert DiagnosticCodes.INVALID_HEADING_LEVEL in codes
+
+
+def test_parser_warns_on_skipped_heading_level():
+    result = V1Parser().parse(
+        "\n".join(
+            [
+                "[H1] One",
+                "[H4] Skipped to four",
+            ]
+        )
+    )
+
+    skipped = [
+        diagnostic
+        for diagnostic in result.diagnostics
+        if diagnostic.code == DiagnosticCodes.HEADING_LEVEL_SKIPPED
+    ]
+    assert len(skipped) == 1
+    assert skipped[0].severity is Severity.WARNING
+    assert [block.level for block in result.document.blocks] == [
+        HeadingLevel.H1,
+        HeadingLevel.H4,
+    ]
+
+
 def test_parser_groups_consecutive_dash_lines_into_bullet_list():
     result = V1Parser().parse(
         "\n".join(

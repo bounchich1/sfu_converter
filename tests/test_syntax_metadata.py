@@ -28,6 +28,18 @@ def test_v2_syntax_spec_lists_supported_blocks_from_metadata():
     assert spec["blocks"][2]["node"] == "HeadingNode"
 
 
+def test_syntax_spec_documents_h4_subpoint_level():
+    v1_heading = next(
+        block for block in get_syntax_spec(1)["blocks"] if block["name"] == "heading"
+    )
+    v2_heading = next(
+        block for block in get_syntax_spec(2)["blocks"] if block["name"] == "heading"
+    )
+
+    assert "[H4]" in v1_heading["description"]
+    assert "4" in v2_heading["description"]
+
+
 def test_explain_syntax_outputs_json_from_syntax_spec(capsys):
     exit_code = cli.main(["--format", "json", "explain-syntax", "--syntax-version", "2"])
 
