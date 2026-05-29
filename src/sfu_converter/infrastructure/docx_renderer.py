@@ -36,6 +36,7 @@ from sfu_converter.domain.ast_nodes import (
 from sfu_converter.domain.diagnostics import Diagnostic, DiagnosticCodes, Severity
 from sfu_converter.domain.formatting import FormattingProfile, RuleStatus, unsupported_rule_diagnostics
 from sfu_converter.infrastructure import docx_styles
+from sfu_converter.infrastructure.numbering import NumberingContext, build_numbering_context
 from sfu_converter.ports.renderer import RendererPort
 from sfu_converter.registry import get_profile
 from sfu_converter.utils_image_insert import insert_image
@@ -457,6 +458,17 @@ class DocxRenderer(RendererPort):
             return _normalize_caption_dashes(text)
         return f"Таблица {table_number} — {text}"
 
+    def _format_figure_caption(self, caption):
+        if not caption:
+            return None
+        text = caption.strip()
+        if not text:
+            return None
+        if text.startswith("Рисунок"):
+            return _normalize_caption_dashes(text)
+        figure_number = self._numbering.next_figure_number()
+        return f"Рисунок {figure_number} — {text}"
+
     def _setup_document_margins(self):
         for section in self.doc.sections:
             section.top_margin = self.config.MARGINS["top"]
@@ -528,12 +540,11 @@ class DocxRenderer(RendererPort):
         self._add_page_numbering()
         self._section_numberer.reset()
         self._rendered_body_blocks = False
-        self._table_counter = 0
-        self._formula_counter = 0
         self._template_mode = template_mode
         self._title_page_emitted = False
         self._profile = profile
         self._title_page_diagnostics = []
+        self._numbering: NumberingContext = build_numbering_context(profile)
 
     def _render_from_ast(self, document):
         for block in document.blocks:
@@ -545,14 +556,15 @@ class DocxRenderer(RendererPort):
                 self._render_paragraph(block)
             elif isinstance(block, TableNode):
                 rows = [[cell.text for cell in row.cells] for row in block.rows]
-                self._table_counter += 1
-                caption = self._format_table_caption(block.caption, self._table_counter)
+                table_number = self._numbering.next_table_number()
+                caption = self._format_table_caption(block.caption, table_number)
                 self._create_table(rows, caption)
             elif isinstance(block, TableCaptionNode):
                 p = self.doc.add_paragraph(block.text)
                 self._set_paragraph_format(p, "caption_table")
             elif isinstance(block, FigureNode):
-                self._insert_image(block.src, block.caption)
+                caption = self._format_figure_caption(block.caption)
+                self._insert_image(block.src, caption)
             elif isinstance(block, PageBreakNode):
                 self.doc.add_page_break()
             elif isinstance(block, FormulaNode):
@@ -594,7 +606,7 @@ class DocxRenderer(RendererPort):
         if block.number != "auto":
             return block.text
 
-        number = self._section_numberer.next_number(block.level.value)
+        number = self._numbering.next_section_number(block.level)
         title = block.text.rstrip().removesuffix(".")
         return f"{number} {title}"
 
@@ -864,7 +876,15 @@ class DocxRenderer(RendererPort):
 
         self._add_empty_paragraph("empty_after_header")
         if block.blocks:
-            self._render_from_ast(Document(blocks=block.blocks))
+            entered = False
+            if block.letter:
+                self._numbering.enter_appendix(block.letter)
+                entered = True
+            try:
+                self._render_from_ast(Document(blocks=block.blocks))
+            finally:
+                if entered:
+                    self._numbering.leave_appendix()
         self._rendered_body_blocks = True
 
     def _render_table_of_contents(self, block):
@@ -948,8 +968,7 @@ class DocxRenderer(RendererPort):
         """Render a formula on its own line with right-aligned auto-number."""
 
         if block.number == "auto" or block.number is None:
-            self._formula_counter += 1
-            number_text = str(self._formula_counter)
+            number_text = self._numbering.next_formula_number()
         else:
             number_text = str(block.number)
 

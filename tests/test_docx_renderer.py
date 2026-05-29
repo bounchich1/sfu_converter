@@ -926,7 +926,7 @@ def test_docx_renderer_covers_remaining_ast_blocks_and_title_options(tmp_path):
     assert "Студент Group ____________ Student" in texts
     assert "City 2026" in texts
     assert "Standalone table caption" in texts
-    assert "Standalone figure caption" in texts
+    assert "Рисунок 1 — Standalone figure caption" in texts
     assert "Raw text" in texts
     assert "[fig:overview]" in texts
     assert "x = y\t(A.1)" in texts
