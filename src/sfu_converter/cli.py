@@ -254,7 +254,11 @@ def cmd_convert(args) -> int:
         _emit_write_failure(args, "convert", str(exc))
         return ExitCodes.WRITE_FAILURE
 
-    diagnostics = list(converter.diagnostics)
+    diagnostics = [
+        diagnostic
+        for diagnostic in converter.diagnostics
+        if diagnostic.code != DiagnosticCodes.FORMAT_RULE_NOT_SUPPORTED
+    ]
     if args.validate_output:
         validator = StyleValidator(SIBFUConfig, profile=profile)
         is_valid = validator.validate_file(str(output_path))

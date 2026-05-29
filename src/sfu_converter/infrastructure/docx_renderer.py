@@ -33,10 +33,11 @@ from sfu_converter.domain.ast_nodes import (
     TableOfContentsNode,
     TitlePageNode,
 )
-from sfu_converter.domain.diagnostics import Diagnostic
-from sfu_converter.domain.formatting import FormattingProfile, unsupported_rule_diagnostics
+from sfu_converter.domain.diagnostics import Diagnostic, DiagnosticCodes, Severity
+from sfu_converter.domain.formatting import FormattingProfile, RuleStatus, unsupported_rule_diagnostics
 from sfu_converter.infrastructure import docx_styles
 from sfu_converter.ports.renderer import RendererPort
+from sfu_converter.registry import get_profile
 from sfu_converter.utils_image_insert import insert_image
 
 
@@ -145,7 +146,7 @@ class DocxRenderer(RendererPort):
         destination = Path(output_path)
         destination.parent.mkdir(parents=True, exist_ok=True)
         self.doc.save(str(destination))
-        return diagnostics
+        return diagnostics + self._title_page_diagnostics
 
     def _set_run_style(self, run, bold=False, italic=False):
         run.font.name = self.config.FONT_NAME
@@ -524,6 +525,7 @@ class DocxRenderer(RendererPort):
         self._template_mode = template_mode
         self._title_page_emitted = False
         self._profile = profile
+        self._title_page_diagnostics = []
 
     def _render_from_ast(self, document):
         for block in document.blocks:
@@ -610,6 +612,12 @@ class DocxRenderer(RendererPort):
         Skipped when the renderer is composing into a template prefix that
         already provides its own title page (``template_mode='preserve-prefix'``)
         or when a title page has already been emitted for this document.
+
+        When the effective profile declares an implemented ``title_page.form_*``
+        rule, a profile-specific layout (document-type label, ``на тему:`` line,
+        signatory blocks) is rendered and missing required metadata is reported
+        as ``TXT_MISSING_METADATA`` diagnostics. Otherwise a generic title page
+        is produced.
         """
 
         if self._template_mode == "preserve-prefix":
@@ -618,6 +626,39 @@ class DocxRenderer(RendererPort):
             return
 
         metadata = dict(metadata or {})
+        profile = self._resolve_title_profile(profile_name)
+        form_rule = self._title_form_rule(profile)
+
+        if form_rule is not None:
+            self._render_profile_title_page(metadata, form_rule)
+        else:
+            self._render_generic_title_page(metadata)
+
+        self.doc.add_page_break()
+        self._title_page_emitted = True
+
+    def _resolve_title_profile(self, profile_name):
+        if profile_name:
+            try:
+                return get_profile(profile_name)
+            except KeyError:
+                pass
+        return self._profile
+
+    @staticmethod
+    def _title_form_rule(profile):
+        if profile is None:
+            return None
+        for rule in profile.rules:
+            if (
+                rule.renderer_status is RuleStatus.IMPLEMENTED
+                and ".title_page.form" in rule.id
+                and "default_document_type" in rule.parameters
+            ):
+                return rule
+        return None
+
+    def _render_generic_title_page(self, metadata):
         ministry = metadata.get(
             "ministry",
             "МИНИСТЕРСТВО НАУКИ И ВЫСШЕГО ОБРАЗОВАНИЯ РОССИЙСКОЙ ФЕДЕРАЦИИ",
@@ -678,8 +719,91 @@ class DocxRenderer(RendererPort):
             footer = " ".join(part for part in (city, year) if part)
             self._add_title_paragraph(footer, bold=False)
 
-        self.doc.add_page_break()
-        self._title_page_emitted = True
+    def _render_profile_title_page(self, metadata, form_rule):
+        self._report_missing_title_metadata(metadata, form_rule)
+
+        ministry = metadata.get(
+            "ministry",
+            "МИНИСТЕРСТВО НАУКИ И ВЫСШЕГО ОБРАЗОВАНИЯ РОССИЙСКОЙ ФЕДЕРАЦИИ",
+        )
+        university = metadata.get("university", "Сибирский федеральный университет")
+        institute = metadata.get("institute", "")
+        department = metadata.get("department", "")
+        document_type = metadata.get("document_type") or form_rule.parameters["default_document_type"]
+        title = metadata.get("title", "")
+        teacher = metadata.get("teacher", "")
+        supervisor = metadata.get("supervisor", "")
+        supervisor_title = metadata.get("supervisor_title", "")
+        student = metadata.get("student", "")
+        group = metadata.get("group", "")
+        record_book = metadata.get("record_book", "")
+        city = metadata.get("city", "Красноярск")
+        year = metadata.get("year", "")
+
+        self._add_title_paragraph(ministry.upper(), bold=False)
+        self._add_title_paragraph(university.upper(), bold=True)
+        if institute:
+            self._add_title_paragraph(institute, bold=False)
+        if department:
+            self._add_title_paragraph(department, bold=False)
+
+        for _ in range(4):
+            self._add_title_paragraph("", bold=False)
+
+        self._add_title_paragraph(document_type, bold=True)
+        if title:
+            self._add_title_paragraph(f"на тему: {title}", bold=False)
+
+        for _ in range(4):
+            self._add_title_paragraph("", bold=False)
+
+        if teacher:
+            self._add_title_paragraph(
+                f"Преподаватель ____________ {teacher}",
+                bold=False,
+                align=WD_ALIGN_PARAGRAPH.RIGHT,
+            )
+        if supervisor:
+            label = "Руководитель"
+            if supervisor_title:
+                label = f"{label}, {supervisor_title}"
+            self._add_title_paragraph(
+                f"{label} ____________ {supervisor}",
+                bold=False,
+                align=WD_ALIGN_PARAGRAPH.RIGHT,
+            )
+        if student:
+            label = "Студент"
+            if group:
+                label = f"{label} {group}"
+            if record_book:
+                label = f"{label}, № {record_book}"
+            self._add_title_paragraph(
+                f"{label} ____________ {student}",
+                bold=False,
+                align=WD_ALIGN_PARAGRAPH.RIGHT,
+            )
+
+        for _ in range(4):
+            self._add_title_paragraph("", bold=False)
+
+        if city or year:
+            footer = " ".join(part for part in (city, year) if part)
+            self._add_title_paragraph(footer, bold=False)
+
+    def _report_missing_title_metadata(self, metadata, form_rule):
+        required = form_rule.parameters.get("required_metadata", ())
+        for field in required:
+            if not metadata.get(field):
+                self._title_page_diagnostics.append(
+                    Diagnostic(
+                        code=DiagnosticCodes.TXT_MISSING_METADATA,
+                        message=f"Title page metadata field '{field}' is required for {form_rule.id}",
+                        severity=Severity.WARNING,
+                        rule_id=form_rule.id,
+                        data={"field": field},
+                    )
+                )
 
     def _add_title_paragraph(self, text, *, bold=False, size=None, align=None):
         para = self.doc.add_paragraph()
