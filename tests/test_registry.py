@@ -16,6 +16,7 @@ from sfu_converter.domain.formatting import (
     RuleStatus,
 )
 from sfu_converter.registry import (
+    ALL_RULES,
     COMMON_RULES,
     PROFILES,
     RULES_BY_ID,
@@ -36,12 +37,12 @@ def assert_close(actual, expected) -> None:
 
 
 def test_every_rule_id_is_unique():
-    ids = [rule.id for rule in COMMON_RULES]
+    ids = [rule.id for rule in ALL_RULES]
     assert len(ids) == len(set(ids))
 
 
 def test_every_rule_source_doc_exists_on_disk():
-    for rule in COMMON_RULES:
+    for rule in ALL_RULES:
         path = REPO_ROOT / rule.source_doc
         assert path.exists(), f"Missing source doc for {rule.id}: {path}"
 
@@ -54,18 +55,18 @@ def test_every_profile_source_doc_exists_on_disk():
 
 
 def test_rule_id_naming_convention():
-    for rule in COMMON_RULES:
+    for rule in ALL_RULES:
         parts = rule.id.split(".")
         assert len(parts) >= 3, f"Rule id should follow doc.section.element: {rule.id}"
         assert all(parts), f"Empty segment in rule id: {rule.id}"
 
 
 def test_rules_by_id_is_complete():
-    assert set(RULES_BY_ID) == {rule.id for rule in COMMON_RULES}
+    assert set(RULES_BY_ID) == {rule.id for rule in ALL_RULES}
 
 
 def test_iter_helpers_match_collections():
-    assert list(iter_rules()) == list(COMMON_RULES)
+    assert list(iter_rules()) == list(ALL_RULES)
     assert list(iter_profiles()) == list(PROFILES.values())
 
 
@@ -92,6 +93,32 @@ def test_profiles_inherit_common_rules():
             assert rule in profile.rules, (
                 f"Profile {profile.name} missing common rule {rule.id}"
             )
+
+
+def test_document_profiles_add_profile_specific_rules():
+    for profile in PROFILES.values():
+        if profile.name == "common":
+            assert profile.rules == COMMON_RULES
+        else:
+            assert len(profile.rules) > len(COMMON_RULES)
+
+
+def test_coursework_and_vkr_profiles_include_inherited_source_docs():
+    coursework = get_profile("coursework")
+    assert "docs/formatting requirements/project_designations.md" in coursework.source_docs
+
+    vkr = get_profile("graduation_qualification_work")
+    assert "docs/formatting requirements/graphic_and_demonstration_materials.md" in vkr.source_docs
+    assert "docs/formatting requirements/project_designations.md" in vkr.source_docs
+
+
+def test_profile_specific_title_page_rules_are_addressable():
+    lab_rule = get_rule("lab_practical_project_reports.title_page.form_m")
+    assert lab_rule.parameters["form"] == "appendix_m"
+    assert "student" in lab_rule.parameters["required_metadata"]
+
+    coursework_rule = get_rule("coursework.title_page.form_i")
+    assert coursework_rule in get_profile("coursework").rules
 
 
 def test_rules_with_status_filters_by_renderer():

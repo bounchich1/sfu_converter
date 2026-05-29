@@ -64,3 +64,4 @@ temp/
 .env
 *.key
 *.pem
+/.pytest_tmp/

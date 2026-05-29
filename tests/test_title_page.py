@@ -8,8 +8,10 @@ from sfu_converter.domain.ast_nodes import (
     HeadingNode,
     TitlePageNode,
 )
+from sfu_converter.domain.diagnostics import DiagnosticCodes
 from sfu_converter.domain.formatting import FormattingProfile
 from sfu_converter.infrastructure.docx_renderer import DocxRenderer
+from sfu_converter.registry import get_profile
 
 
 def _profile():
@@ -131,3 +133,120 @@ def test_title_page_first_page_footer_remains_blank(tmp_path):
     first_page_footer = section.first_page_footer
     assert first_page_footer.paragraphs[0].text == ""
     assert " PAGE " not in first_page_footer._element.xml
+
+
+def test_lab_report_title_page_uses_profile_form_m(tmp_path):
+    metadata = {
+        "institute": "Институт инженерной физики",
+        "department": "Кафедра физики",
+        "document_type": "ОТЧЕТ ПО ЛАБОРАТОРНОЙ РАБОТЕ",
+        "title": "Измерение сопротивления",
+        "teacher": "Петров П.П.",
+        "student": "Иванов И.И.",
+        "group": "ФИ22-01Б",
+        "record_book": "123456",
+        "city": "Красноярск",
+        "year": "2026",
+    }
+    ast = Document(blocks=(TitlePageNode(),), metadata=metadata)
+    output = tmp_path / "lab_title.docx"
+
+    renderer = DocxRenderer(config_class=SIBFUConfig, base_dir=tmp_path)
+    diagnostics = renderer.render_to_file(ast, get_profile("lab_practical_project_reports"), str(output))
+
+    assert not any(diagnostic.code == DiagnosticCodes.TXT_MISSING_METADATA for diagnostic in diagnostics)
+    doc = DocxDocument(str(output))
+    texts = [p.text for p in doc.paragraphs]
+    assert "ОТЧЕТ ПО ЛАБОРАТОРНОЙ РАБОТЕ" in texts
+    assert "на тему: Измерение сопротивления" in texts
+    assert any("Преподаватель" in text and "Петров П.П." in text for text in texts)
+    assert any("Студент" in text and "ФИ22-01Б" in text and "123456" in text for text in texts)
+
+
+def test_profile_title_pages_render_distinct_document_labels(tmp_path):
+    expectations = {
+        "practice_reports": "ОТЧЕТ О ПРАКТИКЕ",
+        "research_reports": "ОТЧЕТ О НАУЧНО-ИССЛЕДОВАТЕЛЬСКОЙ РАБОТЕ",
+        "small_written_works": "РЕФЕРАТ",
+        "coursework": "КУРСОВАЯ РАБОТА",
+    }
+
+    for profile_name, expected_label in expectations.items():
+        output = tmp_path / f"{profile_name}.docx"
+        ast = Document(
+            blocks=(TitlePageNode(),),
+            metadata={
+                "title": "Тема",
+                "student": "Иванов И.И.",
+                "group": "КИ22-01Б",
+                "supervisor": "Петров П.П.",
+                "teacher": "Сидоров С.С.",
+                "city": "Красноярск",
+                "year": "2026",
+            },
+        )
+
+        renderer = DocxRenderer(config_class=SIBFUConfig, base_dir=tmp_path)
+        renderer.render_to_file(ast, get_profile(profile_name), str(output))
+
+        doc = DocxDocument(str(output))
+        texts = [p.text for p in doc.paragraphs]
+        assert expected_label in texts
+
+
+def test_missing_title_page_metadata_reports_diagnostic(tmp_path):
+    ast = Document(blocks=(TitlePageNode(),), metadata={"title": "Без студента"})
+    output = tmp_path / "missing_metadata.docx"
+
+    renderer = DocxRenderer(config_class=SIBFUConfig, base_dir=tmp_path)
+    diagnostics = renderer.render_to_file(ast, get_profile("coursework"), str(output))
+
+    missing = [
+        diagnostic
+        for diagnostic in diagnostics
+        if diagnostic.code == DiagnosticCodes.TXT_MISSING_METADATA
+    ]
+    assert missing
+    assert missing[0].rule_id == "coursework.title_page.form_i"
+    assert "student" in missing[0].message
+    assert output.exists()
+
+
+def test_title_page_node_profile_overrides_existing_document_profile(tmp_path):
+    ast = Document(
+        blocks=(TitlePageNode(profile="coursework"),),
+        metadata={
+            "title": "Профиль из узла",
+            "student": "Иванов И.И.",
+            "group": "КИ22-01Б",
+            "supervisor": "Петров П.П.",
+            "year": "2026",
+        },
+    )
+    output = tmp_path / "override.docx"
+
+    renderer = DocxRenderer(config_class=SIBFUConfig, base_dir=tmp_path)
+    renderer.render_to_file(ast, get_profile("common"), str(output))
+
+    doc = DocxDocument(str(output))
+    assert "КУРСОВАЯ РАБОТА" in [p.text for p in doc.paragraphs]
+
+
+def test_unknown_title_page_node_profile_falls_back_to_document_profile(tmp_path):
+    ast = Document(
+        blocks=(TitlePageNode(profile="missing_profile"),),
+        metadata={
+            "title": "Общий титульный лист",
+            "student": "Иванов И.И.",
+            "year": "2026",
+        },
+    )
+    output = tmp_path / "missing_override.docx"
+
+    renderer = DocxRenderer(config_class=SIBFUConfig, base_dir=tmp_path)
+    renderer.render_to_file(ast, get_profile("common"), str(output))
+
+    doc = DocxDocument(str(output))
+    texts = [p.text for p in doc.paragraphs]
+    assert "Общий титульный лист" in texts
+    assert "КУРСОВАЯ РАБОТА" not in texts

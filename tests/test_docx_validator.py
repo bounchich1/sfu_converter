@@ -4,6 +4,19 @@ from docx.shared import Cm, Pt, RGBColor
 
 from sfu_converter.domain.diagnostics import Diagnostic, DiagnosticCodes, Severity
 from sfu_converter.domain.formatting import FormattingProfile
+from sfu_converter.domain.ast_nodes import (
+    BibliographyEntryNode,
+    Document as AstDocument,
+    FigureNode,
+    FormulaNode,
+    ListItemNode,
+    ListNode,
+    ListType,
+    TableCell,
+    TableNode,
+    TableRow,
+)
+from sfu_converter.infrastructure.docx_renderer import DocxRenderer
 from sfu_converter.infrastructure.docx_validator import (
     DocxValidator,
     _pt_value,
@@ -69,9 +82,16 @@ def test_docx_validator_reports_common_unsupported_validator_rules(tmp_path):
         if diagnostic.code == DiagnosticCodes.FORMAT_RULE_NOT_SUPPORTED
     ]
 
-    assert len(unsupported) == 18
+    assert len(unsupported) == 12
     assert all(diagnostic.severity is Severity.WARNING for diagnostic in unsupported)
     assert all("not supported by the validator" in diagnostic.message for diagnostic in unsupported)
+    unsupported_ids = {diagnostic.rule_id for diagnostic in unsupported}
+    assert "common.figure.caption" not in unsupported_ids
+    assert "common.table.caption" not in unsupported_ids
+    assert "common.formula.body" not in unsupported_ids
+    assert "common.formula.explanation" not in unsupported_ids
+    assert "common.list.item" not in unsupported_ids
+    assert "common.bibliography.entry" not in unsupported_ids
 
     payload = diagnostic_to_json(unsupported[0])
     assert payload["ruleId"] == unsupported[0].rule_id
@@ -245,3 +265,90 @@ def test_docx_validator_helpers_cover_optional_json_fields():
         == "common.text.font.name"
     )
 
+
+def test_docx_validator_routes_generated_special_blocks_without_body_indent_errors(tmp_path):
+    ast = AstDocument(
+        blocks=(
+            TableNode(
+                caption="Данные",
+                rows=(
+                    TableRow(cells=(TableCell("Параметр"), TableCell("Значение"))),
+                    TableRow(cells=(TableCell("A"), TableCell("1"))),
+                ),
+            ),
+            FigureNode(src="missing.png", caption="Рисунок 1 — Схема установки"),
+            FormulaNode(content="E = mc^2", explanation="где E — энергия, Дж;"),
+            ListNode(
+                list_type=ListType.BULLET,
+                items=(ListItemNode("первый элемент"), ListItemNode("второй элемент")),
+            ),
+            BibliographyEntryNode(number=1, text="Иванов И.И. Источник. — М.: Наука, 2024."),
+        )
+    )
+    output = tmp_path / "special_blocks.docx"
+    DocxRenderer(base_dir=tmp_path).render_to_file(ast, get_profile("common"), str(output))
+
+    diagnostics = DocxValidator(get_profile("common")).validate_file(str(output))
+
+    assert not any(
+        diagnostic.code == DiagnosticCodes.FORMAT_INDENT
+        and diagnostic.rule_id == "common.text.indent.first_line"
+        for diagnostic in diagnostics
+    )
+
+
+def test_docx_validator_reports_figure_caption_alignment_against_figure_rule(tmp_path):
+    doc = Document()
+    paragraph = _special_paragraph(doc, "Рисунок 1 — Схема", WD_ALIGN_PARAGRAPH.LEFT, indent_cm=0)
+    path = _save_doc(tmp_path, doc, "figure_caption.docx")
+
+    diagnostics = DocxValidator(get_profile("common")).validate_file(str(path))
+
+    assert paragraph.text
+    assert any(
+        diagnostic.code == DiagnosticCodes.FORMAT_ALIGNMENT
+        and diagnostic.rule_id == "common.figure.caption"
+        for diagnostic in diagnostics
+    )
+
+
+def test_docx_validator_reports_table_caption_alignment_against_table_rule(tmp_path):
+    doc = Document()
+    _special_paragraph(doc, "Таблица 1 — Данные", WD_ALIGN_PARAGRAPH.CENTER, indent_cm=0)
+    path = _save_doc(tmp_path, doc, "table_caption.docx")
+
+    diagnostics = DocxValidator(get_profile("common")).validate_file(str(path))
+
+    assert any(
+        diagnostic.code == DiagnosticCodes.FORMAT_ALIGNMENT
+        and diagnostic.rule_id == "common.table.caption"
+        for diagnostic in diagnostics
+    )
+
+
+def test_docx_validator_reports_formula_explanation_indent_against_formula_rule(tmp_path):
+    doc = Document()
+    _special_paragraph(doc, "где E — энергия, Дж;", WD_ALIGN_PARAGRAPH.LEFT, indent_cm=1.25)
+    path = _save_doc(tmp_path, doc, "formula_explanation.docx")
+
+    diagnostics = DocxValidator(get_profile("common")).validate_file(str(path))
+
+    assert any(
+        diagnostic.code == DiagnosticCodes.FORMAT_INDENT
+        and diagnostic.rule_id == "common.formula.explanation"
+        for diagnostic in diagnostics
+    )
+
+
+def _special_paragraph(doc, text, alignment, *, indent_cm: float):
+    paragraph = doc.add_paragraph(text)
+    paragraph.paragraph_format.alignment = alignment
+    paragraph.paragraph_format.first_line_indent = Cm(indent_cm)
+    paragraph.paragraph_format.line_spacing = 1.5
+    paragraph.paragraph_format.space_before = Pt(0)
+    paragraph.paragraph_format.space_after = Pt(0)
+    run = paragraph.runs[0]
+    run.font.name = "Times New Roman"
+    run.font.size = Pt(14)
+    run.font.color.rgb = RGBColor(0, 0, 0)
+    return paragraph

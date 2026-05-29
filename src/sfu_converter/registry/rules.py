@@ -16,6 +16,14 @@ from sfu_converter.domain.formatting import (
 )
 
 _COMMON_DOC = "docs/formatting requirements/common.md"
+_COURSEWORK_DOC = "docs/formatting requirements/coursework.md"
+_GRADUATION_DOC = "docs/formatting requirements/graduation_qualification_work.md"
+_LAB_DOC = "docs/formatting requirements/lab_practical_project_reports.md"
+_PRACTICE_DOC = "docs/formatting requirements/practice_reports.md"
+_RESEARCH_DOC = "docs/formatting requirements/research_reports.md"
+_SMALL_WRITTEN_DOC = "docs/formatting requirements/small_written_works.md"
+_GRAPHIC_DOC = "docs/formatting requirements/graphic_and_demonstration_materials.md"
+_PROJECT_DESIGNATION_DOC = "docs/formatting requirements/project_designations.md"
 
 
 COMMON_RULES: tuple[FormattingRule, ...] = (
@@ -229,7 +237,7 @@ COMMON_RULES: tuple[FormattingRule, ...] = (
             "space_after_pt": 0,
         },
         renderer_status=RuleStatus.IMPLEMENTED,
-        validator_status=RuleStatus.NOT_SUPPORTED,
+        validator_status=RuleStatus.IMPLEMENTED,
         description="Enumeration item: paragraph indent, justified, 1.5 line spacing",
     ),
     FormattingRule(
@@ -246,7 +254,7 @@ COMMON_RULES: tuple[FormattingRule, ...] = (
             "space_after_pt": 0,
         },
         renderer_status=RuleStatus.IMPLEMENTED,
-        validator_status=RuleStatus.NOT_SUPPORTED,
+        validator_status=RuleStatus.IMPLEMENTED,
         description="Figure caption: centered, Times New Roman 14pt",
     ),
     FormattingRule(
@@ -284,7 +292,7 @@ COMMON_RULES: tuple[FormattingRule, ...] = (
             "number_tab_pos_cm": 16.5,
         },
         renderer_status=RuleStatus.IMPLEMENTED,
-        validator_status=RuleStatus.NOT_SUPPORTED,
+        validator_status=RuleStatus.IMPLEMENTED,
         description=("Formula paragraph: centered, with auto-number right-aligned in parentheses"),
     ),
     FormattingRule(
@@ -301,7 +309,7 @@ COMMON_RULES: tuple[FormattingRule, ...] = (
             "space_after_pt": 0,
         },
         renderer_status=RuleStatus.IMPLEMENTED,
-        validator_status=RuleStatus.NOT_SUPPORTED,
+        validator_status=RuleStatus.IMPLEMENTED,
         description="Formula symbol explanation: left-aligned, no first-line indent",
     ),
     FormattingRule(
@@ -338,7 +346,7 @@ COMMON_RULES: tuple[FormattingRule, ...] = (
             "space_after_pt": 0,
         },
         renderer_status=RuleStatus.IMPLEMENTED,
-        validator_status=RuleStatus.NOT_SUPPORTED,
+        validator_status=RuleStatus.IMPLEMENTED,
         description="Bibliography entry: justified, paragraph indent, 1.5 line spacing",
     ),
     FormattingRule(
@@ -371,7 +379,7 @@ COMMON_RULES: tuple[FormattingRule, ...] = (
             "space_after_pt": 0,
         },
         renderer_status=RuleStatus.IMPLEMENTED,
-        validator_status=RuleStatus.NOT_SUPPORTED,
+        validator_status=RuleStatus.IMPLEMENTED,
         description="Table caption: left-aligned, Times New Roman 14pt",
     ),
     FormattingRule(
@@ -433,4 +441,478 @@ COMMON_RULES: tuple[FormattingRule, ...] = (
 )
 
 
-RULES_BY_ID: dict[str, FormattingRule] = {rule.id: rule for rule in COMMON_RULES}
+LAB_PRACTICAL_PROJECT_REPORT_RULES: tuple[FormattingRule, ...] = (
+    FormattingRule(
+        id="lab_practical_project_reports.metadata.required",
+        source_doc=_LAB_DOC,
+        source_section="Title Page",
+        severity=RuleSeverity.REQUIRED,
+        parameters={
+            "required_metadata": ("document_type", "title", "student", "group", "teacher"),
+            "optional_metadata": ("record_book", "institute", "department", "city", "year"),
+        },
+        renderer_status=RuleStatus.NOT_SUPPORTED,
+        validator_status=RuleStatus.NOT_SUPPORTED,
+        description="Lab/practical/project report metadata required by the title page form",
+    ),
+    FormattingRule(
+        id="lab_practical_project_reports.title_page.form_m",
+        source_doc=_LAB_DOC,
+        source_section="Title Page",
+        severity=RuleSeverity.REQUIRED,
+        parameters={
+            "form": "appendix_m",
+            "default_document_type": "ОТЧЕТ ПО ЛАБОРАТОРНОЙ РАБОТЕ",
+            "required_metadata": ("title", "student", "group", "teacher"),
+            "optional_metadata": ("document_type", "record_book", "institute", "department", "city", "year"),
+        },
+        renderer_status=RuleStatus.IMPLEMENTED,
+        validator_status=RuleStatus.NOT_SUPPORTED,
+        description="Appendix M title page for lab, practical, and project-completion reports",
+    ),
+    FormattingRule(
+        id="lab_practical_project_reports.structure.required_sections",
+        source_doc=_LAB_DOC,
+        source_section="Structure",
+        severity=RuleSeverity.REQUIRED,
+        parameters={"required_blocks": ("title_page", "main_part")},
+        renderer_status=RuleStatus.NOT_SUPPORTED,
+        validator_status=RuleStatus.NOT_SUPPORTED,
+        description="Title page and main part are mandatory",
+    ),
+)
+
+
+PRACTICE_REPORT_RULES: tuple[FormattingRule, ...] = (
+    FormattingRule(
+        id="practice_reports.metadata.required",
+        source_doc=_PRACTICE_DOC,
+        source_section="Title Page",
+        severity=RuleSeverity.REQUIRED,
+        parameters={
+            "required_metadata": ("title", "student", "group"),
+            "optional_metadata": (
+                "document_type",
+                "practice_place",
+                "university_supervisor",
+                "enterprise_supervisor",
+                "record_book",
+                "institute",
+                "department",
+                "city",
+                "year",
+            ),
+        },
+        renderer_status=RuleStatus.NOT_SUPPORTED,
+        validator_status=RuleStatus.NOT_SUPPORTED,
+        description="Practice report metadata required by the title page form",
+    ),
+    FormattingRule(
+        id="practice_reports.title_page.form_k",
+        source_doc=_PRACTICE_DOC,
+        source_section="Title Page",
+        severity=RuleSeverity.REQUIRED,
+        parameters={
+            "form": "appendix_k",
+            "default_document_type": "ОТЧЕТ О ПРАКТИКЕ",
+            "required_metadata": ("title", "student", "group"),
+            "optional_metadata": (
+                "document_type",
+                "practice_place",
+                "university_supervisor",
+                "enterprise_supervisor",
+                "record_book",
+                "institute",
+                "department",
+                "city",
+                "year",
+            ),
+        },
+        renderer_status=RuleStatus.IMPLEMENTED,
+        validator_status=RuleStatus.NOT_SUPPORTED,
+        description="Appendix K title page for practice reports",
+    ),
+    FormattingRule(
+        id="practice_reports.structure.required_sections",
+        source_doc=_PRACTICE_DOC,
+        source_section="Structure",
+        severity=RuleSeverity.REQUIRED,
+        parameters={"required_blocks": ("title_page", "main_part")},
+        renderer_status=RuleStatus.NOT_SUPPORTED,
+        validator_status=RuleStatus.NOT_SUPPORTED,
+        description="Title page and main part are mandatory",
+    ),
+)
+
+
+RESEARCH_REPORT_RULES: tuple[FormattingRule, ...] = (
+    FormattingRule(
+        id="research_reports.metadata.required",
+        source_doc=_RESEARCH_DOC,
+        source_section="Title Page for Master's Research-Work Report",
+        severity=RuleSeverity.REQUIRED,
+        parameters={
+            "required_metadata": ("title", "student", "group"),
+            "optional_metadata": (
+                "master_program",
+                "program_head",
+                "approval_date",
+                "supervisor",
+                "record_book",
+                "institute",
+                "department",
+                "city",
+                "year",
+            ),
+        },
+        renderer_status=RuleStatus.NOT_SUPPORTED,
+        validator_status=RuleStatus.NOT_SUPPORTED,
+        description="Research report metadata required by the title page form",
+    ),
+    FormattingRule(
+        id="research_reports.title_page.form_l",
+        source_doc=_RESEARCH_DOC,
+        source_section="Title Page for Master's Research-Work Report",
+        severity=RuleSeverity.REQUIRED,
+        parameters={
+            "form": "appendix_l",
+            "default_document_type": "ОТЧЕТ О НАУЧНО-ИССЛЕДОВАТЕЛЬСКОЙ РАБОТЕ",
+            "required_metadata": ("title", "student", "group"),
+            "optional_metadata": (
+                "master_program",
+                "program_head",
+                "approval_date",
+                "supervisor",
+                "record_book",
+                "institute",
+                "department",
+                "city",
+                "year",
+            ),
+        },
+        renderer_status=RuleStatus.IMPLEMENTED,
+        validator_status=RuleStatus.NOT_SUPPORTED,
+        description="Appendix L title page for master's research-work reports",
+    ),
+    FormattingRule(
+        id="research_reports.structure.required_sections",
+        source_doc=_RESEARCH_DOC,
+        source_section="Structure",
+        severity=RuleSeverity.REQUIRED,
+        parameters={"required_blocks": ("title_page", "main_part")},
+        renderer_status=RuleStatus.NOT_SUPPORTED,
+        validator_status=RuleStatus.NOT_SUPPORTED,
+        description="Title page and main part are mandatory",
+    ),
+)
+
+
+SMALL_WRITTEN_WORK_RULES: tuple[FormattingRule, ...] = (
+    FormattingRule(
+        id="small_written_works.metadata.required",
+        source_doc=_SMALL_WRITTEN_DOC,
+        source_section="Title Page",
+        severity=RuleSeverity.REQUIRED,
+        parameters={
+            "required_metadata": ("title", "student", "group"),
+            "optional_metadata": (
+                "document_type",
+                "discipline",
+                "teacher",
+                "record_book",
+                "institute",
+                "department",
+                "city",
+                "year",
+            ),
+        },
+        renderer_status=RuleStatus.NOT_SUPPORTED,
+        validator_status=RuleStatus.NOT_SUPPORTED,
+        description="Small written work metadata required by the title page form",
+    ),
+    FormattingRule(
+        id="small_written_works.title_page.form_n",
+        source_doc=_SMALL_WRITTEN_DOC,
+        source_section="Title Page",
+        severity=RuleSeverity.REQUIRED,
+        parameters={
+            "form": "appendix_n",
+            "default_document_type": "РЕФЕРАТ",
+            "required_metadata": ("title", "student", "group"),
+            "optional_metadata": (
+                "document_type",
+                "discipline",
+                "teacher",
+                "record_book",
+                "institute",
+                "department",
+                "city",
+                "year",
+            ),
+        },
+        renderer_status=RuleStatus.IMPLEMENTED,
+        validator_status=RuleStatus.NOT_SUPPORTED,
+        description="Appendix N title page for referats, calculation works, control works, and essays",
+    ),
+    FormattingRule(
+        id="small_written_works.structure.required_sections",
+        source_doc=_SMALL_WRITTEN_DOC,
+        source_section="Structure",
+        severity=RuleSeverity.REQUIRED,
+        parameters={"required_blocks": ("title_page", "main_part")},
+        renderer_status=RuleStatus.NOT_SUPPORTED,
+        validator_status=RuleStatus.NOT_SUPPORTED,
+        description="Title page and main part are mandatory",
+    ),
+)
+
+
+COURSEWORK_RULES: tuple[FormattingRule, ...] = (
+    FormattingRule(
+        id="coursework.metadata.required",
+        source_doc=_COURSEWORK_DOC,
+        source_section="Title Page",
+        severity=RuleSeverity.REQUIRED,
+        parameters={
+            "required_metadata": ("title", "student", "group", "supervisor"),
+            "optional_metadata": (
+                "document_type",
+                "record_book",
+                "institute",
+                "department",
+                "city",
+                "year",
+            ),
+        },
+        renderer_status=RuleStatus.NOT_SUPPORTED,
+        validator_status=RuleStatus.NOT_SUPPORTED,
+        description="Coursework metadata required by the title page form",
+    ),
+    FormattingRule(
+        id="coursework.title_page.form_i",
+        source_doc=_COURSEWORK_DOC,
+        source_section="Title Page",
+        severity=RuleSeverity.REQUIRED,
+        parameters={
+            "form": "appendix_i",
+            "default_document_type": "КУРСОВАЯ РАБОТА",
+            "required_metadata": ("title", "student", "group", "supervisor"),
+            "optional_metadata": (
+                "document_type",
+                "record_book",
+                "institute",
+                "department",
+                "city",
+                "year",
+            ),
+        },
+        renderer_status=RuleStatus.IMPLEMENTED,
+        validator_status=RuleStatus.NOT_SUPPORTED,
+        description="Appendix I title page for course projects and course works",
+    ),
+    FormattingRule(
+        id="coursework.structure.required_sections",
+        source_doc=_COURSEWORK_DOC,
+        source_section="Course Work Specifics",
+        severity=RuleSeverity.REQUIRED,
+        parameters={"required_blocks": ("title_page", "main_part")},
+        renderer_status=RuleStatus.NOT_SUPPORTED,
+        validator_status=RuleStatus.NOT_SUPPORTED,
+        description="Title page and main part are mandatory for course works",
+    ),
+    FormattingRule(
+        id="coursework.frame.course_project_explanatory_note",
+        source_doc=_COURSEWORK_DOC,
+        source_section="Course Project Specifics",
+        severity=RuleSeverity.REQUIRED,
+        parameters={"requires_frame": True, "title_block_forms": ("form_1", "form_2", "form_3", "form_4")},
+        renderer_status=RuleStatus.NOT_SUPPORTED,
+        validator_status=RuleStatus.NOT_SUPPORTED,
+        description="Course project explanatory notes use framed sheets and title blocks",
+    ),
+)
+
+
+GRADUATION_QUALIFICATION_WORK_RULES: tuple[FormattingRule, ...] = (
+    FormattingRule(
+        id="graduation_qualification_work.metadata.required",
+        source_doc=_GRADUATION_DOC,
+        source_section="VKR Title Pages",
+        severity=RuleSeverity.REQUIRED,
+        parameters={
+            "required_metadata": ("title", "student", "supervisor"),
+            "optional_metadata": (
+                "vkr_type",
+                "direction",
+                "program",
+                "reviewer",
+                "department_head",
+                "institute",
+                "department",
+                "city",
+                "year",
+            ),
+        },
+        renderer_status=RuleStatus.NOT_SUPPORTED,
+        validator_status=RuleStatus.NOT_SUPPORTED,
+        description="VKR metadata required by the selected title page form",
+    ),
+    FormattingRule(
+        id="graduation_qualification_work.title_page.form_b",
+        source_doc=_GRADUATION_DOC,
+        source_section="VKR Title Pages",
+        severity=RuleSeverity.REQUIRED,
+        parameters={
+            "form": "appendix_b",
+            "document_type": "МАГИСТЕРСКАЯ ДИССЕРТАЦИЯ",
+            "required_metadata": ("title", "student", "supervisor"),
+        },
+        renderer_status=RuleStatus.NOT_SUPPORTED,
+        validator_status=RuleStatus.NOT_SUPPORTED,
+        description="Appendix B title page for master dissertations",
+    ),
+    FormattingRule(
+        id="graduation_qualification_work.title_page.form_v",
+        source_doc=_GRADUATION_DOC,
+        source_section="VKR Title Pages",
+        severity=RuleSeverity.REQUIRED,
+        parameters={
+            "form": "appendix_v",
+            "document_type": "ДИПЛОМНЫЙ ПРОЕКТ",
+            "required_metadata": ("title", "student", "supervisor"),
+        },
+        renderer_status=RuleStatus.NOT_SUPPORTED,
+        validator_status=RuleStatus.NOT_SUPPORTED,
+        description="Appendix V title page for diploma projects",
+    ),
+    FormattingRule(
+        id="graduation_qualification_work.title_page.form_g",
+        source_doc=_GRADUATION_DOC,
+        source_section="VKR Title Pages",
+        severity=RuleSeverity.REQUIRED,
+        parameters={
+            "form": "appendix_g",
+            "document_type": "ДИПЛОМНАЯ РАБОТА",
+            "required_metadata": ("title", "student", "supervisor"),
+        },
+        renderer_status=RuleStatus.NOT_SUPPORTED,
+        validator_status=RuleStatus.NOT_SUPPORTED,
+        description="Appendix G title page for diploma works",
+    ),
+    FormattingRule(
+        id="graduation_qualification_work.title_page.form_d",
+        source_doc=_GRADUATION_DOC,
+        source_section="VKR Title Pages",
+        severity=RuleSeverity.REQUIRED,
+        parameters={
+            "form": "appendix_d",
+            "document_type": "БАКАЛАВРСКАЯ РАБОТА",
+            "required_metadata": ("title", "student", "supervisor"),
+        },
+        renderer_status=RuleStatus.NOT_SUPPORTED,
+        validator_status=RuleStatus.NOT_SUPPORTED,
+        description="Appendix D title page for bachelor works",
+    ),
+    FormattingRule(
+        id="graduation_qualification_work.structure.assignment_after_title",
+        source_doc=_GRADUATION_DOC,
+        source_section="VKR Assignment",
+        severity=RuleSeverity.REQUIRED,
+        parameters={"assignment_after_title_page": True, "counted_in_page_total": False},
+        renderer_status=RuleStatus.NOT_SUPPORTED,
+        validator_status=RuleStatus.NOT_SUPPORTED,
+        description="VKR assignment is inserted after the title page and excluded from page count",
+    ),
+)
+
+
+GRAPHIC_AND_DEMONSTRATION_MATERIAL_RULES: tuple[FormattingRule, ...] = (
+    FormattingRule(
+        id="graphic_and_demonstration_materials.sheet.frame",
+        source_doc=_GRAPHIC_DOC,
+        source_section="Drawings and Schemes",
+        severity=RuleSeverity.REQUIRED,
+        parameters={"requires_frame": True, "title_block_forms": ("form_5", "form_6")},
+        renderer_status=RuleStatus.NOT_SUPPORTED,
+        validator_status=RuleStatus.NOT_SUPPORTED,
+        description="Drawings and schemes require a frame and title block",
+    ),
+    FormattingRule(
+        id="graphic_and_demonstration_materials.poster.fill_density",
+        source_doc=_GRAPHIC_DOC,
+        source_section="Posters",
+        severity=RuleSeverity.REQUIRED,
+        parameters={"min_fill_percent": 70, "format": "A1"},
+        renderer_status=RuleStatus.NOT_SUPPORTED,
+        validator_status=RuleStatus.NOT_SUPPORTED,
+        description="Posters are A1 sheets filled to at least 70 percent",
+    ),
+    FormattingRule(
+        id="graphic_and_demonstration_materials.slide.required_first_slide_fields",
+        source_doc=_GRAPHIC_DOC,
+        source_section="Slides",
+        severity=RuleSeverity.REQUIRED,
+        parameters={"fields": ("university", "institute", "title", "student", "supervisor", "city", "year")},
+        renderer_status=RuleStatus.NOT_SUPPORTED,
+        validator_status=RuleStatus.NOT_SUPPORTED,
+        description="First slide must include institution, topic, author, supervisor, city, and year",
+    ),
+)
+
+
+PROJECT_DESIGNATION_RULES: tuple[FormattingRule, ...] = (
+    FormattingRule(
+        id="project_designations.explanatory_note.frame",
+        source_doc=_PROJECT_DESIGNATION_DOC,
+        source_section="Explanatory Note Sheets",
+        severity=RuleSeverity.REQUIRED,
+        parameters={
+            "left_sheet_edge_to_frame_mm": 20,
+            "top_right_bottom_edge_to_frame_mm": 5,
+            "text_to_frame_horizontal_mm": 5,
+            "text_to_frame_vertical_mm": 15,
+        },
+        renderer_status=RuleStatus.NOT_SUPPORTED,
+        validator_status=RuleStatus.NOT_SUPPORTED,
+        description="Diploma and course project explanatory notes use framed A4 sheets",
+    ),
+    FormattingRule(
+        id="project_designations.title_block.forms",
+        source_doc=_PROJECT_DESIGNATION_DOC,
+        source_section="Main Title-Block Forms",
+        severity=RuleSeverity.REQUIRED,
+        parameters={
+            "text_first_sheet_forms": ("form_1", "form_2"),
+            "text_following_sheet_forms": ("form_3", "form_4"),
+            "graphic_sheet_forms": ("form_5", "form_6"),
+        },
+        renderer_status=RuleStatus.NOT_SUPPORTED,
+        validator_status=RuleStatus.NOT_SUPPORTED,
+        description="Title-block forms used for explanatory notes and graphic sheets",
+    ),
+    FormattingRule(
+        id="project_designations.letter_numeric_designation",
+        source_doc=_PROJECT_DESIGNATION_DOC,
+        source_section="Letter-Numeric Designation",
+        severity=RuleSeverity.REQUIRED,
+        parameters={"title_block_field": 2, "may_include_year": True},
+        renderer_status=RuleStatus.NOT_SUPPORTED,
+        validator_status=RuleStatus.NOT_SUPPORTED,
+        description="Diploma/course project materials receive a letter-numeric designation in title-block field 2",
+    ),
+)
+
+
+ALL_RULES: tuple[FormattingRule, ...] = (
+    *COMMON_RULES,
+    *LAB_PRACTICAL_PROJECT_REPORT_RULES,
+    *PRACTICE_REPORT_RULES,
+    *RESEARCH_REPORT_RULES,
+    *SMALL_WRITTEN_WORK_RULES,
+    *COURSEWORK_RULES,
+    *GRADUATION_QUALIFICATION_WORK_RULES,
+    *GRAPHIC_AND_DEMONSTRATION_MATERIAL_RULES,
+    *PROJECT_DESIGNATION_RULES,
+)
+
+RULES_BY_ID: dict[str, FormattingRule] = {rule.id: rule for rule in ALL_RULES}

@@ -1,105 +1,90 @@
-# Task 12: Implement Page Numbering
+# Task 12: Implement Standards-Compliant Page Numbering
 
 ## Priority: High
-## Phase: Phase 5 (Renderer features)
-## Affected files: `src/sfu_converter/converter.py` (or `infrastructure/docx_renderer.py`)
-## References: `docs/formatting requirements/common.md` — Page numbering section
+## Phase: Phase 5 (Renderer + validator)
+## Standard reference
+- PDF §7.2 (p. 14): pages numbered with sequential Arabic numerals, bottom
+  centre, no first-line indent, Times New Roman 14 pt.
+- §7.2: title page is **counted** but the number is not printed.
+- §5.6: Form А (ВКР assignment) is excluded from numbering.
+- §7.1.3: ДП/КП framed sheets place the page number in graph 7 of the
+  main inscription, not in the footer.
+- Audit row "common.page.numbering" — `validator_status = NOT_SUPPORTED`.
 
-## Summary
+## Affected files
+- `src/sfu_converter/infrastructure/docx_renderer.py`
+- `src/sfu_converter/infrastructure/page_numbering.py` *(new)*
+- `src/sfu_converter/infrastructure/docx_validator.py`
+- `src/sfu_converter/registry/rules.py`
+- `tests/test_page_numbering.py` *(new)*
+- `tests/test_docx_renderer.py`
+- `tests/test_docx_validator.py`
 
-Add automatic page numbering to generated documents. Per STU 7.5-07-2021:
-- Arabic numerals
-- Centered at the bottom of the page
-- Font size: 14pt
-- Title page is page 1 but the number is NOT printed on it
-- Numbering starts from 1 including title page
+## Current state
 
-## Detailed Implementation
+The renderer already adds a bottom-centred page-number field. There is no
+control over which pages display the number (title page hides it but Form
+А — which is now produced by Task 11 — also needs to hide it). Framed-sheet
+profiles cannot redirect numbering into the title block. The validator
+skips `common.page.numbering` entirely.
 
-Page numbering in `python-docx` requires manipulating the section's footer XML directly, because `python-docx` doesn't have a high-level API for page number fields.
+## Implementation
 
-### 1. Add a method to the renderer/converter
+1. Replace the inline footer mutation with `page_numbering.configure(...)`.
+   It accepts a list of section descriptors:
 
-```python
-from docx.oxml.ns import qn
-from docx.oxml import OxmlElement
+   ```python
+   @dataclass
+   class PageNumberingSection:
+       start_at: int | None
+       hide_first_page: bool
+       suppress_in_section: bool
+       location: Location  # FOOTER_CENTER | FRAME_FIELD_7
+   ```
 
-def _add_page_numbering(self):
-    """Add centered page numbers in the footer."""
-    for section in self.doc.sections:
-        # Enable "Different First Page" to hide number on title page
-        section.different_first_page_header_footer = True
-        
-        # Configure the default footer (pages 2+)
-        footer = section.footer
-        footer.is_linked_to_previous = False
-        
-        paragraph = footer.paragraphs[0] if footer.paragraphs else footer.add_paragraph()
-        paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        
-        # Clear existing content
-        for run in paragraph.runs:
-            run.clear()
-        
-        run = paragraph.add_run()
-        
-        # Set font
-        run.font.name = self.config.FONT_NAME
-        run.font.size = Pt(14)
-        run.font.color.rgb = RGBColor(0, 0, 0)
-        
-        # Add PAGE field
-        fldChar_begin = OxmlElement('w:fldChar')
-        fldChar_begin.set(qn('w:fldCharType'), 'begin')
-        run._element.append(fldChar_begin)
-        
-        instrText = OxmlElement('w:instrText')
-        instrText.set(qn('xml:space'), 'preserve')
-        instrText.text = ' PAGE '
-        run._element.append(instrText)
-        
-        fldChar_end = OxmlElement('w:fldChar')
-        fldChar_end.set(qn('w:fldCharType'), 'end')
-        run._element.append(fldChar_end)
-        
-        # First page footer remains empty (no number on title page)
-        first_footer = section.first_page_footer
-        if first_footer.paragraphs:
-            first_footer.paragraphs[0].clear()
-```
-
-### 2. Call from document initialization
-
-```python
-def _initialize_document(self, template):
-    self.doc = self._load_template(template)
-    self._setup_document_margins()
-    self._add_page_numbering()  # Add this line
-```
-
-### 3. Add config constants
-
-In `config.py` or rule registry:
-```python
-PAGE_NUMBERING = {
-    'position': 'bottom_center',
-    'font_size': Pt(14),
-    'font_name': 'Times New Roman',
-    'format': 'arabic',
-    'skip_first_page': True,  # Title page has no number
-}
-```
+2. The renderer maps the document into sections:
+   - section 1: title page — `hide_first_page=True`, `start_at=1`,
+     `location=FOOTER_CENTER`.
+   - section 2 (ВКР only): Form А — `suppress_in_section=True`,
+     `start_at=2` (or whatever the title page final number is) —
+     numbering does not render in this section, but the global counter
+     keeps incrementing for the remainder.
+   - section 3 onwards: body — `location=FOOTER_CENTER` for normal
+     profiles, `FRAME_FIELD_7` for framed coursework / diploma profiles.
+3. The `FRAME_FIELD_7` branch wires the number into the title block field
+   delivered by Task 24. Until that lands the renderer falls back to
+   `FOOTER_CENTER` and the registry rule keeps `IMPLEMENTED` for the
+   footer location while `coursework.title_block.field_7_page_number`
+   stays `NOT_SUPPORTED`.
+4. Validator implementation:
+   - Walk every DOCX section. Look up `<w:pgNumType>` and
+     `<w:titlePg/>` elements.
+   - Confirm Times New Roman 14 pt, no first-line indent, centred (or, for
+     framed profiles, that field 7 contains the `PAGE` field).
+   - Emit `common.page.numbering` diagnostics when any check fails.
+5. Flip `common.page.numbering` →
+   `validator_status=IMPLEMENTED`.
 
 ## Tests
 
-- Generate a DOCX and verify footer XML contains PAGE field
-- Verify `different_first_page_header_footer` is True
-- Verify first page footer is empty
-- Verify default footer has centered alignment
-- Verify font is Times New Roman 14pt
+- A converted document hides the page number on the title page only; pages
+  2+ display Arabic numerals starting at 2.
+- ВКР conversion yields no number on the two assignment pages and
+  resumes numbering on the реферат at the appropriate value.
+- A coursework conversion places the number inside the frame's field 7
+  (Task 24 delivers the frame; this test asserts that when the frame is
+  present, the validator accepts the embedded number).
+- The validator reports a diagnostic when the centred field uses a
+  non-TNR font.
+- The validator reports `common.page.numbering` if the title page's
+  `<w:titlePg/>` flag is missing.
 
 ## Verification
 
-1. Convert a multi-page example file
-2. Open in Word — page 1 has no number, page 2+ shows Arabic numbers centered at bottom
-3. Numbers are in Times New Roman 14pt
+```bash
+python -m pytest tests/test_page_numbering.py tests/test_docx_renderer.py tests/test_docx_validator.py
+```
+
+## Notes / dependencies
+
+- Pair with Task 11 (Form А) and Task 24 (framed sheets).
