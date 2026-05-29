@@ -54,21 +54,16 @@ class FormattingProfile:
 
 
 def unsupported_rule_diagnostics(profile: FormattingProfile, *, component: str) -> list[Diagnostic]:
-    """Return warnings for profile rules not supported by a pipeline component."""
+    """Return warnings for profile rules not supported by a pipeline component.
+
+    Thin wrapper preserved for backwards compatibility. ``component`` matches
+    the ``target`` argument of :func:`sfu_converter.application.profile_support.support_diagnostics`,
+    which is the canonical entry point introduced in Task 03.
+    """
+
+    from sfu_converter.application.profile_support import support_diagnostics
 
     if component not in {"renderer", "validator"}:
         raise ValueError(f"Unsupported rule support component: {component!r}")
 
-    status_attr = f"{component}_status"
-    diagnostics: list[Diagnostic] = []
-    for rule in profile.rules:
-        if getattr(rule, status_attr) is RuleStatus.NOT_SUPPORTED:
-            diagnostics.append(
-                Diagnostic(
-                    code=DiagnosticCodes.FORMAT_RULE_NOT_SUPPORTED,
-                    message=f"Rule {rule.id} is not supported by the {component}",
-                    severity=Severity.WARNING,
-                    rule_id=rule.id,
-                )
-            )
-    return diagnostics
+    return support_diagnostics(profile, target=component)

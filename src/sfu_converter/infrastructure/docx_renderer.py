@@ -113,7 +113,7 @@ class DocxRenderer(RendererPort):
         template_path: str | None = None,
         template_mode: str = "append",
     ) -> bytes:
-        self._initialize_document(template_path, template_mode=template_mode)
+        self._initialize_document(template_path, template_mode=template_mode, profile=profile)
         self._render_from_ast(document)
         buffer = BytesIO()
         self.doc.save(buffer)
@@ -128,7 +128,7 @@ class DocxRenderer(RendererPort):
         template_mode: str = "append",
     ) -> list[Diagnostic]:
         diagnostics = unsupported_rule_diagnostics(profile, component="renderer")
-        self._initialize_document(template_path, template_mode=template_mode)
+        self._initialize_document(template_path, template_mode=template_mode, profile=profile)
         self._render_from_ast(document)
         destination = Path(output_path)
         destination.parent.mkdir(parents=True, exist_ok=True)
@@ -490,7 +490,7 @@ class DocxRenderer(RendererPort):
             self._setup_document_margins()
             self.logger.info("Создан новый документ")
 
-    def _initialize_document(self, template=None, *, template_mode: str = "append"):
+    def _initialize_document(self, template=None, *, template_mode: str = "append", profile: FormattingProfile | None = None):
         if template:
             self._load_template(template)
         else:
@@ -503,6 +503,7 @@ class DocxRenderer(RendererPort):
         self._formula_counter = 0
         self._template_mode = template_mode
         self._title_page_emitted = False
+        self._profile = profile
 
     def _render_from_ast(self, document):
         for block in document.blocks:

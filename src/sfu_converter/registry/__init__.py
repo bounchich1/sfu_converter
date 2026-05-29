@@ -12,9 +12,10 @@ from sfu_converter.registry.loader import (
     iter_rules,
 )
 from sfu_converter.registry.profiles import PROFILES
-from sfu_converter.registry.rules import COMMON_RULES, RULES_BY_ID
+from sfu_converter.registry.rules import ALL_RULES, COMMON_RULES, RULES_BY_ID
 
 __all__ = [
+    "ALL_RULES",
     "COMMON_RULES",
     "PROFILES",
     "RULES_BY_ID",

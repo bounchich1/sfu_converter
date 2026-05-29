@@ -285,6 +285,7 @@ def cmd_convert(args) -> int:
             )
         )
     elif not args.quiet:
+        print(f"Profile: {profile.display_name}")
         print(f"Converted: {input_path} -> {output_path}")
     return exit_code
 
@@ -329,6 +330,7 @@ def cmd_validate_docx(args) -> int:
             )
         )
     elif not args.quiet:
+        print(f"Profile: {profile.display_name}")
         if is_valid:
             print(f"Validation passed: {input_path}")
         else:

@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
+from typing import Any, Mapping
 
 from .ast_nodes import SourceSpan
 
@@ -23,6 +24,8 @@ class Diagnostic:
     source: SourceSpan | None = None
     rule_id: str | None = None
     suggestion: str | None = None
+    target: str | None = None
+    data: Mapping[str, Any] | None = None
 
 
 class DiagnosticCodes:

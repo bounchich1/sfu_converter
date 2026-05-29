@@ -371,6 +371,10 @@ def diagnostic_to_json(diagnostic: Diagnostic) -> dict[str, object]:
             rule = None
         if rule is not None:
             payload["source"] = f"{rule.source_doc}#{_slug(rule.source_section)}"
+    if diagnostic.target is not None:
+        payload["target"] = diagnostic.target
+    if diagnostic.data:
+        payload["data"] = dict(diagnostic.data)
     if diagnostic.suggestion:
         payload["suggestion"] = diagnostic.suggestion
     return payload
