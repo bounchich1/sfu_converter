@@ -10,6 +10,7 @@ from enum import Enum
 from pathlib import Path
 
 from sfu_converter.config import PathConfig, SIBFUConfig
+from sfu_converter.application import composition
 from sfu_converter.domain.diagnostics import Diagnostic, DiagnosticCodes, Severity
 from sfu_converter.domain.formatting import FormattingProfile, RuleStatus, unsupported_rule_diagnostics
 from sfu_converter.infrastructure.docx_validator import diagnostic_to_json
@@ -404,6 +405,7 @@ def cmd_lint(args) -> int:
     diagnostics = list(result.diagnostics)
     diagnostics.extend(unsupported_rule_diagnostics(profile, component="renderer"))
     diagnostics.extend(unsupported_rule_diagnostics(profile, component="validator"))
+    diagnostics.extend(composition.validate(result.document, profile))
     exit_code = _exit_code_from_diagnostics(diagnostics, strict=args.strict)
     duration_ms = int((time.time() - start) * 1000)
 

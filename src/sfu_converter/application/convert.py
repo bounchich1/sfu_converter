@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from sfu_converter.application import composition
 from sfu_converter.domain.diagnostics import Diagnostic
 from sfu_converter.domain.formatting import FormattingProfile, unsupported_rule_diagnostics
 from sfu_converter.parser.base import BaseParser
@@ -23,6 +24,7 @@ class ConvertTextToDocx:
         result = self._parser.parse(source, filename)
         diagnostics = list(result.diagnostics)
         diagnostics.extend(unsupported_rule_diagnostics(profile, component="renderer"))
+        diagnostics.extend(composition.validate(result.document, profile))
         render_diagnostics = self._renderer.render_to_file(
             result.document,
             profile,

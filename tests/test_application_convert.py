@@ -1,8 +1,16 @@
 from sfu_converter.application.convert import ConvertTextToDocx
-from sfu_converter.domain.ast_nodes import Document, ParagraphNode, TextRun
+from sfu_converter.domain.ast_nodes import (
+    Document,
+    HeadingLevel,
+    HeadingNode,
+    ParagraphNode,
+    TextRun,
+    TitlePageNode,
+)
 from sfu_converter.domain.diagnostics import Diagnostic, DiagnosticCodes, Severity
 from sfu_converter.domain.formatting import FormattingProfile, FormattingRule, RuleSeverity, RuleStatus
 from sfu_converter.parser.base import ParserResult
+from sfu_converter.registry import get_profile
 
 
 class FakeParser:
@@ -100,3 +108,34 @@ def test_convert_text_to_docx_reports_unsupported_renderer_rules():
     assert diagnostics[0].code == DiagnosticCodes.FORMAT_RULE_NOT_SUPPORTED
     assert diagnostics[0].severity is Severity.WARNING
     assert diagnostics[0].rule_id == "synthetic.renderer.rule"
+
+
+def test_convert_text_to_docx_reports_composition_diagnostics():
+    document = Document(blocks=(ParagraphNode(runs=(TextRun("Body"),)),))
+    parser = FakeParser(ParserResult(document, []))
+    renderer = FakeRenderer()
+    profile = get_profile("coursework")
+
+    diagnostics = ConvertTextToDocx(parser, renderer).execute("source text", profile, "out.docx")
+
+    codes = [d.code for d in diagnostics]
+    assert DiagnosticCodes.STRUCTURE_TITLE_PAGE_MISSING in codes
+    assert DiagnosticCodes.STRUCTURE_MAIN_PART_MISSING in codes
+
+
+def test_convert_text_to_docx_omits_composition_diagnostics_when_valid():
+    document = Document(
+        blocks=(
+            TitlePageNode(),
+            HeadingNode(level=HeadingLevel.H1, text="Раздел 1"),
+            ParagraphNode(runs=(TextRun("Body"),)),
+        )
+    )
+    parser = FakeParser(ParserResult(document, []))
+    renderer = FakeRenderer()
+    profile = get_profile("lab_practical_project_reports")
+
+    diagnostics = ConvertTextToDocx(parser, renderer).execute("source text", profile, "out.docx")
+
+    structure_codes = [d.code for d in diagnostics if d.code.startswith("STRUCTURE_")]
+    assert structure_codes == []
