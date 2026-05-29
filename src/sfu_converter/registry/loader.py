@@ -18,7 +18,7 @@ from sfu_converter.domain.formatting import (
     RuleStatus,
 )
 from sfu_converter.registry.profiles import PROFILES
-from sfu_converter.registry.rules import COMMON_RULES, RULES_BY_ID
+from sfu_converter.registry.rules import ALL_RULES, COMMON_RULES, RULES_BY_ID
 
 _ALIGNMENT_MAP = {
     "left": WD_ALIGN_PARAGRAPH.LEFT,
@@ -31,7 +31,7 @@ _ALIGNMENT_MAP = {
 def iter_rules() -> Iterable[FormattingRule]:
     """Yield every registered rule."""
 
-    return iter(COMMON_RULES)
+    return iter(ALL_RULES)
 
 
 def iter_profiles() -> Iterable[FormattingProfile]:
@@ -183,7 +183,7 @@ def rules_with_status(
     """Filter rules by renderer/validator implementation status."""
 
     selected = []
-    for rule in COMMON_RULES:
+    for rule in ALL_RULES:
         if renderer is not None and rule.renderer_status is not renderer:
             continue
         if validator is not None and rule.validator_status is not validator:

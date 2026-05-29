@@ -142,6 +142,74 @@ def test_required_severity_is_used_for_core_rules():
     assert font_size_rule.severity is RuleSeverity.REQUIRED
 
 
+def test_common_profile_size_grew_with_registry_expansion():
+    common_profile = get_profile("common")
+    assert len(common_profile.rules) >= 80
+
+
+def test_every_source_doc_lives_under_formatting_requirements_dir():
+    formatting_dir = REPO_ROOT / "docs" / "formatting requirements"
+    for rule in ALL_RULES:
+        rule_doc = (REPO_ROOT / rule.source_doc).resolve()
+        assert formatting_dir.resolve() in rule_doc.parents, (
+            f"Rule {rule.id} source_doc must live under docs/formatting requirements/: {rule.source_doc}"
+        )
+
+
+def test_every_source_section_resolves_to_a_heading_in_its_doc():
+    cache: dict[str, set[str]] = {}
+    for rule in ALL_RULES:
+        if rule.source_doc not in cache:
+            text = (REPO_ROOT / rule.source_doc).read_text(encoding="utf-8")
+            cache[rule.source_doc] = {
+                line.lstrip("#").strip()
+                for line in text.splitlines()
+                if line.lstrip().startswith("#")
+            }
+        assert rule.source_section in cache[rule.source_doc], (
+            f"Rule {rule.id} source_section {rule.source_section!r} not found in {rule.source_doc}"
+        )
+
+
+def test_coursework_profile_contains_required_rules():
+    coursework = get_profile("coursework")
+    rule_ids = {rule.id for rule in coursework.rules}
+    assert "coursework.frame.course_project_explanatory_note" in rule_ids
+    assert "coursework.title_block.field_2_designation" in rule_ids
+    assert "project_designations.code.format" in rule_ids
+
+
+def test_graduation_qualification_work_includes_all_title_page_forms():
+    vkr = get_profile("graduation_qualification_work")
+    rule_ids = {rule.id for rule in vkr.rules}
+    for letter in ("b", "v", "g", "d", "e", "zh"):
+        assert f"graduation_qualification_work.title_page.form_{letter}" in rule_ids, (
+            f"VKR profile missing form_{letter}"
+        )
+
+
+def test_practice_reports_form_k_supports_four_heading_variants():
+    rule = get_rule("practice_reports.title_page.form_k.headings")
+    assert "ОТЧЕТ ОБ УЧЕБНОЙ ПРАКТИКЕ" in rule.parameters["variants"]
+    assert "ОТЧЕТ О ПРОИЗВОДСТВЕННОЙ ПРАКТИКЕ" in rule.parameters["variants"]
+    assert "ОТЧЕТ О ПРЕДДИПЛОМНОЙ ПРАКТИКЕ" in rule.parameters["variants"]
+    assert "ОТЧЕТ О ТЕХНОЛОГИЧЕСКОЙ ПРАКТИКЕ" in rule.parameters["variants"]
+
+
+def test_project_designation_code_dictionary_is_complete():
+    rule = get_rule("project_designations.code.dictionary")
+    expected_codes = {
+        "ПЗ", "РР", "ПМ", "И", "Д", "ВС", "ВП", "ТБ", "ТУ", "СБ", "ВО",
+        "ТЧ", "ГЧ", "МЭ", "МЧ", "УЧ", "МК", "КТП", "ОК", "ВОБ", "ВМ",
+        "С", "ЛС", "ТХ", "ГП", "ГТ", "АР", "АС", "АИ", "КЖ", "КМ",
+        "КМД", "КД", "ВК", "ОВ", "ТМ", "ГСВ", "ГР", "НВ", "НК", "ТС",
+        "АД", "ТР",
+    }
+    assert expected_codes <= set(rule.parameters["document_codes"])
+    assert {"Э", "Г", "П", "К", "В", "Л", "Р", "Е", "С"} <= set(rule.parameters["scheme_type_codes"])
+    assert {"1", "2", "3", "4", "5", "6", "7", "0"} <= set(rule.parameters["scheme_subtype_numbers"])
+
+
 def test_legacy_config_dict_matches_sibfu_config_attributes():
     legacy = build_legacy_config()
 
