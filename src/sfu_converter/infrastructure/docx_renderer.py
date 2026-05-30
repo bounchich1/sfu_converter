@@ -34,9 +34,14 @@ from sfu_converter.domain.ast_nodes import (
     TitlePageNode,
 )
 from sfu_converter.domain.diagnostics import Diagnostic, DiagnosticCodes, Severity
-from sfu_converter.domain.formatting import FormattingProfile, RuleStatus, unsupported_rule_diagnostics
+from sfu_converter.domain.formatting import FormattingProfile, unsupported_rule_diagnostics
 from sfu_converter.infrastructure import docx_styles
 from sfu_converter.infrastructure.numbering import NumberingContext, build_numbering_context
+from sfu_converter.infrastructure.page_numbering import (
+    Location,
+    PageNumberingSection,
+    configure as configure_page_numbering,
+)
 from sfu_converter.ports.renderer import RendererPort
 from sfu_converter.registry import get_profile
 from sfu_converter.utils_image_insert import insert_image
@@ -477,48 +482,16 @@ class DocxRenderer(RendererPort):
             section.right_margin = self.config.MARGINS["right"]
 
     def _add_page_numbering(self):
-        page_cfg = self.config.PAGE_NUMBERING
-
-        for section in self.doc.sections:
-            section.different_first_page_header_footer = page_cfg["skip_first_page"]
-
-            footer = section.footer
-            footer.is_linked_to_previous = False
-
-            paragraph = footer.paragraphs[0] if footer.paragraphs else footer.add_paragraph()
-            paragraph.clear()
-            pf = paragraph.paragraph_format
-            pf.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            pf.first_line_indent = Cm(0)
-            pf.space_before = Pt(0)
-            pf.space_after = Pt(0)
-
-            run = paragraph.add_run()
-            run.font.name = page_cfg["font_name"]
-            run.font.size = page_cfg["font_size"]
-            run.font.color.rgb = RGBColor(*self.config.FONT_COLOR_RGB)
-            run._element.get_or_add_rPr().rFonts.set(
-                qn("w:eastAsia"),
-                page_cfg["font_name"],
+        descriptors = [
+            PageNumberingSection(
+                start_at=1,
+                hide_first_page=bool(self.config.PAGE_NUMBERING["skip_first_page"]),
+                suppress_in_section=False,
+                location=Location.FOOTER_CENTER,
             )
-
-            field_begin = OxmlElement("w:fldChar")
-            field_begin.set(qn("w:fldCharType"), "begin")
-            run._element.append(field_begin)
-
-            instruction = OxmlElement("w:instrText")
-            instruction.set(qn("xml:space"), "preserve")
-            instruction.text = " PAGE "
-            run._element.append(instruction)
-
-            field_end = OxmlElement("w:fldChar")
-            field_end.set(qn("w:fldCharType"), "end")
-            run._element.append(field_end)
-
-            first_footer = section.first_page_footer
-            first_footer.is_linked_to_previous = False
-            first_paragraph = first_footer.paragraphs[0] if first_footer.paragraphs else first_footer.add_paragraph()
-            first_paragraph.clear()
+            for _ in self.doc.sections
+        ]
+        configure_page_numbering(self.doc, descriptors, self.config)
 
     def _load_template(self, template_path):
         template_file = self._resolve_template_path(template_path)
@@ -628,32 +601,23 @@ class DocxRenderer(RendererPort):
         self._rendered_body_blocks = True
 
     def _render_title_page(self, metadata, profile_name=None):
-        """Generate a title page from document metadata.
-
-        Skipped when the renderer is composing into a template prefix that
-        already provides its own title page (``template_mode='preserve-prefix'``)
-        or when a title page has already been emitted for this document.
-
-        When the effective profile declares an implemented ``title_page.form_*``
-        rule, a profile-specific layout (document-type label, ``на тему:`` line,
-        signatory blocks) is rendered and missing required metadata is reported
-        as ``TXT_MISSING_METADATA`` diagnostics. Otherwise a generic title page
-        is produced.
-        """
-
         if self._template_mode == "preserve-prefix":
             return
         if self._title_page_emitted:
             return
 
+        from sfu_converter.infrastructure.title_pages import (
+            TitlePageLayout,
+            select_title_page_form,
+        )
+
         metadata = dict(metadata or {})
         profile = self._resolve_title_profile(profile_name)
-        form_rule = self._title_form_rule(profile)
+        form = select_title_page_form(profile, metadata, override=profile_name)
 
-        if form_rule is not None:
-            self._render_profile_title_page(metadata, form_rule)
-        else:
-            self._render_generic_title_page(metadata)
+        self._report_missing_title_metadata(metadata, form)
+        layout = TitlePageLayout(self.doc, self.config)
+        form.render(layout, metadata)
 
         self.doc.add_page_break()
         self._title_page_emitted = True
@@ -666,179 +630,18 @@ class DocxRenderer(RendererPort):
                 pass
         return self._profile
 
-    @staticmethod
-    def _title_form_rule(profile):
-        if profile is None:
-            return None
-        for rule in profile.rules:
-            if (
-                rule.renderer_status is RuleStatus.IMPLEMENTED
-                and ".title_page.form" in rule.id
-                and "default_document_type" in rule.parameters
-            ):
-                return rule
-        return None
-
-    def _render_generic_title_page(self, metadata):
-        ministry = metadata.get(
-            "ministry",
-            "МИНИСТЕРСТВО НАУКИ И ВЫСШЕГО ОБРАЗОВАНИЯ РОССИЙСКОЙ ФЕДЕРАЦИИ",
-        )
-        university = metadata.get("university", "Сибирский федеральный университет")
-        institute = metadata.get("institute", "")
-        department = metadata.get("department", "")
-        title = metadata.get("title", "")
-        subject = metadata.get("subject", "")
-        student = metadata.get("student", "")
-        group = metadata.get("group", "")
-        supervisor = metadata.get("supervisor", "")
-        supervisor_title = metadata.get("supervisor_title", "")
-        city = metadata.get("city", "Красноярск")
-        year = metadata.get("year", "")
-
-        self._add_title_paragraph(ministry.upper(), bold=False)
-        self._add_title_paragraph(university.upper(), bold=True)
-        if institute:
-            self._add_title_paragraph(institute, bold=False)
-        if department:
-            self._add_title_paragraph(department, bold=False)
-
-        for _ in range(4):
-            self._add_title_paragraph("", bold=False)
-
-        if subject:
-            self._add_title_paragraph(subject.upper(), bold=False)
-        if title:
-            self._add_title_paragraph(title, bold=True, size=Pt(16))
-
-        for _ in range(4):
-            self._add_title_paragraph("", bold=False)
-
-        if supervisor:
-            label = "Руководитель"
-            if supervisor_title:
-                label = f"{label}, {supervisor_title}"
-            self._add_title_paragraph(
-                f"{label} ____________ {supervisor}",
-                bold=False,
-                align=WD_ALIGN_PARAGRAPH.RIGHT,
-            )
-        if student:
-            label = "Студент"
-            if group:
-                label = f"{label} {group}"
-            self._add_title_paragraph(
-                f"{label} ____________ {student}",
-                bold=False,
-                align=WD_ALIGN_PARAGRAPH.RIGHT,
-            )
-
-        for _ in range(4):
-            self._add_title_paragraph("", bold=False)
-
-        if city or year:
-            footer = " ".join(part for part in (city, year) if part)
-            self._add_title_paragraph(footer, bold=False)
-
-    def _render_profile_title_page(self, metadata, form_rule):
-        self._report_missing_title_metadata(metadata, form_rule)
-
-        ministry = metadata.get(
-            "ministry",
-            "МИНИСТЕРСТВО НАУКИ И ВЫСШЕГО ОБРАЗОВАНИЯ РОССИЙСКОЙ ФЕДЕРАЦИИ",
-        )
-        university = metadata.get("university", "Сибирский федеральный университет")
-        institute = metadata.get("institute", "")
-        department = metadata.get("department", "")
-        document_type = metadata.get("document_type") or form_rule.parameters["default_document_type"]
-        title = metadata.get("title", "")
-        teacher = metadata.get("teacher", "")
-        supervisor = metadata.get("supervisor", "")
-        supervisor_title = metadata.get("supervisor_title", "")
-        student = metadata.get("student", "")
-        group = metadata.get("group", "")
-        record_book = metadata.get("record_book", "")
-        city = metadata.get("city", "Красноярск")
-        year = metadata.get("year", "")
-
-        self._add_title_paragraph(ministry.upper(), bold=False)
-        self._add_title_paragraph(university.upper(), bold=True)
-        if institute:
-            self._add_title_paragraph(institute, bold=False)
-        if department:
-            self._add_title_paragraph(department, bold=False)
-
-        for _ in range(4):
-            self._add_title_paragraph("", bold=False)
-
-        self._add_title_paragraph(document_type, bold=True)
-        if title:
-            self._add_title_paragraph(f"на тему: {title}", bold=False)
-
-        for _ in range(4):
-            self._add_title_paragraph("", bold=False)
-
-        if teacher:
-            self._add_title_paragraph(
-                f"Преподаватель ____________ {teacher}",
-                bold=False,
-                align=WD_ALIGN_PARAGRAPH.RIGHT,
-            )
-        if supervisor:
-            label = "Руководитель"
-            if supervisor_title:
-                label = f"{label}, {supervisor_title}"
-            self._add_title_paragraph(
-                f"{label} ____________ {supervisor}",
-                bold=False,
-                align=WD_ALIGN_PARAGRAPH.RIGHT,
-            )
-        if student:
-            label = "Студент"
-            if group:
-                label = f"{label} {group}"
-            if record_book:
-                label = f"{label}, № {record_book}"
-            self._add_title_paragraph(
-                f"{label} ____________ {student}",
-                bold=False,
-                align=WD_ALIGN_PARAGRAPH.RIGHT,
-            )
-
-        for _ in range(4):
-            self._add_title_paragraph("", bold=False)
-
-        if city or year:
-            footer = " ".join(part for part in (city, year) if part)
-            self._add_title_paragraph(footer, bold=False)
-
-    def _report_missing_title_metadata(self, metadata, form_rule):
-        required = form_rule.parameters.get("required_metadata", ())
-        for field in required:
+    def _report_missing_title_metadata(self, metadata, form):
+        for field in form.required_metadata:
             if not metadata.get(field):
                 self._title_page_diagnostics.append(
                     Diagnostic(
                         code=DiagnosticCodes.TXT_MISSING_METADATA,
-                        message=f"Title page metadata field '{field}' is required for {form_rule.id}",
+                        message=f"Title page metadata field '{field}' is required for {form.form_id}",
                         severity=Severity.WARNING,
-                        rule_id=form_rule.id,
+                        rule_id=form.form_id,
                         data={"field": field},
                     )
                 )
-
-    def _add_title_paragraph(self, text, *, bold=False, size=None, align=None):
-        para = self.doc.add_paragraph()
-        para.paragraph_format.alignment = align or WD_ALIGN_PARAGRAPH.CENTER
-        para.paragraph_format.first_line_indent = Cm(0)
-        para.paragraph_format.space_before = Pt(0)
-        para.paragraph_format.space_after = Pt(0)
-        para.paragraph_format.line_spacing = 1.0
-        run = para.add_run(text)
-        run.font.name = self.config.FONT_NAME
-        run.font.size = size or self.config.FONT_SIZE
-        run.font.color.rgb = RGBColor(*self.config.FONT_COLOR_RGB)
-        run.bold = bold
-        run._element.get_or_add_rPr().rFonts.set(qn("w:eastAsia"), self.config.FONT_NAME)
 
     def _render_appendix(self, block):
         """Render ``ПРИЛОЖЕНИЕ X`` on a new page with the standard heading layout.

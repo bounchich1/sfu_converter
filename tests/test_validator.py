@@ -14,6 +14,7 @@ def _set_standard_margins(doc):
     section.bottom_margin = Cm(2)
     section.left_margin = Cm(3)
     section.right_margin = Cm(1)
+    section.different_first_page_header_footer = True
 
 
 class TestStyleValidator:

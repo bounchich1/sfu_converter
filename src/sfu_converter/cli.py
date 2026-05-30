@@ -557,12 +557,14 @@ def _print_text_diagnostics(diagnostics: list[Diagnostic]) -> None:
 
 
 def _profile_to_json(profile: FormattingProfile) -> dict[str, object]:
+    from sfu_converter.infrastructure.title_pages import select_title_page_form
     renderer_unsupported = [
         rule.id for rule in profile.rules if rule.renderer_status is RuleStatus.NOT_SUPPORTED
     ]
     validator_unsupported = [
         rule.id for rule in profile.rules if rule.validator_status is RuleStatus.NOT_SUPPORTED
     ]
+    form = select_title_page_form(profile, {})
     return {
         "name": profile.name,
         "displayName": profile.display_name,
@@ -570,6 +572,7 @@ def _profile_to_json(profile: FormattingProfile) -> dict[str, object]:
         "ruleCount": len(profile.rules),
         "rendererSupportCount": len(profile.rules) - len(renderer_unsupported),
         "validatorSupportCount": len(profile.rules) - len(validator_unsupported),
+        "titlePageForm": form.form_id,
         "unsupportedRuleIds": {
             "renderer": renderer_unsupported,
             "validator": validator_unsupported,

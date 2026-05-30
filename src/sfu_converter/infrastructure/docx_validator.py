@@ -75,6 +75,7 @@ class DocxValidator:
 
         self.diagnostics.extend(unsupported_rule_diagnostics(self.profile, component="validator"))
         self._validate_margins(doc)
+        self._validate_page_numbering(doc)
 
         paragraphs = list(doc.paragraphs)
         for index, paragraph in enumerate(paragraphs, start=1):
@@ -87,6 +88,63 @@ class DocxValidator:
             self._validate_table(table, table_index)
 
         return self.diagnostics
+
+    def _validate_page_numbering(self, doc) -> None:
+        rule_id = "common.page.numbering"
+        try:
+            rule = self._rule(rule_id)
+        except KeyError:
+            return
+
+        from docx.oxml.ns import qn as _qn
+
+        for section_index, section in enumerate(doc.sections, start=1):
+            sect_pr = section._sectPr
+
+            if section_index == 1:
+                title_pg = sect_pr.find(_qn("w:titlePg"))
+                title_pg_active = title_pg is not None and title_pg.get(
+                    _qn("w:val")
+                ) not in ("0", "false")
+                if not title_pg_active:
+                    self._add(
+                        code=DiagnosticCodes.FORMAT_PAGE_NUMBERING,
+                        message=(
+                            f"Section {section_index}: titlePg flag is missing — "
+                            f"page number would appear on the title page"
+                        ),
+                        rule_id=rule_id,
+                    )
+
+            footer = section.footer
+            footer_xml = footer._element.xml
+            if " PAGE " not in footer_xml:
+                continue
+
+            for paragraph in footer.paragraphs:
+                for run in paragraph.runs:
+                    font_name = run.font.name
+                    if font_name and font_name != rule.parameters["font_name"]:
+                        self._add(
+                            code=DiagnosticCodes.FORMAT_PAGE_NUMBERING,
+                            message=(
+                                f"Section {section_index}: page number font "
+                                f"'{font_name}', expected '{rule.parameters['font_name']}'"
+                            ),
+                            rule_id=rule_id,
+                        )
+
+                    font_size = _pt_value(run.font.size)
+                    expected_size = rule.parameters["font_size_pt"]
+                    if font_size and abs(font_size - expected_size) > _POINT_TOLERANCE:
+                        self._add(
+                            code=DiagnosticCodes.FORMAT_PAGE_NUMBERING,
+                            message=(
+                                f"Section {section_index}: page number size "
+                                f"{font_size:.1f}pt, expected {expected_size}pt"
+                            ),
+                            rule_id=rule_id,
+                        )
 
     def _validate_margins(self, doc) -> None:
         rule_id = "common.page.margins.portrait"
