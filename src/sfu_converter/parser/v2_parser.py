@@ -9,6 +9,7 @@ from sfu_converter.domain.ast_nodes import (
     Document,
     FigureNode,
     FormulaNode,
+    FormulaSymbol,
     HeadingLevel,
     HeadingNode,
     ListItemNode,
@@ -46,6 +47,7 @@ _KNOWN_V2_MARKERS = (
     "[FIGURE",
     "[FORMULA",
     "[FORMULA_END]",
+    "[FORMULA_SYMBOL",
     "[H",
     "[LIST",
     "[LIST_END]",
@@ -283,6 +285,9 @@ class V2Parser(BaseParser):
             src=attrs.get("src"),
             caption=attrs.get("caption"),
             id=attrs.get("id"),
+            explanatory_data=_parse_explanatory_data(attrs.get("explanatory")),
+            sheet=_parse_optional_int(attrs.get("sheet")),
+            total_sheets=_parse_optional_int(attrs.get("total_sheets")),
             source=span,
         )
 
@@ -521,6 +526,7 @@ class V2Parser(BaseParser):
         attrs = self._parse_attributes(lines[start_index].strip())
         start_span = _span_for_line(lines[start_index], start_index, filename)
         formula_lines: list[str] = []
+        explanations: list[FormulaSymbol] = []
         i = start_index + 1
         found_end = False
 
@@ -529,6 +535,10 @@ class V2Parser(BaseParser):
             if stripped.startswith("[FORMULA_END]"):
                 found_end = True
                 break
+            if stripped.startswith("[FORMULA_SYMBOL"):
+                explanations.append(_parse_formula_symbol(stripped))
+                i += 1
+                continue
             formula_lines.append(lines[i])
             i += 1
 
@@ -553,10 +563,13 @@ class V2Parser(BaseParser):
 
         return (
             FormulaNode(
-                content="\n".join(formula_lines).strip("\n"),
+                content=_formula_content(formula_lines),
                 id=attrs.get("id"),
                 number=attrs.get("number"),
                 explanation=explanation,
+                explanations=tuple(explanations),
+                continuation_lines=_formula_continuation_lines(formula_lines),
+                consecutive_with=_parse_consecutive_with(attrs),
                 source=SourceSpan(
                     line_start=start_span.line_start,
                     line_end=end_index + 1 if found_end else len(lines),
@@ -614,6 +627,9 @@ class V2Parser(BaseParser):
         return AppendixNode(
             title=attrs.get("title", "ПРИЛОЖЕНИЕ"),
             id=attrs.get("id"),
+            letter=attrs.get("letter"),
+            appendix_type=attrs.get("type"),
+            subtitle=attrs.get("subtitle"),
             source=span,
         )
 
@@ -694,6 +710,55 @@ def _parse_int(value: str | None, *, default: int) -> int:
         return int(value)
     except ValueError:
         return default
+
+
+def _parse_optional_int(value: str | None) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        return None
+
+
+def _parse_bool(value: str | None) -> bool:
+    return (value or "").strip().casefold() in {"true", "1", "yes", "да"}
+
+
+def _parse_explanatory_data(value: str | None) -> tuple[str, ...] | None:
+    if value is None:
+        return None
+    lines = [line.strip() for line in value.replace("\\n", "\n").splitlines()]
+    data = tuple(line for line in lines if line)
+    return data or None
+
+
+def _parse_formula_symbol(stripped: str) -> FormulaSymbol:
+    attrs = parse_attributes(stripped)
+    return FormulaSymbol(
+        name=attrs.get("name", "").strip(),
+        description=attrs.get("text", attrs.get("description", "")).strip(),
+        repeats=_parse_bool(attrs.get("repeats")),
+    )
+
+
+def _formula_content(lines: list[str]) -> str:
+    if not lines:
+        return ""
+    return lines[0].strip("\n")
+
+
+def _formula_continuation_lines(lines: list[str]) -> tuple[str, ...]:
+    return tuple(line.strip("\n") for line in lines[1:])
+
+
+def _parse_consecutive_with(attrs: dict[str, str]) -> str | None:
+    if attrs.get("consecutive_with"):
+        return attrs["consecutive_with"]
+    consecutive = attrs.get("consecutive")
+    if consecutive and consecutive.casefold() not in {"false", "0", "no", "нет"}:
+        return None if consecutive.casefold() in {"true", "1", "yes", "да"} else consecutive
+    return None
 
 
 def _parse_continuation(value: str | None) -> ContinuationLabel | None:

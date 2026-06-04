@@ -8,6 +8,7 @@ from sfu_converter.domain.ast_nodes import (
     BibliographyEntryNode,
     FigureNode,
     FormulaNode,
+    FormulaSymbol,
     HeadingLevel,
     HeadingNode,
     ListNode,
@@ -492,6 +493,28 @@ def test_parser_supports_formula_attributes():
     (formula,) = result.document.blocks
     assert formula.id == "eq:energy"
     assert formula.number == "auto"
+
+
+def test_parser_parses_formula_symbol_lines():
+    result = V1Parser().parse(
+        "\n".join(
+            [
+                "[FORMULA id=eq:momentum]",
+                "p = m * c",
+                '[FORMULA_SYMBOL name=m text="масса, кг"]',
+                '[FORMULA_SYMBOL name=c text="" repeats=true]',
+                "[FORMULA_END]",
+            ]
+        )
+    )
+
+    assert result.diagnostics == []
+    (formula,) = result.document.blocks
+    assert formula.content == "p = m * c"
+    assert formula.explanations == (
+        FormulaSymbol(name="m", description="масса, кг"),
+        FormulaSymbol(name="c", description="", repeats=True),
+    )
 
 
 def test_parser_reports_unterminated_formula_block():

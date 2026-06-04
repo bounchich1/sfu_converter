@@ -21,6 +21,7 @@ ALL_STYLE_TYPES = (
     "toc_heading",
     "appendix_heading",
     "caption_img",
+    "figure_explanatory",
     "caption_table",
     "table_unit",
     "empty_before_header",

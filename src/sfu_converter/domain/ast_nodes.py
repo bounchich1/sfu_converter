@@ -185,7 +185,23 @@ class FigureNode:
     src: str | None = None
     caption: str | None = None
     id: str | None = None
+    explanatory_data: tuple[str, ...] | None = None
+    sheet: int | None = None
+    total_sheets: int | None = None
     source: SourceSpan | None = None
+
+    def __post_init__(self) -> None:
+        if self.explanatory_data is not None:
+            object.__setattr__(self, "explanatory_data", tuple(self.explanatory_data))
+
+
+@dataclass(frozen=True)
+class FormulaSymbol:
+    """A symbol explanation line belonging to a formula."""
+
+    name: str
+    description: str
+    repeats: bool = False
 
 
 @dataclass(frozen=True)
@@ -196,7 +212,14 @@ class FormulaNode:
     id: str | None = None
     number: str | None = None
     explanation: str | None = None
+    explanations: tuple[FormulaSymbol, ...] = ()
+    continuation_lines: tuple[str, ...] = ()
+    consecutive_with: str | None = None
     source: SourceSpan | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "explanations", tuple(self.explanations))
+        object.__setattr__(self, "continuation_lines", tuple(self.continuation_lines))
 
 
 @dataclass(frozen=True)

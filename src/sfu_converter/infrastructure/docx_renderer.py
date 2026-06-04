@@ -39,6 +39,15 @@ from sfu_converter.domain.diagnostics import Diagnostic, DiagnosticCodes, Severi
 from sfu_converter.domain.formatting import FormattingProfile, unsupported_rule_diagnostics
 from sfu_converter.infrastructure.abbreviations import abbreviations_for_document, explicit_abbreviations
 from sfu_converter.infrastructure import docx_styles
+from sfu_converter.infrastructure.figure_layout import (
+    figure_caption_text,
+    figure_reference_diagnostics,
+    normalize_caption_dashes,
+)
+from sfu_converter.infrastructure.formula_layout import (
+    explanation_lines,
+    split_formula_lines,
+)
 from sfu_converter.infrastructure.numbering import NumberingContext, build_numbering_context
 from sfu_converter.infrastructure.page_numbering import (
     Location,
@@ -52,6 +61,7 @@ from sfu_converter.utils_image_insert import insert_image
 
 _SFU_STYLE_BY_TYPE = {
     "caption_img": docx_styles.FIGURE_CAPTION,
+    "figure_explanatory": docx_styles.FIGURE_EXPLANATORY,
     "caption_table": docx_styles.TABLE_CAPTION,
     "table_unit": docx_styles.TABLE_UNIT,
     "formula": docx_styles.FORMULA_BODY,
@@ -158,11 +168,17 @@ class DocxRenderer(RendererPort):
         diagnostics = unsupported_rule_diagnostics(profile, component="renderer")
         self._initialize_document(template_path, template_mode=template_mode, profile=profile)
         self._prepare_document_level_state(document)
+        self._figure_diagnostics = figure_reference_diagnostics(document)
         self._render_from_ast(document)
         destination = Path(output_path)
         destination.parent.mkdir(parents=True, exist_ok=True)
         self.doc.save(str(destination))
-        return diagnostics + self._title_page_diagnostics + self._abbreviation_diagnostics
+        return (
+            diagnostics
+            + self._title_page_diagnostics
+            + self._abbreviation_diagnostics
+            + self._figure_diagnostics
+        )
 
     def _set_run_style(self, run, bold=False, italic=False):
         run.font.name = self.config.FONT_NAME
@@ -259,6 +275,13 @@ class DocxRenderer(RendererPort):
                 "line_spacing": cfg.CAPTION_IMAGE["line_spacing"],
                 "space_before": cfg.CAPTION_IMAGE["space_before"],
                 "space_after": cfg.CAPTION_IMAGE["space_after"],
+            },
+            "figure_explanatory": {
+                "align": WD_ALIGN_PARAGRAPH.CENTER,
+                "indent": no_indent,
+                "line_spacing": cfg.CAPTION_IMAGE["line_spacing"],
+                "space_before": zero,
+                "space_after": zero,
             },
             "caption_table": {
                 "align": cfg.CAPTION_TABLE["align"],
@@ -380,9 +403,10 @@ class DocxRenderer(RendererPort):
         p = self.doc.add_paragraph()
         self._set_paragraph_format(p, style_type)
 
-    def _insert_image(self, image_path=None, caption=None):
+    def _insert_image(self, image_path=None, caption=None, *, explanatory_data=None):
         if not image_path:
             self._add_empty_paragraph("empty_before_image")
+            self._add_figure_explanatory_data(explanatory_data)
             if caption:
                 p = self.doc.add_paragraph(caption)
                 self._set_paragraph_format(p, "caption_img")
@@ -418,12 +442,24 @@ class DocxRenderer(RendererPort):
                 if docx_styles.FIGURE_PLACEHOLDER in [s.name for s in self.doc.styles]:
                     p.style = self.doc.styles[docx_styles.FIGURE_PLACEHOLDER]
 
+        self._add_figure_explanatory_data(explanatory_data)
+
         if caption:
             p = self.doc.add_paragraph(caption)
             self._set_paragraph_format(p, "caption_img")
 
         self._add_empty_paragraph("empty_after_image")
         self._rendered_body_blocks = True
+
+    def _add_figure_explanatory_data(self, explanatory_data) -> None:
+        for line in explanatory_data or ():
+            text = str(line).strip()
+            if not text:
+                continue
+            paragraph = self.doc.add_paragraph(text)
+            self._set_paragraph_format(paragraph, "figure_explanatory")
+            for run in paragraph.runs:
+                run.font.size = Pt(12)
 
     def _parse_table_line(self, line):
         line = line.strip()
@@ -672,16 +708,13 @@ class DocxRenderer(RendererPort):
             return _normalize_caption_dashes(text)
         return f"Таблица {table_number} — {text}"
 
-    def _format_figure_caption(self, caption):
-        if not caption:
+    def _format_figure_caption(self, block: FigureNode):
+        if not block.caption and not (block.sheet is not None and block.sheet >= 2):
             return None
-        text = caption.strip()
-        if not text:
-            return None
-        if text.startswith("Рисунок"):
-            return _normalize_caption_dashes(text)
+        if block.caption and block.caption.strip().startswith("Рисунок") and not block.sheet:
+            return normalize_caption_dashes(block.caption.strip())
         figure_number = self._numbering.next_figure_number()
-        return f"Рисунок {figure_number} — {text}"
+        return figure_caption_text(block, figure_number)
 
     def _setup_document_margins(self):
         for section in self.doc.sections:
@@ -729,6 +762,9 @@ class DocxRenderer(RendererPort):
         self._abbreviation_entries = ()
         self._abbreviation_explicit = False
         self._abbreviation_diagnostics = []
+        self._figure_diagnostics = []
+        self._formula_symbol_numbers: dict[str, str] = {}
+        self._formula_numbers_by_id: dict[str, str] = {}
         self._numbering: NumberingContext = build_numbering_context(profile)
 
     def _prepare_document_level_state(self, document: Document) -> None:
@@ -737,7 +773,10 @@ class DocxRenderer(RendererPort):
         self._abbreviation_diagnostics = []
 
     def _render_from_ast(self, document):
-        for block in document.blocks:
+        blocks = tuple(document.blocks)
+        for index, block in enumerate(blocks):
+            previous_block = blocks[index - 1] if index else None
+            next_block = blocks[index + 1] if index + 1 < len(blocks) else None
             if isinstance(block, StructuralSectionNode):
                 self._render_structural_section(block)
             elif isinstance(block, HeadingNode):
@@ -750,12 +789,30 @@ class DocxRenderer(RendererPort):
                 p = self.doc.add_paragraph(block.text)
                 self._set_paragraph_format(p, "caption_table")
             elif isinstance(block, FigureNode):
-                caption = self._format_figure_caption(block.caption)
-                self._insert_image(block.src, caption)
+                caption = self._format_figure_caption(block)
+                self._insert_image(
+                    block.src,
+                    caption,
+                    explanatory_data=block.explanatory_data,
+                )
             elif isinstance(block, PageBreakNode):
                 self.doc.add_page_break()
             elif isinstance(block, FormulaNode):
-                self._render_formula(block)
+                suppress_after = (
+                    isinstance(next_block, FormulaNode)
+                    and bool(next_block.consecutive_with)
+                    and next_block.consecutive_with == block.id
+                )
+                self._render_formula(
+                    block,
+                    trailing_comma=suppress_after,
+                    suppress_before=(
+                        isinstance(previous_block, FormulaNode)
+                        and bool(block.consecutive_with)
+                        and block.consecutive_with == previous_block.id
+                    ),
+                    suppress_after=suppress_after,
+                )
             elif isinstance(block, ListNode):
                 self._render_list(block)
             elif isinstance(block, AppendixNode):
@@ -1022,15 +1079,25 @@ class DocxRenderer(RendererPort):
         self._set_paragraph_format(p, "normal")
         self._rendered_body_blocks = True
 
-    def _render_formula(self, block):
+    def _render_formula(
+        self,
+        block,
+        *,
+        trailing_comma: bool = False,
+        suppress_before: bool = False,
+        suppress_after: bool = False,
+    ):
         """Render a formula on its own line with right-aligned auto-number."""
 
         if block.number == "auto" or block.number is None:
             number_text = self._numbering.next_formula_number()
         else:
             number_text = str(block.number)
+        if block.id:
+            self._formula_numbers_by_id[block.id] = number_text
 
-        self._add_empty_paragraph("empty_before_formula")
+        if not suppress_before:
+            self._add_empty_paragraph("empty_before_formula")
 
         para = self.doc.add_paragraph()
         self._set_paragraph_format(para, "formula")
@@ -1039,20 +1106,40 @@ class DocxRenderer(RendererPort):
         for run in list(para.runs):
             run._element.getparent().remove(run._element)
 
-        content_run = para.add_run(block.content or "")
-        self._set_run_style(content_run, bold=False)
+        lines = split_formula_lines(block.content or "", block.continuation_lines)
+        for line_index, line in enumerate(lines):
+            if line_index:
+                break_run = para.add_run()
+                break_run.add_break()
+                self._set_run_style(break_run, bold=False)
+            content_run = para.add_run(line)
+            self._set_run_style(content_run, bold=False)
+        if trailing_comma:
+            comma_run = para.add_run(",")
+            self._set_run_style(comma_run, bold=False)
 
         number_run = para.add_run(f"\t({number_text})")
         self._set_run_style(number_run, bold=False)
 
         self._set_formula_number_tab(para)
 
-        if block.explanation:
-            expl_para = self.doc.add_paragraph(block.explanation)
+        explanation_text = self._formula_explanation_text(block)
+        if explanation_text:
+            expl_para = self.doc.add_paragraph(explanation_text)
             self._set_paragraph_format(expl_para, "formula_explanation")
+        for symbol in block.explanations:
+            if not symbol.repeats and symbol.name:
+                self._formula_symbol_numbers.setdefault(symbol.name, number_text)
 
-        self._add_empty_paragraph("empty_after_formula")
+        if not suppress_after:
+            self._add_empty_paragraph("empty_after_formula")
         self._rendered_body_blocks = True
+
+    def _formula_explanation_text(self, block) -> str | None:
+        if block.explanations:
+            lines = explanation_lines(block.explanations, self._formula_symbol_numbers)
+            return "\n".join(lines)
+        return block.explanation
 
     def _set_formula_number_tab(self, para):
         """Add a right-aligned tab stop so ``\\t(N)`` lands at the right margin."""

@@ -327,3 +327,27 @@ def test_task_14_and_15_rules_are_marked_implemented():
         assert get_rule(rule_id).renderer_status is RuleStatus.IMPLEMENTED
     for rule_id in implemented_validator:
         assert get_rule(rule_id).validator_status is RuleStatus.IMPLEMENTED
+
+
+def test_task_16_and_17_rules_are_marked_implemented():
+    implemented_renderer = {
+        "common.figure.section_numbering",
+        "common.figure.appendix_numbering",
+        "common.figure.placement_after_reference",
+        "common.figure.explanatory_data",
+        "common.figure.multi_sheet_label",
+        "common.figure.image",
+        "common.formula.body_indent",
+        "common.formula.section_numbering",
+        "common.formula.appendix_numbering",
+        "common.formula.line_continuation",
+        "common.formula.explanation_marker",
+        "common.formula.repeated_symbol",
+        "common.formula.consecutive_comma",
+    }
+    implemented_validator = implemented_renderer
+
+    for rule_id in implemented_renderer:
+        assert get_rule(rule_id).renderer_status is RuleStatus.IMPLEMENTED
+    for rule_id in implemented_validator:
+        assert get_rule(rule_id).validator_status is RuleStatus.IMPLEMENTED

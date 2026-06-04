@@ -5,6 +5,7 @@ from sfu_converter.domain.ast_nodes import (
     BibliographyEntryNode,
     FigureNode,
     FormulaNode,
+    FormulaSymbol,
     HeadingLevel,
     HeadingNode,
     ListNode,
@@ -175,6 +176,41 @@ def test_v2_parser_produces_equivalent_ast_to_v1_for_equivalent_content():
     assert v1_result.diagnostics == []
     assert v2_result.diagnostics == []
     assert _block_summary(v2_result.document) == _block_summary(v1_result.document)
+
+
+def test_v2_parser_parses_figure_explanatory_and_sheet_attributes():
+    result = V2Parser().parse(
+        '[FIGURE id=f1 src="diagram.png" caption="Архитектура" '
+        'explanatory="1 — ввод\\n2 — обработка" sheet=2 total_sheets=3]'
+    )
+
+    assert result.diagnostics == []
+    (figure,) = result.document.blocks
+    assert figure.explanatory_data == ("1 — ввод", "2 — обработка")
+    assert figure.sheet == 2
+    assert figure.total_sheets == 3
+
+
+def test_v2_parser_parses_formula_symbols_and_consecutive_with():
+    result = V2Parser().parse(
+        "\n".join(
+            [
+                "[FORMULA id=f2 number=auto consecutive_with=f1]",
+                "p = m * c",
+                '[FORMULA_SYMBOL name=m text="масса, кг"]',
+                '[FORMULA_SYMBOL name=c text="" repeats=true]',
+                "[FORMULA_END]",
+            ]
+        )
+    )
+
+    assert result.diagnostics == []
+    (formula,) = result.document.blocks
+    assert formula.consecutive_with == "f1"
+    assert formula.explanations == (
+        FormulaSymbol(name="m", description="масса, кг"),
+        FormulaSymbol(name="c", description="", repeats=True),
+    )
 
 
 def test_v2_parser_accepts_heading_level_four():

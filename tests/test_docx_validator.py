@@ -19,6 +19,7 @@ from sfu_converter.domain.ast_nodes import (
     TableRow,
 )
 from sfu_converter.infrastructure.docx_renderer import DocxRenderer
+from sfu_converter.infrastructure import docx_styles
 from sfu_converter.infrastructure.docx_validator import (
     DocxValidator,
     _pt_value,
@@ -86,7 +87,7 @@ def test_docx_validator_reports_common_unsupported_validator_rules(tmp_path):
         if diagnostic.code == DiagnosticCodes.FORMAT_RULE_NOT_SUPPORTED
     ]
 
-    assert len(unsupported) == 50
+    assert len(unsupported) == 37
     assert all(diagnostic.severity is Severity.WARNING for diagnostic in unsupported)
     assert all("not supported by the validator" in diagnostic.message for diagnostic in unsupported)
     unsupported_ids = {diagnostic.rule_id for diagnostic in unsupported}
@@ -94,6 +95,14 @@ def test_docx_validator_reports_common_unsupported_validator_rules(tmp_path):
     assert "common.table.caption" not in unsupported_ids
     assert "common.formula.body" not in unsupported_ids
     assert "common.formula.explanation" not in unsupported_ids
+    assert "common.figure.image" not in unsupported_ids
+    assert "common.figure.explanatory_data" not in unsupported_ids
+    assert "common.figure.multi_sheet_label" not in unsupported_ids
+    assert "common.formula.body_indent" not in unsupported_ids
+    assert "common.formula.line_continuation" not in unsupported_ids
+    assert "common.formula.explanation_marker" not in unsupported_ids
+    assert "common.formula.repeated_symbol" not in unsupported_ids
+    assert "common.formula.consecutive_comma" not in unsupported_ids
     assert "common.heading.h4" not in unsupported_ids
     assert "common.list.item" not in unsupported_ids
     assert "common.bibliography.entry" not in unsupported_ids
@@ -349,6 +358,108 @@ def test_docx_validator_reports_formula_explanation_indent_against_formula_rule(
     assert any(
         diagnostic.code == DiagnosticCodes.FORMAT_INDENT
         and diagnostic.rule_id == "common.formula.explanation"
+        for diagnostic in diagnostics
+    )
+
+
+def test_docx_validator_reports_formula_explanation_marker_colon(tmp_path):
+    doc = Document()
+    docx_styles.register_styles(doc)
+    paragraph = _special_paragraph(doc, "где:", WD_ALIGN_PARAGRAPH.LEFT, indent_cm=0)
+    paragraph.style = doc.styles[docx_styles.FORMULA_EXPLANATION]
+    path = _save_doc(tmp_path, doc, "formula_marker.docx")
+
+    diagnostics = DocxValidator(get_profile("common")).validate_file(str(path))
+
+    assert any(
+        diagnostic.code == DiagnosticCodes.FORMULA_EXPLANATION_MARKER
+        and diagnostic.rule_id == "common.formula.explanation_marker"
+        for diagnostic in diagnostics
+    )
+
+
+def test_docx_validator_reports_repeated_symbol_without_prior_definition(tmp_path):
+    doc = Document()
+    docx_styles.register_styles(doc)
+    paragraph = _special_paragraph(
+        doc,
+        "где\nc — то же, что и в формуле (1)",
+        WD_ALIGN_PARAGRAPH.LEFT,
+        indent_cm=0,
+    )
+    paragraph.style = doc.styles[docx_styles.FORMULA_EXPLANATION]
+    path = _save_doc(tmp_path, doc, "formula_repeated_symbol.docx")
+
+    diagnostics = DocxValidator(get_profile("common")).validate_file(str(path))
+
+    assert any(
+        diagnostic.code == DiagnosticCodes.FORMULA_REPEATED_SYMBOL
+        and diagnostic.rule_id == "common.formula.repeated_symbol"
+        for diagnostic in diagnostics
+    )
+
+
+def test_docx_validator_reports_consecutive_formula_without_comma(tmp_path):
+    doc = Document()
+    docx_styles.register_styles(doc)
+    first = _special_paragraph(doc, "a = b\t(1)", WD_ALIGN_PARAGRAPH.CENTER, indent_cm=1.25)
+    second = _special_paragraph(doc, "c = d\t(2)", WD_ALIGN_PARAGRAPH.CENTER, indent_cm=1.25)
+    first.style = doc.styles[docx_styles.FORMULA_BODY]
+    second.style = doc.styles[docx_styles.FORMULA_BODY]
+    path = _save_doc(tmp_path, doc, "formula_consecutive.docx")
+
+    diagnostics = DocxValidator(get_profile("common")).validate_file(str(path))
+
+    assert any(
+        diagnostic.code == DiagnosticCodes.FORMULA_CONSECUTIVE_COMMA
+        and diagnostic.rule_id == "common.formula.consecutive_comma"
+        for diagnostic in diagnostics
+    )
+
+
+def test_docx_validator_reports_long_formula_without_operator_break(tmp_path):
+    doc = Document()
+    docx_styles.register_styles(doc)
+    paragraph = _special_paragraph(
+        doc,
+        (
+            "result = alpha + beta + gamma + delta + epsilon + zeta + eta + "
+            "theta + iota + kappa + lambda\t(1)"
+        ),
+        WD_ALIGN_PARAGRAPH.CENTER,
+        indent_cm=1.25,
+    )
+    paragraph.style = doc.styles[docx_styles.FORMULA_BODY]
+    path = _save_doc(tmp_path, doc, "formula_long.docx")
+
+    diagnostics = DocxValidator(get_profile("common")).validate_file(str(path))
+
+    diagnostic = next(
+        item
+        for item in diagnostics
+        if item.code == DiagnosticCodes.FORMULA_LINE_CONTINUATION
+    )
+    assert diagnostic.severity is Severity.INFO
+    assert diagnostic.rule_id == "common.formula.line_continuation"
+
+
+def test_docx_validator_reports_bad_multisheet_figure_caption(tmp_path):
+    doc = Document()
+    docx_styles.register_styles(doc)
+    paragraph = _special_paragraph(
+        doc,
+        "Рисунок 5 — Схема, лист 2",
+        WD_ALIGN_PARAGRAPH.CENTER,
+        indent_cm=0,
+    )
+    paragraph.style = doc.styles[docx_styles.FIGURE_CAPTION]
+    path = _save_doc(tmp_path, doc, "bad_multisheet_caption.docx")
+
+    diagnostics = DocxValidator(get_profile("common")).validate_file(str(path))
+
+    assert any(
+        diagnostic.code == DiagnosticCodes.FIGURE_MULTI_SHEET_LABEL
+        and diagnostic.rule_id == "common.figure.multi_sheet_label"
         for diagnostic in diagnostics
     )
 

@@ -104,10 +104,16 @@ _SYNTAX_SPECS = {
             },
             {
                 "name": "figure",
-                "marker": '[FIGURE src="..." caption="..." id=fig:id number=auto]',
+                "marker": (
+                    '[FIGURE src="..." caption="..." id=fig:id '
+                    'explanatory="1 — item\\n2 — item" sheet=1 total_sheets=2]'
+                ),
                 "node": "FigureNode",
-                "description": "Insert a figure with optional caption and reference id.",
-                "example": '[FIGURE src="diagram.png" caption="Overview" id=fig:overview]',
+                "description": "Insert a figure with optional caption, reference id, explanatory data, and sheet labels.",
+                "example": (
+                    '[FIGURE src="diagram.png" caption="Overview" id=fig:overview '
+                    'explanatory="1 — input\\n2 — processor" sheet=1 total_sheets=2]'
+                ),
             },
             {
                 "name": "table",
@@ -125,10 +131,15 @@ _SYNTAX_SPECS = {
             },
             {
                 "name": "formula",
-                "marker": "[FORMULA id=eq:id number=auto]",
+                "marker": "[FORMULA id=eq:id number=auto consecutive_with=eq:previous]",
                 "node": "FormulaNode",
-                "description": "Parse formula content until [FORMULA_END].",
-                "example": "[FORMULA id=eq:main number=auto]\nE = mc^2\n[FORMULA_END]",
+                "description": "Parse formula content and optional FORMULA_SYMBOL lines until [FORMULA_END].",
+                "example": (
+                    "[FORMULA id=eq:main number=auto]\n"
+                    "E = mc^2\n"
+                    '[FORMULA_SYMBOL name=E text="energy, J"]\n'
+                    "[FORMULA_END]"
+                ),
             },
             {
                 "name": "reference",

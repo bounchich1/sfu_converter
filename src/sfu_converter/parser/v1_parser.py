@@ -11,6 +11,7 @@ from sfu_converter.domain.ast_nodes import (
     Document,
     FigureNode,
     FormulaNode,
+    FormulaSymbol,
     HeadingLevel,
     HeadingNode,
     ListItemNode,
@@ -72,6 +73,7 @@ _KNOWN_MARKERS = (
     "[FORMULA_END]",
     "[FORMULA_EXPLANATION",
     "[FORMULA_EXPLANATION_END]",
+    "[FORMULA_SYMBOL",
     "[TOC",
     "[META",
     "[TITLE_PAGE",
@@ -386,6 +388,7 @@ class V1Parser(BaseParser):
         attrs = _parse_attributes(lines[start_index].strip())
 
         formula_lines: list[str] = []
+        explanations: list[FormulaSymbol] = []
         i = start_index + 1
         found_end = False
         while i < len(lines):
@@ -393,6 +396,10 @@ class V1Parser(BaseParser):
             if stripped.startswith("[FORMULA_END]"):
                 found_end = True
                 break
+            if stripped.startswith("[FORMULA_SYMBOL"):
+                explanations.append(_parse_formula_symbol(stripped))
+                i += 1
+                continue
             formula_lines.append(lines[i])
             i += 1
 
@@ -408,9 +415,11 @@ class V1Parser(BaseParser):
             line_end = len(lines)
             return (
                 FormulaNode(
-                    content="\n".join(formula_lines).strip("\n"),
+                    content=_formula_content(formula_lines),
                     id=attrs.get("id"),
                     number=attrs.get("number"),
+                    explanations=tuple(explanations),
+                    continuation_lines=_formula_continuation_lines(formula_lines),
                     source=SourceSpan(
                         line_start=formula_start_span.line_start,
                         line_end=line_end,
@@ -453,10 +462,12 @@ class V1Parser(BaseParser):
         line_end = explanation_end_index + 1
         return (
             FormulaNode(
-                content="\n".join(formula_lines).strip("\n"),
+                content=_formula_content(formula_lines),
                 id=attrs.get("id"),
                 number=attrs.get("number"),
                 explanation=explanation,
+                explanations=tuple(explanations),
+                continuation_lines=_formula_continuation_lines(formula_lines),
                 source=SourceSpan(
                     line_start=formula_start_span.line_start,
                     line_end=line_end,
@@ -982,6 +993,25 @@ def _caption_after_image(lines: list[str], image_index: int) -> tuple[str | None
     if next_line.startswith(SyntaxConfig.FIGURE_CAPTION_PREFIXES):
         return next_line, 1
     return None, 0
+
+
+def _parse_formula_symbol(stripped: str) -> FormulaSymbol:
+    attrs = _parse_attributes(stripped)
+    return FormulaSymbol(
+        name=attrs.get("name", "").strip(),
+        description=attrs.get("text", attrs.get("description", "")).strip(),
+        repeats=(attrs.get("repeats", "").strip().casefold() in {"true", "1", "yes", "да"}),
+    )
+
+
+def _formula_content(lines: list[str]) -> str:
+    if not lines:
+        return ""
+    return lines[0].strip("\n")
+
+
+def _formula_continuation_lines(lines: list[str]) -> tuple[str, ...]:
+    return tuple(line.strip("\n") for line in lines[1:])
 
 
 def _parse_inline_formatting(text: str) -> tuple[TextRun, ...]:

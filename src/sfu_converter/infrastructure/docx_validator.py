@@ -12,6 +12,7 @@ from sfu_converter.config import SIBFUConfig
 from sfu_converter.domain.ast_nodes import SourceSpan
 from sfu_converter.domain.diagnostics import Diagnostic, DiagnosticCodes, Severity
 from sfu_converter.domain.formatting import FormattingProfile, FormattingRule, unsupported_rule_diagnostics
+from sfu_converter.infrastructure.formula_layout import OPERATOR_SIGNS
 from sfu_converter.infrastructure.paragraph_roles import ParagraphRole, classify
 from sfu_converter.infrastructure import docx_styles
 from sfu_converter.registry import get_profile, get_rule
@@ -81,6 +82,9 @@ class DocxValidator:
         self.diagnostics.extend(unsupported_rule_diagnostics(self.profile, component="validator"))
         self._validate_margins(doc)
         self._validate_page_numbering(doc)
+        self._seen_formula_symbols: set[str] = set()
+        self._previous_non_empty_role: ParagraphRole | None = None
+        self._previous_non_empty_paragraph = None
 
         paragraphs = list(doc.paragraphs)
         for index, paragraph in enumerate(paragraphs, start=1):
@@ -88,6 +92,9 @@ class DocxValidator:
             nxt = paragraphs[index] if index < len(paragraphs) else None
             role = classify(paragraph, prev=prev, next=nxt, profile=self.profile)
             self._validate_paragraph(paragraph, index, role)
+            if paragraph.text.strip():
+                self._previous_non_empty_role = role
+                self._previous_non_empty_paragraph = paragraph
 
         for table_index, table in enumerate(doc.tables, start=1):
             self._validate_table(table, table_index)
@@ -219,6 +226,12 @@ class DocxValidator:
         if role is ParagraphRole.TABLE_UNIT:
             self._validate_table_unit(paragraph, index)
             return
+        if role is ParagraphRole.FIGURE_EXPLANATORY:
+            for run_index, run in enumerate(paragraph.runs, start=1):
+                self._validate_run_font(run, index, run_index, validate_size=False)
+            self._validate_styled_paragraph(paragraph, index, "common.figure.explanatory_data")
+            self._validate_figure_explanatory(paragraph, index)
+            return
 
         for run_index, run in enumerate(paragraph.runs, start=1):
             self._validate_run_font(run, index, run_index)
@@ -243,18 +256,18 @@ class DocxValidator:
             return
         if role is ParagraphRole.FIGURE_CAPTION:
             self._validate_styled_paragraph(paragraph, index, "common.figure.caption")
-            return
-        if role is ParagraphRole.FIGURE_EXPLANATORY:
-            self._validate_styled_paragraph(paragraph, index, "common.figure.explanatory_data")
+            self._validate_figure_caption_semantics(paragraph, index)
             return
         if role is ParagraphRole.LIST_ITEM:
             self._validate_styled_paragraph(paragraph, index, "common.list.item")
             return
         if role is ParagraphRole.FORMULA_BODY:
             self._validate_styled_paragraph(paragraph, index, "common.formula.body")
+            self._validate_formula_body_semantics(paragraph, index)
             return
         if role is ParagraphRole.FORMULA_EXPLANATION:
             self._validate_styled_paragraph(paragraph, index, "common.formula.explanation")
+            self._validate_formula_explanation_semantics(paragraph, index)
             return
         if role is ParagraphRole.BIBLIOGRAPHY_ENTRY:
             self._validate_styled_paragraph(paragraph, index, "common.bibliography.entry")
@@ -421,6 +434,104 @@ class DocxValidator:
                     rule_id=rule_id,
                     source=SourceSpan(index, index),
                 )
+
+    def _validate_figure_explanatory(self, paragraph, index: int) -> None:
+        rule_id = "common.figure.explanatory_data"
+        if _style_name(paragraph) != docx_styles.FIGURE_EXPLANATORY:
+            self._add(
+                code=DiagnosticCodes.FORMAT_ROLE_UNRECOGNIZED,
+                message=f"Paragraph {index}: figure explanatory data must use {docx_styles.FIGURE_EXPLANATORY}",
+                rule_id=rule_id,
+                source=SourceSpan(index, index),
+            )
+        expected_size = self._rule(rule_id).parameters["font_size_pt"]
+        for run_index, run in enumerate(paragraph.runs, start=1):
+            size = _pt_value(run.font.size)
+            if size and abs(size - expected_size) > _POINT_TOLERANCE:
+                self._add(
+                    code=DiagnosticCodes.FORMAT_FONT_SIZE,
+                    message=(
+                        f"Paragraph {index} run {run_index}: size {size:.1f}pt, "
+                        f"expected {expected_size}pt"
+                    ),
+                    rule_id=rule_id,
+                    source=SourceSpan(index, index),
+                )
+
+    def _validate_figure_caption_semantics(self, paragraph, index: int) -> None:
+        text = paragraph.text.strip()
+        if re.search(r"\bлист\s+\d+\b", text, flags=re.IGNORECASE) and not re.match(
+            r"^\s*Рисунок\s+\S+,\s*лист\s+\d+\s*$",
+            text,
+            flags=re.IGNORECASE,
+        ):
+            self._add(
+                code=DiagnosticCodes.FIGURE_MULTI_SHEET_LABEL,
+                message=f"Paragraph {index}: multi-sheet figure caption must use ', лист K'",
+                rule_id="common.figure.multi_sheet_label",
+                source=SourceSpan(index, index),
+            )
+
+    def _validate_formula_body_semantics(self, paragraph, index: int) -> None:
+        self._validate_first_line_indent(
+            paragraph,
+            index,
+            rule_id="common.formula.body_indent",
+            expected_cm=self._rule("common.formula.body_indent").parameters["indent_cm"],
+        )
+
+        body_text = _formula_body_text(paragraph.text)
+        if (
+            self._previous_non_empty_role is ParagraphRole.FORMULA_BODY
+            and self._previous_non_empty_paragraph is not None
+            and not _formula_body_text(self._previous_non_empty_paragraph.text).rstrip().endswith(",")
+        ):
+            self._add(
+                code=DiagnosticCodes.FORMULA_CONSECUTIVE_COMMA,
+                message=f"Paragraph {index}: consecutive formulas must be separated by comma",
+                rule_id="common.formula.consecutive_comma",
+                source=SourceSpan(index, index),
+            )
+
+        if "\n" not in body_text and len(body_text) > 80 and any(sign in body_text for sign in OPERATOR_SIGNS):
+            self._add(
+                code=DiagnosticCodes.FORMULA_LINE_CONTINUATION,
+                message=f"Paragraph {index}: long formula should break on an operator sign",
+                severity=Severity.INFO,
+                rule_id="common.formula.line_continuation",
+                source=SourceSpan(index, index),
+            )
+
+    def _validate_formula_explanation_semantics(self, paragraph, index: int) -> None:
+        lines = [line.strip() for line in paragraph.text.splitlines() if line.strip()]
+        if not lines:
+            return
+        marker = lines[0].casefold()
+        if marker.startswith("где:"):
+            self._add(
+                code=DiagnosticCodes.FORMULA_EXPLANATION_MARKER,
+                message=f"Paragraph {index}: formula explanation marker must be 'где' without colon",
+                rule_id="common.formula.explanation_marker",
+                source=SourceSpan(index, index),
+            )
+
+        for line in lines[1:]:
+            name = _symbol_name(line)
+            if not name:
+                continue
+            if "то же, что и в формуле" in line.casefold():
+                if name not in self._seen_formula_symbols:
+                    self._add(
+                        code=DiagnosticCodes.FORMULA_REPEATED_SYMBOL,
+                        message=(
+                            f"Paragraph {index}: repeated symbol '{name}' must "
+                            "reference a symbol introduced in an earlier formula"
+                        ),
+                        rule_id="common.formula.repeated_symbol",
+                        source=SourceSpan(index, index),
+                    )
+            else:
+                self._seen_formula_symbols.add(name)
 
     def _validate_abbreviations_table(self, table, table_index: int) -> None:
         rule_id = "common.abbreviations.two_column_layout"
@@ -744,6 +855,18 @@ def _diagnostic_source(diagnostic: Diagnostic) -> dict[str, object]:
 
 def _source_for_index(index) -> SourceSpan | None:
     return SourceSpan(index, index) if isinstance(index, int) else None
+
+
+def _formula_body_text(text: str) -> str:
+    return (text or "").split("\t", 1)[0]
+
+
+def _symbol_name(line: str) -> str | None:
+    head, separator, _ = line.partition("—")
+    if not separator:
+        head, separator, _ = line.partition("-")
+    name = head.strip()
+    return name or None
 
 
 def _style_name(element) -> str:
