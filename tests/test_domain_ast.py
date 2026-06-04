@@ -5,6 +5,8 @@ from typing import get_args
 import pytest
 
 from sfu_converter.domain.ast_nodes import (
+    AbbreviationEntryNode,
+    AbbreviationsListNode,
     AppendixNode,
     BibliographyEntryNode,
     BlockNode,
@@ -26,6 +28,7 @@ from sfu_converter.domain.ast_nodes import (
     TableCaptionNode,
     TableCell,
     TableNode,
+    TableNote,
     TableOfContentsNode,
     TableRow,
     TextRun,
@@ -56,8 +59,11 @@ def test_ast_nodes_are_frozen_dataclasses():
     table = TableNode(
         rows=(TableRow(cells=(TableCell("A"), TableCell("B"))),),
         caption="Table 1",
+        notes=(TableNote(marker="*", text="Note", source=span),),
         source=span,
     )
+    abbreviation = AbbreviationEntryNode(short="ИАК", long="информационно-аналитический комплекс", source=span)
+    abbreviations = AbbreviationsListNode(entries=(abbreviation,), source=span)
     table_caption = TableCaptionNode(text="Table 1", source=span)
     figure = FigureNode(src="chart.png", caption="Figure 1", source=span)
     formula = FormulaNode(content="E = mc^2", source=span)
@@ -92,6 +98,8 @@ def test_ast_nodes_are_frozen_dataclasses():
         raw,
         metadata,
         structural,
+        abbreviation,
+        abbreviations,
     ):
         _assert_frozen(instance)
 
@@ -113,6 +121,9 @@ def test_document_accepts_supported_block_types_and_freezes_metadata():
         StructuralSectionNode(
             section_type=StructuralSectionType.CONCLUSION,
             title="ЗАКЛЮЧЕНИЕ",
+        ),
+        AbbreviationsListNode(
+            entries=(AbbreviationEntryNode("ИАК", "информационно-аналитический комплекс"),),
         ),
     )
 
@@ -145,6 +156,7 @@ def test_blocknode_union_contains_all_supported_block_classes():
         StructuralSectionNode,
         TableOfContentsNode,
         TitlePageNode,
+        AbbreviationsListNode,
     }
 
 

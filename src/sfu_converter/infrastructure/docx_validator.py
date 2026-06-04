@@ -1,21 +1,26 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Cm
+from docx.oxml.ns import qn
 
 from sfu_converter.config import SIBFUConfig
 from sfu_converter.domain.ast_nodes import SourceSpan
 from sfu_converter.domain.diagnostics import Diagnostic, DiagnosticCodes, Severity
 from sfu_converter.domain.formatting import FormattingProfile, FormattingRule, unsupported_rule_diagnostics
 from sfu_converter.infrastructure.paragraph_roles import ParagraphRole, classify
+from sfu_converter.infrastructure import docx_styles
 from sfu_converter.registry import get_profile, get_rule
 
 _LENGTH_TOLERANCE_EMU = 1000
 _POINT_TOLERANCE = 0.5
 _SPACING_TOLERANCE = 0.1
+_TABLE_CELL_PADDING_TWIPS = 120
+_ITALIC_LETTER_RE = re.compile(r"^[A-Za-zα-ωΑ-Ω]$")
 
 _ALIGNMENT_BY_NAME = {
     "left": WD_ALIGN_PARAGRAPH.LEFT,
@@ -211,6 +216,9 @@ class DocxValidator:
                 source=SourceSpan(index, index),
             )
             return
+        if role is ParagraphRole.TABLE_UNIT:
+            self._validate_table_unit(paragraph, index)
+            return
 
         for run_index, run in enumerate(paragraph.runs, start=1):
             self._validate_run_font(run, index, run_index)
@@ -346,13 +354,30 @@ class DocxValidator:
             )
 
     def _validate_table(self, table, table_index: int) -> None:
+        if _style_name(table) == docx_styles.ABBREVIATIONS_TABLE:
+            self._validate_abbreviations_table(table, table_index)
+            return
+
         rule = self._rule("common.table.font.size")
         min_size = rule.parameters["min_size_pt"]
         max_size = rule.parameters["max_size_pt"]
+        self._validate_table_borders(table, table_index)
+        self._validate_table_forbidden_headers(table, table_index)
+        self._validate_table_header_periods(table, table_index)
+        self._validate_table_diagonal_split(table, table_index)
 
         for row_index, row in enumerate(table.rows, start=1):
             for cell_index, cell in enumerate(row.cells, start=1):
+                self._validate_table_cell_padding(table_index, row_index, cell_index, cell)
                 for paragraph in cell.paragraphs:
+                    stripped = paragraph.text.strip()
+                    if _ITALIC_LETTER_RE.fullmatch(stripped):
+                        self._validate_table_italic_letter(
+                            table_index,
+                            row_index,
+                            cell_index,
+                            paragraph,
+                        )
                     for run_index, run in enumerate(paragraph.runs, start=1):
                         self._validate_run_font(
                             run,
@@ -372,6 +397,150 @@ class DocxValidator:
                                 ),
                                 rule_id=rule.id,
                             )
+
+    def _validate_table_unit(self, paragraph, index: int) -> None:
+        rule_id = "common.table.unit_label"
+        if paragraph.paragraph_format.alignment != WD_ALIGN_PARAGRAPH.RIGHT:
+            self._add(
+                code=DiagnosticCodes.FORMAT_ALIGNMENT,
+                message=f"Paragraph {index}: table unit label must be right-aligned",
+                rule_id=rule_id,
+                source=SourceSpan(index, index),
+            )
+        for run_index, run in enumerate(paragraph.runs, start=1):
+            self._validate_run_font(run, index, run_index, validate_size=False)
+            size = _pt_value(run.font.size)
+            expected = self._rule(rule_id).parameters["font_size_pt"]
+            if size and abs(size - expected) > _POINT_TOLERANCE:
+                self._add(
+                    code=DiagnosticCodes.FORMAT_FONT_SIZE,
+                    message=(
+                        f"Paragraph {index} run {run_index}: size {size:.1f}pt, "
+                        f"expected {expected}pt"
+                    ),
+                    rule_id=rule_id,
+                    source=SourceSpan(index, index),
+                )
+
+    def _validate_abbreviations_table(self, table, table_index: int) -> None:
+        rule_id = "common.abbreviations.two_column_layout"
+        for row_index, row in enumerate(table.rows, start=1):
+            if len(row.cells) != 2:
+                self._add(
+                    code=DiagnosticCodes.FORMAT_ABBREVIATIONS_TABLE,
+                    message=f"Abbreviations table {table_index} row {row_index}: expected 2 columns",
+                    rule_id=rule_id,
+                )
+            for cell_index, cell in enumerate(row.cells, start=1):
+                for paragraph in cell.paragraphs:
+                    for run_index, run in enumerate(paragraph.runs, start=1):
+                        self._validate_run_font(
+                            run,
+                            f"abbreviations table {table_index} row {row_index} cell {cell_index}",
+                            run_index,
+                            validate_size=False,
+                        )
+                        size = _pt_value(run.font.size)
+                        if size and abs(size - 14) > _POINT_TOLERANCE:
+                            self._add(
+                                code=DiagnosticCodes.FORMAT_ABBREVIATIONS_TABLE,
+                                message=(
+                                    f"Abbreviations table {table_index} row {row_index} "
+                                    f"cell {cell_index}: size {size:.1f}pt, expected 14pt"
+                                ),
+                                rule_id=rule_id,
+                            )
+
+    def _validate_table_borders(self, table, table_index: int) -> None:
+        rule_id = "common.table.borders"
+        xml = table._tbl.xml
+        if 'w:val="nil"' not in xml or 'w:val="double"' not in xml:
+            self._add(
+                code=DiagnosticCodes.FORMAT_TABLE_BORDERS,
+                message=(
+                    f"Table {table_index}: expected no top border and double line "
+                    "below the header"
+                ),
+                severity=Severity.WARNING,
+                rule_id=rule_id,
+            )
+
+    def _validate_table_forbidden_headers(self, table, table_index: int) -> None:
+        if not table.rows:
+            return
+        rule_id = "common.table.forbid_serial_column"
+        forbidden = {
+            " ".join(value.casefold().split())
+            for value in self._rule(rule_id).parameters["forbidden_headers"]
+        }
+        for cell_index, cell in enumerate(table.rows[0].cells, start=1):
+            text = " ".join(cell.text.casefold().split())
+            if text in forbidden:
+                self._add(
+                    code=DiagnosticCodes.FORMAT_TABLE_FORBIDDEN_SERIAL_COLUMN,
+                    message=f"Table {table_index} column {cell_index}: serial-number column is forbidden",
+                    rule_id=rule_id,
+                )
+
+    def _validate_table_header_periods(self, table, table_index: int) -> None:
+        if not table.rows:
+            return
+        rule_id = "common.table.no_period_in_header"
+        for cell_index, cell in enumerate(table.rows[0].cells, start=1):
+            if cell.text.strip().endswith("."):
+                self._add(
+                    code=DiagnosticCodes.FORMAT_TABLE_HEADER_PERIOD,
+                    message=f"Table {table_index} header cell {cell_index}: header must not end with a period",
+                    rule_id=rule_id,
+                )
+
+    def _validate_table_diagonal_split(self, table, table_index: int) -> None:
+        xml = table._tbl.xml
+        if any(marker in xml for marker in ("w:tl2br", "w:tr2bl", "<m:d", "<a:graphic")):
+            self._add(
+                code=DiagnosticCodes.FORMAT_TABLE_DIAGONAL_SPLIT,
+                message=f"Table {table_index}: diagonal-split cells are forbidden",
+                rule_id="common.table.no_diagonal_split",
+            )
+
+    def _validate_table_cell_padding(
+        self,
+        table_index: int,
+        row_index: int,
+        cell_index: int,
+        cell,
+    ) -> None:
+        top = _cell_margin_twips(cell, "top")
+        bottom = _cell_margin_twips(cell, "bottom")
+        if top == _TABLE_CELL_PADDING_TWIPS and bottom == _TABLE_CELL_PADDING_TWIPS:
+            return
+        self._add(
+            code=DiagnosticCodes.FORMAT_TABLE_CELL_PADDING,
+            message=(
+                f"Table {table_index} row {row_index} cell {cell_index}: "
+                "vertical padding must be 6pt"
+            ),
+            severity=Severity.WARNING,
+            rule_id="common.table.cell_padding",
+        )
+
+    def _validate_table_italic_letter(
+        self,
+        table_index: int,
+        row_index: int,
+        cell_index: int,
+        paragraph,
+    ) -> None:
+        if any(run.italic or run.font.italic for run in paragraph.runs):
+            return
+        self._add(
+            code=DiagnosticCodes.FORMAT_TABLE_ITALIC_LETTER,
+            message=(
+                f"Table {table_index} row {row_index} cell {cell_index}: "
+                "single-letter designation must be italic"
+            ),
+            rule_id="common.table.italic_letters",
+        )
 
     def _validate_run_font(
         self,
@@ -575,6 +744,32 @@ def _diagnostic_source(diagnostic: Diagnostic) -> dict[str, object]:
 
 def _source_for_index(index) -> SourceSpan | None:
     return SourceSpan(index, index) if isinstance(index, int) else None
+
+
+def _style_name(element) -> str:
+    style = getattr(element, "style", None)
+    if style is None:
+        return ""
+    return getattr(style, "name", "") or ""
+
+
+def _cell_margin_twips(cell, edge: str) -> int | None:
+    tc_pr = cell._tc.tcPr
+    if tc_pr is None:
+        return None
+    margins = tc_pr.find(qn("w:tcMar"))
+    if margins is None:
+        return None
+    element = margins.find(qn(f"w:{edge}"))
+    if element is None:
+        return None
+    value = element.get(qn("w:w"))
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        return None
 
 
 def _pt_value(value) -> float:

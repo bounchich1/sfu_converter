@@ -4,6 +4,8 @@ import re
 
 from sfu_converter.config import SyntaxConfig
 from sfu_converter.domain.ast_nodes import (
+    AbbreviationEntryNode,
+    AbbreviationsListNode,
     AppendixNode,
     BibliographyEntryNode,
     Document,
@@ -21,6 +23,7 @@ from sfu_converter.domain.ast_nodes import (
     StructuralSectionType,
     TableCaptionNode,
     TableCell,
+    TableNote,
     TableNode,
     TableOfContentsNode,
     TableRow,
@@ -72,6 +75,9 @@ _KNOWN_MARKERS = (
     "[TOC",
     "[META",
     "[TITLE_PAGE",
+    "[ABBREVIATIONS_START]",
+    "[ABBREVIATIONS_END]",
+    "[ABBR",
 )
 _STRUCTURAL_SECTIONS_BY_TITLE = {section_type.value: section_type for section_type in StructuralSectionType}
 _STRUCTURAL_TYPE_ALIASES = {
@@ -247,6 +253,15 @@ class V1Parser(BaseParser):
                 diagnostics.extend(table_diagnostics)
                 if table is not None:
                     blocks.append(table)
+                i = end_index
+            elif stripped.startswith("[ABBREVIATIONS_START]"):
+                abbreviations, abbreviation_diagnostics, end_index = self._parse_abbreviations(
+                    lines,
+                    i,
+                    filename,
+                )
+                diagnostics.extend(abbreviation_diagnostics)
+                blocks.append(abbreviations)
                 i = end_index
             elif stripped.startswith("[TABLE_CAPTION]"):
                 blocks.append(
@@ -460,6 +475,7 @@ class V1Parser(BaseParser):
     ) -> tuple[TableNode | None, list[Diagnostic], int]:
         diagnostics: list[Diagnostic] = []
         rows: list[TableRow] = []
+        notes: list[TableNote] = []
         expected_cell_count: int | None = None
         caption = None
         table_start_span = _span_for_line(lines[start_index], start_index, filename)
@@ -478,8 +494,20 @@ class V1Parser(BaseParser):
                 break
             if stripped.startswith("[TABLE_CAPTION]"):
                 caption = stripped.replace("[TABLE_CAPTION]", "", 1).strip()
+            elif stripped.startswith("[TABLE_NOTE"):
+                attrs = _parse_attributes(stripped)
+                notes.append(
+                    TableNote(
+                        marker=attrs.get("marker", "*"),
+                        text=attrs.get("text", ""),
+                        source=span,
+                    )
+                )
             elif stripped.startswith("|"):
                 row = _parse_table_row(stripped)
+                if row is None or _is_table_separator_row(row):
+                    i += 1
+                    continue
                 cell_count = len(row.cells)
                 if expected_cell_count is None:
                     expected_cell_count = cell_count
@@ -520,6 +548,7 @@ class V1Parser(BaseParser):
             table = TableNode(
                 rows=tuple(rows),
                 caption=caption,
+                notes=tuple(notes),
                 source=SourceSpan(
                     line_start=table_start_span.line_start,
                     line_end=line_end,
@@ -527,6 +556,74 @@ class V1Parser(BaseParser):
                 ),
             )
         return table, diagnostics, i
+
+    def _parse_abbreviations(
+        self,
+        lines: list[str],
+        start_index: int,
+        filename: str | None,
+    ) -> tuple[AbbreviationsListNode, list[Diagnostic], int]:
+        diagnostics: list[Diagnostic] = []
+        entries: list[AbbreviationEntryNode] = []
+        start_span = _span_for_line(lines[start_index], start_index, filename)
+        i = start_index + 1
+        found_end = False
+
+        while i < len(lines):
+            stripped = lines[i].strip()
+            span = _span_for_line(lines[i], i, filename)
+            if stripped.startswith("[ABBREVIATIONS_END]"):
+                found_end = True
+                break
+            if stripped.startswith("[ABBR"):
+                attrs = _parse_attributes(stripped)
+                short = attrs.get("short", "").strip()
+                long = attrs.get("long", "").strip()
+                if short and long:
+                    entries.append(AbbreviationEntryNode(short=short, long=long, source=span))
+            elif stripped.startswith("|"):
+                row = _parse_table_row(stripped)
+                if row is not None and len(row.cells) >= 2 and not _is_table_separator_row(row):
+                    entries.append(
+                        AbbreviationEntryNode(
+                            short=row.cells[0].text,
+                            long=row.cells[1].text,
+                            source=span,
+                        )
+                    )
+            elif stripped:
+                diagnostics.append(
+                    Diagnostic(
+                        code=DiagnosticCodes.TXT_UNKNOWN_MARKER,
+                        message=f"Unknown marker inside abbreviations list: {stripped}",
+                        severity=Severity.WARNING,
+                        source=span,
+                    )
+                )
+            i += 1
+
+        if not found_end:
+            diagnostics.append(
+                Diagnostic(
+                    code=DiagnosticCodes.TXT_MISSING_BLOCK_END,
+                    message="ABBREVIATIONS_START without matching ABBREVIATIONS_END",
+                    severity=Severity.ERROR,
+                    source=start_span,
+                )
+            )
+
+        return (
+            AbbreviationsListNode(
+                entries=tuple(entries),
+                source=SourceSpan(
+                    line_start=start_span.line_start,
+                    line_end=i + 1 if found_end else len(lines),
+                    filename=filename,
+                ),
+            ),
+            diagnostics,
+            i,
+        )
 
     def _parse_explicit_list(
         self,
@@ -719,6 +816,10 @@ def _parse_table_row(stripped: str) -> TableRow | None:
         return None
     cells = [cell.strip() for cell in stripped.strip("|").split("|")]
     return TableRow(cells=tuple(TableCell(text=cell) for cell in cells))
+
+
+def _is_table_separator_row(row: TableRow) -> bool:
+    return all(re.fullmatch(r":?-{3,}:?", cell.text.strip()) for cell in row.cells)
 
 
 def _parse_dash_list(

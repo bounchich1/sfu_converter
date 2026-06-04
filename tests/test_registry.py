@@ -300,3 +300,30 @@ def test_table_body_block_round_trips_through_config():
     assert table["header_repeat_on_pages"] is True
     assert table["cell_padding"] == Pt(6)
     assert SIBFUConfig.TABLE == table
+
+
+def test_task_14_and_15_rules_are_marked_implemented():
+    implemented_renderer = {
+        "common.abbreviations.two_column_layout",
+        "common.table.borders",
+        "common.table.subheader",
+        "common.table.no_period_in_header",
+        "common.table.unit_label",
+        "common.table.column_unit_suffix",
+        "common.table.continuation_label",
+        "common.table.numbering_row_replacement",
+        "common.table.forbid_serial_column",
+        "common.table.no_diagonal_split",
+        "common.table.footnote",
+        "common.table.italic_letters",
+        "common.table.cell_padding",
+        "common.table.body",
+        "common.table.spacing_before",
+        "common.table.spacing_after",
+    }
+    implemented_validator = implemented_renderer
+
+    for rule_id in implemented_renderer:
+        assert get_rule(rule_id).renderer_status is RuleStatus.IMPLEMENTED
+    for rule_id in implemented_validator:
+        assert get_rule(rule_id).validator_status is RuleStatus.IMPLEMENTED

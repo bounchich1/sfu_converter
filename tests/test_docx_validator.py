@@ -1,5 +1,7 @@
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
 from docx.shared import Cm, Pt, RGBColor
 
 from sfu_converter.domain.diagnostics import Diagnostic, DiagnosticCodes, Severity
@@ -24,6 +26,7 @@ from sfu_converter.infrastructure.docx_validator import (
     _spacing_value,
     diagnostic_to_json,
 )
+from sfu_converter.parser import V2Parser
 from sfu_converter.registry import get_profile
 
 
@@ -83,7 +86,7 @@ def test_docx_validator_reports_common_unsupported_validator_rules(tmp_path):
         if diagnostic.code == DiagnosticCodes.FORMAT_RULE_NOT_SUPPORTED
     ]
 
-    assert len(unsupported) == 66
+    assert len(unsupported) == 50
     assert all(diagnostic.severity is Severity.WARNING for diagnostic in unsupported)
     assert all("not supported by the validator" in diagnostic.message for diagnostic in unsupported)
     unsupported_ids = {diagnostic.rule_id for diagnostic in unsupported}
@@ -346,6 +349,86 @@ def test_docx_validator_reports_formula_explanation_indent_against_formula_rule(
     assert any(
         diagnostic.code == DiagnosticCodes.FORMAT_INDENT
         and diagnostic.rule_id == "common.formula.explanation"
+        for diagnostic in diagnostics
+    )
+
+
+def test_docx_validator_reports_table_header_period_and_serial_column(tmp_path):
+    doc = Document()
+    table = doc.add_table(rows=2, cols=2)
+    table.rows[0].cells[0].text = "№ п/п"
+    table.rows[0].cells[1].text = "Параметр."
+    table.rows[1].cells[0].text = "1"
+    table.rows[1].cells[1].text = "A"
+    for row in table.rows:
+        for cell in row.cells:
+            for paragraph in cell.paragraphs:
+                for run in paragraph.runs:
+                    run.font.name = "Times New Roman"
+                    run.font.size = Pt(12)
+    path = _save_doc(tmp_path, doc, "bad_table_headers.docx")
+
+    diagnostics = DocxValidator(get_profile("common")).validate_file(str(path))
+    rule_ids = {diagnostic.rule_id for diagnostic in diagnostics}
+
+    assert "common.table.forbid_serial_column" in rule_ids
+    assert "common.table.no_period_in_header" in rule_ids
+
+
+def test_docx_validator_reports_diagonal_split_and_nonitalic_letter_cells(tmp_path):
+    doc = Document()
+    table = doc.add_table(rows=2, cols=1)
+    table.rows[0].cells[0].text = "Параметр"
+    table.rows[1].cells[0].text = "A"
+    for row in table.rows:
+        for cell in row.cells:
+            for paragraph in cell.paragraphs:
+                for run in paragraph.runs:
+                    run.font.name = "Times New Roman"
+                    run.font.size = Pt(12)
+
+    tc_pr = table.rows[0].cells[0]._tc.get_or_add_tcPr()
+    borders = OxmlElement("w:tcBorders")
+    diagonal = OxmlElement("w:tl2br")
+    diagonal.set(qn("w:val"), "single")
+    borders.append(diagonal)
+    tc_pr.append(borders)
+    path = _save_doc(tmp_path, doc, "bad_table_diagonal.docx")
+
+    diagnostics = DocxValidator(get_profile("common")).validate_file(str(path))
+    rule_ids = {diagnostic.rule_id for diagnostic in diagnostics}
+
+    assert "common.table.no_diagonal_split" in rule_ids
+    assert "common.table.italic_letters" in rule_ids
+
+
+def test_docx_validator_accepts_generated_table_unit_label_at_12pt(tmp_path):
+    ast = V2Parser().parse(
+        "\n".join(
+            [
+                '[TABLE caption="Параметры" unit="МПа"]',
+                "| Параметр | Значение |",
+                "| Давление | 10 |",
+                "[TABLE_END]",
+            ]
+        )
+    ).document
+    output = tmp_path / "unit_label.docx"
+    DocxRenderer(base_dir=tmp_path).render_to_file(ast, get_profile("common"), str(output))
+
+    doc = Document(str(output))
+    assert any(paragraph.text == ", МПа" for paragraph in doc.paragraphs)
+
+    diagnostics = DocxValidator(get_profile("common")).validate_file(str(output))
+
+    assert not any(
+        diagnostic.code == DiagnosticCodes.FORMAT_FONT_SIZE
+        and diagnostic.rule_id == "common.text.font.size"
+        and "12.0pt" in diagnostic.message
+        for diagnostic in diagnostics
+    )
+    assert not any(
+        diagnostic.rule_id == "common.table.unit_label"
         for diagnostic in diagnostics
     )
 

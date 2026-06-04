@@ -15,6 +15,7 @@ from sfu_converter.config import PathConfig, SIBFUConfig
 from sfu_converter.domain.ast_nodes import (
     AppendixNode,
     BibliographyEntryNode,
+    ContinuationLabel,
     Document,
     FigureNode,
     FormulaNode,
@@ -29,12 +30,14 @@ from sfu_converter.domain.ast_nodes import (
     StructuralSectionNode,
     StructuralSectionType,
     TableCaptionNode,
+    TableNote,
     TableNode,
     TableOfContentsNode,
     TitlePageNode,
 )
 from sfu_converter.domain.diagnostics import Diagnostic, DiagnosticCodes, Severity
 from sfu_converter.domain.formatting import FormattingProfile, unsupported_rule_diagnostics
+from sfu_converter.infrastructure.abbreviations import abbreviations_for_document, explicit_abbreviations
 from sfu_converter.infrastructure import docx_styles
 from sfu_converter.infrastructure.numbering import NumberingContext, build_numbering_context
 from sfu_converter.infrastructure.page_numbering import (
@@ -50,6 +53,7 @@ from sfu_converter.utils_image_insert import insert_image
 _SFU_STYLE_BY_TYPE = {
     "caption_img": docx_styles.FIGURE_CAPTION,
     "caption_table": docx_styles.TABLE_CAPTION,
+    "table_unit": docx_styles.TABLE_UNIT,
     "formula": docx_styles.FORMULA_BODY,
     "formula_explanation": docx_styles.FORMULA_EXPLANATION,
     "bibliography_entry": docx_styles.BIBLIOGRAPHY_ENTRY,
@@ -58,6 +62,8 @@ _SFU_STYLE_BY_TYPE = {
     "toc_heading": docx_styles.TOC_HEADING,
     "appendix_heading": docx_styles.APPENDIX_HEADING,
 }
+
+_ITALIC_LETTER_RE = re.compile(r"^[A-Za-zα-ωΑ-Ω]$")
 
 
 class SectionNumberer:
@@ -135,6 +141,7 @@ class DocxRenderer(RendererPort):
         template_mode: str = "append",
     ) -> bytes:
         self._initialize_document(template_path, template_mode=template_mode, profile=profile)
+        self._prepare_document_level_state(document)
         self._render_from_ast(document)
         buffer = BytesIO()
         self.doc.save(buffer)
@@ -150,11 +157,12 @@ class DocxRenderer(RendererPort):
     ) -> list[Diagnostic]:
         diagnostics = unsupported_rule_diagnostics(profile, component="renderer")
         self._initialize_document(template_path, template_mode=template_mode, profile=profile)
+        self._prepare_document_level_state(document)
         self._render_from_ast(document)
         destination = Path(output_path)
         destination.parent.mkdir(parents=True, exist_ok=True)
         self.doc.save(str(destination))
-        return diagnostics + self._title_page_diagnostics
+        return diagnostics + self._title_page_diagnostics + self._abbreviation_diagnostics
 
     def _set_run_style(self, run, bold=False, italic=False):
         run.font.name = self.config.FONT_NAME
@@ -258,6 +266,13 @@ class DocxRenderer(RendererPort):
                 "line_spacing": cfg.CAPTION_TABLE["line_spacing"],
                 "space_before": cfg.CAPTION_TABLE["space_before"],
                 "space_after": cfg.CAPTION_TABLE["space_after"],
+            },
+            "table_unit": {
+                "align": WD_ALIGN_PARAGRAPH.RIGHT,
+                "indent": no_indent,
+                "line_spacing": 1.0,
+                "space_before": zero,
+                "space_after": zero,
             },
             "empty_before_header": {
                 "indent": no_indent,
@@ -417,10 +432,20 @@ class DocxRenderer(RendererPort):
         cells = [cell.strip() for cell in line.split("|")[1:-1]]
         return cells if cells else None
 
-    def _create_table(self, rows_data, caption=None):
+    def _create_table(
+        self,
+        rows_data,
+        caption=None,
+        *,
+        header_row_count: int = 1,
+        notes: tuple[TableNote, ...] = (),
+        style_name: str = docx_styles.TABLE,
+        borderless: bool = False,
+    ):
         if not rows_data:
             return
 
+        docx_styles.register_styles(self.doc)
         self._add_empty_paragraph("empty_before_table")
 
         if caption:
@@ -430,16 +455,18 @@ class DocxRenderer(RendererPort):
         table_cfg = self.config.TABLE
         num_cols = len(rows_data[0])
         table = self.doc.add_table(rows=len(rows_data), cols=num_cols)
-        table.style = "Table Grid"
+        table.style = style_name
         table.autofit = False
+        self._set_table_borders(table, borderless=borderless)
 
         for row_idx, row_cells in enumerate(rows_data):
             row = table.rows[row_idx]
-            is_header = row_idx == 0
+            is_header = row_idx < header_row_count
             for col_idx, text in enumerate(row_cells):
                 if col_idx < len(row.cells):
                     cell = row.cells[col_idx]
                     cell.text = text
+                    self._set_cell_margins(cell, top=120, bottom=120)
                     for para in cell.paragraphs:
                         pf = para.paragraph_format
                         pf.alignment = WD_ALIGN_PARAGRAPH.CENTER if is_header else WD_ALIGN_PARAGRAPH.LEFT
@@ -454,12 +481,178 @@ class DocxRenderer(RendererPort):
                                 bold=is_header and table_cfg["header_bold"],
                             )
                             run.font.size = table_cfg["header_font_size"] if is_header else table_cfg["font_size"]
+                            if not is_header and _ITALIC_LETTER_RE.fullmatch(text.strip()):
+                                run.italic = True
 
         if table_cfg["header_repeat_on_pages"]:
-            self._set_repeat_header_row(table.rows[0])
+            for row in table.rows[:header_row_count]:
+                self._set_repeat_header_row(row)
+
+        if header_row_count > 0 and len(table.rows) >= header_row_count:
+            self._set_row_bottom_border(table.rows[header_row_count - 1], "double")
+
+        for note in notes:
+            self._append_table_note_row(table, note)
 
         self._add_empty_paragraph("empty_after_table")
         self._rendered_body_blocks = True
+
+    def _render_table(self, block: TableNode):
+        table_number = self._table_number(block)
+        is_continuation = block.continuation is not None
+
+        if block.unit_label:
+            self._render_table_unit(block.unit_label)
+
+        if is_continuation:
+            label = self._format_table_continuation_label(block.continuation, table_number)
+            p = self.doc.add_paragraph(label)
+            self._set_paragraph_format(p, "caption_table")
+            caption = None
+        else:
+            caption = self._format_table_caption(block.caption, table_number)
+
+        rows = self._table_rows_for_render(block, is_continuation=is_continuation)
+        header_row_count = 1 if is_continuation else max(0, min(block.header_row_count, len(rows)))
+        self._create_table(
+            rows,
+            caption,
+            header_row_count=header_row_count,
+            notes=block.notes,
+        )
+
+    def _table_rows_for_render(self, block: TableNode, *, is_continuation: bool) -> list[list[str]]:
+        rows = [[cell.text for cell in row.cells] for row in block.rows]
+        rows = self._apply_column_units(rows, block.column_units, block.header_row_count)
+        if not is_continuation:
+            return rows
+        if not rows:
+            return []
+        column_count = len(rows[0])
+        body_rows = rows[block.header_row_count :] if block.header_row_count else rows
+        return [[str(index) for index in range(1, column_count + 1)], *body_rows]
+
+    def _apply_column_units(
+        self,
+        rows: list[list[str]],
+        column_units: tuple[str | None, ...],
+        header_row_count: int,
+    ) -> list[list[str]]:
+        if not rows or not column_units or header_row_count <= 0:
+            return rows
+        updated = [list(row) for row in rows]
+        first_header = updated[0]
+        for index, unit in enumerate(column_units):
+            if unit is None or index >= len(first_header):
+                continue
+            suffix = f", {unit}"
+            if not first_header[index].endswith(suffix):
+                first_header[index] = f"{first_header[index]}{suffix}"
+        return updated
+
+    def _table_number(self, block: TableNode) -> str:
+        if block.number and block.number != "auto":
+            return str(block.number)
+        return str(self._numbering.next_table_number())
+
+    def _format_table_continuation_label(
+        self,
+        continuation: ContinuationLabel | None,
+        table_number: str,
+    ) -> str:
+        if continuation is ContinuationLabel.FINAL:
+            return f"Окончание таблицы {table_number}"
+        return f"Продолжение таблицы {table_number}"
+
+    def _render_table_unit(self, unit_label: str) -> None:
+        text = unit_label.strip()
+        if text and not text.startswith(","):
+            text = f", {text}"
+        p = self.doc.add_paragraph(text)
+        self._set_paragraph_format(p, "table_unit")
+        for run in p.runs:
+            run.font.size = Pt(12)
+
+    def _append_table_note_row(self, table, note: TableNote) -> None:
+        row = table.add_row()
+        if len(row.cells) > 1:
+            row.cells[0].merge(row.cells[-1])
+        cell = row.cells[0]
+        self._set_cell_margins(cell, top=120, bottom=120)
+        paragraph = cell.paragraphs[0]
+        paragraph.paragraph_format.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        paragraph.paragraph_format.first_line_indent = Cm(0)
+        paragraph.paragraph_format.line_spacing = self.config.TABLE["line_spacing"]
+        marker = paragraph.add_run(note.marker)
+        self._set_run_style(marker, bold=False)
+        marker.font.size = self.config.TABLE["font_size"]
+        marker.font.superscript = True
+        text = paragraph.add_run(f" {note.text}")
+        self._set_run_style(text, bold=False)
+        text.font.size = self.config.TABLE["font_size"]
+
+    def _set_table_borders(self, table, *, borderless: bool) -> None:
+        tbl_pr = table._tbl.tblPr
+        existing = tbl_pr.find(qn("w:tblBorders"))
+        if existing is not None:
+            tbl_pr.remove(existing)
+
+        borders = OxmlElement("w:tblBorders")
+        if borderless:
+            values = {
+                "top": "nil",
+                "left": "nil",
+                "bottom": "nil",
+                "right": "nil",
+                "insideH": "nil",
+                "insideV": "nil",
+            }
+        else:
+            values = {
+                "top": "nil",
+                "left": "single",
+                "bottom": "single",
+                "right": "single",
+                "insideH": "nil",
+                "insideV": "single",
+            }
+        for edge, value in values.items():
+            element = OxmlElement(f"w:{edge}")
+            element.set(qn("w:val"), value)
+            element.set(qn("w:sz"), "4")
+            element.set(qn("w:space"), "0")
+            element.set(qn("w:color"), "000000")
+            borders.append(element)
+        tbl_pr.append(borders)
+
+    def _set_row_bottom_border(self, row, value: str) -> None:
+        for cell in row.cells:
+            tc_pr = cell._tc.get_or_add_tcPr()
+            borders = tc_pr.find(qn("w:tcBorders"))
+            if borders is None:
+                borders = OxmlElement("w:tcBorders")
+                tc_pr.append(borders)
+            bottom = borders.find(qn("w:bottom"))
+            if bottom is None:
+                bottom = OxmlElement("w:bottom")
+                borders.append(bottom)
+            bottom.set(qn("w:val"), value)
+            bottom.set(qn("w:sz"), "6" if value == "double" else "4")
+            bottom.set(qn("w:color"), "000000")
+
+    def _set_cell_margins(self, cell, *, top: int, bottom: int) -> None:
+        tc_pr = cell._tc.get_or_add_tcPr()
+        margins = tc_pr.find(qn("w:tcMar"))
+        if margins is None:
+            margins = OxmlElement("w:tcMar")
+            tc_pr.append(margins)
+        for edge, value in (("top", top), ("bottom", bottom)):
+            element = margins.find(qn(f"w:{edge}"))
+            if element is None:
+                element = OxmlElement(f"w:{edge}")
+                margins.append(element)
+            element.set(qn("w:w"), str(value))
+            element.set(qn("w:type"), "dxa")
 
     def _set_repeat_header_row(self, row):
         """Mark a row so Word repeats it on every continuation page."""
@@ -533,7 +726,15 @@ class DocxRenderer(RendererPort):
         self._title_page_emitted = False
         self._profile = profile
         self._title_page_diagnostics = []
+        self._abbreviation_entries = ()
+        self._abbreviation_explicit = False
+        self._abbreviation_diagnostics = []
         self._numbering: NumberingContext = build_numbering_context(profile)
+
+    def _prepare_document_level_state(self, document: Document) -> None:
+        self._abbreviation_entries = abbreviations_for_document(document)
+        self._abbreviation_explicit = explicit_abbreviations(document) is not None
+        self._abbreviation_diagnostics = []
 
     def _render_from_ast(self, document):
         for block in document.blocks:
@@ -544,10 +745,7 @@ class DocxRenderer(RendererPort):
             elif isinstance(block, ParagraphNode):
                 self._render_paragraph(block)
             elif isinstance(block, TableNode):
-                rows = [[cell.text for cell in row.cells] for row in block.rows]
-                table_number = self._numbering.next_table_number()
-                caption = self._format_table_caption(block.caption, table_number)
-                self._create_table(rows, caption)
+                self._render_table(block)
             elif isinstance(block, TableCaptionNode):
                 p = self.doc.add_paragraph(block.text)
                 self._set_paragraph_format(p, "caption_table")
@@ -603,6 +801,9 @@ class DocxRenderer(RendererPort):
         if block.section_type is StructuralSectionType.CONTENTS:
             self._render_table_of_contents(TableOfContentsNode(title=block.title, source=block.source))
             return
+        if block.section_type is StructuralSectionType.ABBREVIATIONS:
+            self._render_abbreviations_section(block)
+            return
 
         if self.config.STRUCTURAL_SECTION["page_break_before"]:
             self.doc.add_page_break()
@@ -614,6 +815,57 @@ class DocxRenderer(RendererPort):
         run.underline = False
         self._add_empty_paragraph("empty_after_header")
         self._rendered_body_blocks = True
+
+    def _render_abbreviations_section(self, block):
+        if self.config.STRUCTURAL_SECTION["page_break_before"]:
+            self.doc.add_page_break()
+
+        title = block.title.upper() if self.config.STRUCTURAL_SECTION["uppercase"] else block.title
+        p = self.doc.add_paragraph()
+        run = p.add_run(title)
+        self._set_paragraph_format(p, "structural_section")
+        run.underline = False
+        self._add_empty_paragraph("empty_after_header")
+
+        if self._abbreviation_entries:
+            self._create_abbreviations_table(self._abbreviation_entries)
+            if not self._abbreviation_explicit:
+                self._abbreviation_diagnostics.append(
+                    Diagnostic(
+                        code="ABBREVIATIONS_AUTO_DETECTED",
+                        message="Abbreviations list generated from first-use introductions",
+                        severity=Severity.INFO,
+                        rule_id="common.abbreviations.two_column_layout",
+                    )
+                )
+        self._rendered_body_blocks = True
+
+    def _create_abbreviations_table(self, entries) -> None:
+        rows = [[entry.short, f"— {entry.long}"] for entry in entries]
+        if not rows:
+            return
+
+        table = self.doc.add_table(rows=len(rows), cols=2)
+        table.style = docx_styles.ABBREVIATIONS_TABLE
+        table.autofit = False
+        self._set_table_borders(table, borderless=True)
+
+        widths = (Cm(4), Cm(13))
+        for row_idx, row_data in enumerate(rows):
+            for col_idx, text in enumerate(row_data):
+                cell = table.rows[row_idx].cells[col_idx]
+                cell.width = widths[col_idx]
+                cell.text = text
+                self._set_cell_margins(cell, top=0, bottom=0)
+                for paragraph in cell.paragraphs:
+                    paragraph.paragraph_format.alignment = WD_ALIGN_PARAGRAPH.LEFT
+                    paragraph.paragraph_format.first_line_indent = Cm(0)
+                    paragraph.paragraph_format.space_before = Pt(0)
+                    paragraph.paragraph_format.space_after = Pt(0)
+                    paragraph.paragraph_format.line_spacing = 1.0
+                    for run in paragraph.runs:
+                        self._set_run_style(run, bold=False)
+                        run.font.size = Pt(14)
 
     def _render_title_page(self, metadata, profile_name=None):
         if self._template_mode == "preserve-prefix":

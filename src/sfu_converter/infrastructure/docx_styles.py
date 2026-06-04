@@ -20,6 +20,9 @@ from sfu_converter.config import SIBFUConfig
 
 STRUCTURAL_HEADING = "SFUStructuralHeading"
 TABLE_CAPTION = "SFUTableCaption"
+TABLE_UNIT = "SFUTableUnit"
+TABLE = "SFUTable"
+ABBREVIATIONS_TABLE = "SFUAbbreviationsTable"
 FIGURE_CAPTION = "SFUFigureCaption"
 FIGURE_EXPLANATORY = "SFUFigureExplanatory"
 FIGURE_PLACEHOLDER = "SFUFigurePlaceholder"
@@ -34,6 +37,9 @@ FRAME_MAIN_INSCRIPTION = "SFUFrameMainInscription"
 ALL_SFU_STYLES: tuple[str, ...] = (
     STRUCTURAL_HEADING,
     TABLE_CAPTION,
+    TABLE_UNIT,
+    TABLE,
+    ABBREVIATIONS_TABLE,
     FIGURE_CAPTION,
     FIGURE_EXPLANATORY,
     FIGURE_PLACEHOLDER,
@@ -55,6 +61,10 @@ def register_styles(document) -> None:
               outline_level=0)
     _register(document, TABLE_CAPTION, base="Caption",
               alignment=WD_ALIGN_PARAGRAPH.LEFT, first_line_indent=Cm(0))
+    _register(document, TABLE_UNIT, base="Normal", size=Pt(12),
+              alignment=WD_ALIGN_PARAGRAPH.RIGHT, first_line_indent=Cm(0))
+    _register_table(document, TABLE)
+    _register_table(document, ABBREVIATIONS_TABLE)
     _register(document, FIGURE_CAPTION, base="Caption",
               alignment=WD_ALIGN_PARAGRAPH.CENTER, first_line_indent=Cm(0))
     _register(document, FIGURE_EXPLANATORY, base="Normal", size=Pt(12),
@@ -127,6 +137,17 @@ def _register(
         pf.tab_stops.add_tab_stop(Emu(int(right_tab_pos)), WD_TAB_ALIGNMENT.RIGHT)
     if outline_level is not None:
         _set_outline_level(style, outline_level)
+
+
+def _register_table(document, name: str) -> None:
+    styles = document.styles
+    if name in [s.name for s in styles]:
+        return
+
+    style = styles.add_style(name, WD_STYLE_TYPE.TABLE)
+    font = style.font
+    font.name = "Times New Roman"
+    font.color.rgb = RGBColor(0, 0, 0)
 
 
 def _set_outline_level(style, level: int) -> None:

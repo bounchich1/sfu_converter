@@ -22,6 +22,7 @@ ALL_STYLE_TYPES = (
     "appendix_heading",
     "caption_img",
     "caption_table",
+    "table_unit",
     "empty_before_header",
     "empty_after_header",
     "empty_before_image",

@@ -247,3 +247,39 @@ def test_v2_parser_reports_duplicate_ids_and_invalid_doc_syntax():
     )
     assert invalid_syntax_result.diagnostics[0].code == DiagnosticCodes.TXT_UNSUPPORTED_SYNTAX
     assert invalid_syntax_result.diagnostics[0].severity is Severity.ERROR
+
+
+def test_v2_parser_parses_extended_table_compliance_attributes():
+    result = V2Parser().parse(
+        "\n".join(
+            [
+                '[TABLE id=t1 caption="Параметры" number=3 unit="МПа" continuation=continuation '
+                'column_units="-,Гц,°С" header_rows=2]',
+                "| Колонка 1 | Колонка 2 | Колонка 3 |",
+                "|-----------|-----------|-----------|",
+                "| Параметр | Частота | Температура |",
+                "| Давление | 50 | 20 |",
+                '[TABLE_NOTE marker="*" text="Измерено при нормальных условиях"]',
+                "[TABLE_END]",
+            ]
+        )
+    )
+
+    assert result.diagnostics == []
+    table = result.document.blocks[0]
+    assert isinstance(table, TableNode)
+    assert table.id == "t1"
+    assert table.caption == "Параметры"
+    assert table.number == "3"
+    assert table.unit_label == "МПа"
+    assert getattr(table.continuation, "value", table.continuation) == "continuation"
+    assert table.column_units == (None, "Гц", "°С")
+    assert table.header_row_count == 2
+    assert tuple(tuple(cell.text for cell in row.cells) for row in table.rows) == (
+        ("Колонка 1", "Колонка 2", "Колонка 3"),
+        ("Параметр", "Частота", "Температура"),
+        ("Давление", "50", "20"),
+    )
+    assert [(note.marker, note.text) for note in table.notes] == [
+        ("*", "Измерено при нормальных условиях"),
+    ]

@@ -26,6 +26,7 @@ class BlockType(Enum):
     TABLE_OF_CONTENTS = auto()
     TITLE_PAGE = auto()
     REFERENCE = auto()
+    ABBREVIATIONS_LIST = auto()
 
 
 class HeadingLevel(Enum):
@@ -50,6 +51,11 @@ class ListType(Enum):
     BULLET = auto()
     NUMBERED = auto()
     LETTERED = auto()
+
+
+class ContinuationLabel(Enum):
+    CONTINUATION = "continuation"
+    FINAL = "final"
 
 
 @dataclass(frozen=True)
@@ -104,6 +110,22 @@ class StructuralSectionNode:
 
 
 @dataclass(frozen=True)
+class AbbreviationEntryNode:
+    short: str
+    long: str
+    source: SourceSpan | None = None
+
+
+@dataclass(frozen=True)
+class AbbreviationsListNode:
+    entries: tuple[AbbreviationEntryNode, ...]
+    source: SourceSpan | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "entries", tuple(self.entries))
+
+
+@dataclass(frozen=True)
 class TableCell:
     text: str
 
@@ -117,17 +139,35 @@ class TableRow:
 
 
 @dataclass(frozen=True)
+class TableNote:
+    marker: str
+    text: str
+    source: SourceSpan | None = None
+
+
+@dataclass(frozen=True)
 class TableNode:
     """A table block."""
 
     rows: tuple[TableRow, ...]
     caption: str | None = None
     id: str | None = None
+    number: str | None = None
+    unit_label: str | None = None
+    continuation: ContinuationLabel | None = None
+    notes: tuple[TableNote, ...] = ()
+    column_units: tuple[str | None, ...] = ()
     header_row_count: int = 1
     source: SourceSpan | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "rows", tuple(self.rows))
+        object.__setattr__(self, "notes", tuple(self.notes))
+        object.__setattr__(self, "column_units", tuple(self.column_units))
+
+    @property
+    def header_levels(self) -> int:
+        return self.header_row_count
 
 
 @dataclass(frozen=True)
@@ -256,6 +296,7 @@ BlockNode = (
     | MetadataNode
     | TableOfContentsNode
     | TitlePageNode
+    | AbbreviationsListNode
 )
 
 

@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 from sfu_converter.domain.ast_nodes import (
+    AbbreviationEntryNode,
+    AbbreviationsListNode,
     AppendixNode,
     BibliographyEntryNode,
+    ContinuationLabel,
     Document,
     FigureNode,
     FormulaNode,
@@ -17,6 +20,7 @@ from sfu_converter.domain.ast_nodes import (
     RawBlockNode,
     ReferenceNode,
     SourceSpan,
+    TableNote,
     TableNode,
 )
 from sfu_converter.domain.diagnostics import Diagnostic, DiagnosticCodes, Severity
@@ -27,6 +31,7 @@ from sfu_converter.parser.v1_parser import (
     _LIST_TYPE_ALIASES,
     V1Parser,
     _parse_inline_formatting,
+    _is_table_separator_row,
     _parse_table_row,
     _span_for_line,
     _structural_section_from_title,
@@ -34,6 +39,9 @@ from sfu_converter.parser.v1_parser import (
 
 _KNOWN_V2_MARKERS = (
     "[APPENDIX",
+    "[ABBREVIATIONS",
+    "[ABBREVIATIONS_END]",
+    "[ABBR",
     "[DOC",
     "[FIGURE",
     "[FORMULA",
@@ -50,6 +58,7 @@ _KNOWN_V2_MARKERS = (
     "[SOURCE",
     "[TABLE",
     "[TABLE_END]",
+    "[TABLE_NOTE",
 )
 
 
@@ -113,6 +122,15 @@ class V2Parser(BaseParser):
                 if table is not None:
                     self._remember_id(table.id, span, seen_ids, diagnostics)
                     blocks.append(table)
+                i = end_index
+            elif stripped.startswith("[ABBREVIATIONS"):
+                abbreviations, abbreviation_diagnostics, end_index = self._parse_abbreviations(
+                    lines,
+                    i,
+                    filename,
+                )
+                diagnostics.extend(abbreviation_diagnostics)
+                blocks.append(abbreviations)
                 i = end_index
             elif stripped.startswith("[LIST"):
                 list_node, list_diagnostics, end_index = self._parse_list(
@@ -277,6 +295,7 @@ class V2Parser(BaseParser):
         diagnostics: list[Diagnostic] = []
         attrs = self._parse_attributes(lines[start_index].strip())
         rows = []
+        notes: list[TableNote] = []
         expected_cell_count: int | None = None
         table_start_span = _span_for_line(lines[start_index], start_index, filename)
         i = start_index + 1
@@ -290,8 +309,16 @@ class V2Parser(BaseParser):
             if stripped.startswith("[TABLE_END]"):
                 found_end = True
                 break
+            if stripped.startswith("[TABLE_NOTE"):
+                note = self._parse_table_note(stripped, span)
+                notes.append(note)
+                i += 1
+                continue
             if stripped.startswith("|"):
                 row = _parse_table_row(stripped)
+                if row is None or _is_table_separator_row(row):
+                    i += 1
+                    continue
                 cell_count = len(row.cells)
                 if expected_cell_count is None:
                     expected_cell_count = cell_count
@@ -322,15 +349,91 @@ class V2Parser(BaseParser):
         if not rows:
             return None, diagnostics, i
 
-        header_row_count = 0 if attrs.get("header", "true").lower() == "false" else 1
+        header_row_count = _parse_int(attrs.get("header_rows"), default=-1)
+        if header_row_count < 0:
+            header_row_count = 0 if attrs.get("header", "true").lower() == "false" else 1
         return (
             TableNode(
                 rows=tuple(rows),
                 caption=attrs.get("caption"),
                 id=attrs.get("id"),
+                number=attrs.get("number"),
+                unit_label=attrs.get("unit"),
+                continuation=_parse_continuation(attrs.get("continuation")),
+                notes=tuple(notes),
+                column_units=_parse_column_units(attrs.get("column_units")),
                 header_row_count=header_row_count,
                 source=SourceSpan(
                     line_start=table_start_span.line_start,
+                    line_end=i + 1 if found_end else len(lines),
+                    filename=filename,
+                ),
+            ),
+            diagnostics,
+            i,
+        )
+
+    def _parse_table_note(self, stripped: str, span: SourceSpan) -> TableNote:
+        attrs = self._parse_attributes(stripped)
+        return TableNote(
+            marker=attrs.get("marker", "*"),
+            text=attrs.get("text", ""),
+            source=span,
+        )
+
+    def _parse_abbreviations(
+        self,
+        lines: list[str],
+        start_index: int,
+        filename: str | None,
+    ) -> tuple[AbbreviationsListNode, list[Diagnostic], int]:
+        diagnostics: list[Diagnostic] = []
+        entries: list[AbbreviationEntryNode] = []
+        start_span = _span_for_line(lines[start_index], start_index, filename)
+        i = start_index + 1
+        found_end = False
+
+        while i < len(lines):
+            stripped = lines[i].strip()
+            span = _span_for_line(lines[i], i, filename)
+            if stripped.startswith("[ABBREVIATIONS_END]"):
+                found_end = True
+                break
+            if stripped.startswith("[ABBR"):
+                attrs = self._parse_attributes(stripped)
+                short = attrs.get("short", "").strip()
+                long = attrs.get("long", "").strip()
+                if short and long:
+                    entries.append(AbbreviationEntryNode(short=short, long=long, source=span))
+            elif stripped.startswith("|"):
+                row = _parse_table_row(stripped)
+                if row is not None and len(row.cells) >= 2 and not _is_table_separator_row(row):
+                    entries.append(
+                        AbbreviationEntryNode(
+                            short=row.cells[0].text,
+                            long=row.cells[1].text,
+                            source=span,
+                        )
+                    )
+            elif stripped:
+                diagnostics.append(self._unknown_marker(stripped, span))
+            i += 1
+
+        if not found_end:
+            diagnostics.append(
+                Diagnostic(
+                    code=DiagnosticCodes.TXT_MISSING_BLOCK_END,
+                    message="ABBREVIATIONS without matching ABBREVIATIONS_END",
+                    severity=Severity.ERROR,
+                    source=start_span,
+                )
+            )
+
+        return (
+            AbbreviationsListNode(
+                entries=tuple(entries),
+                source=SourceSpan(
+                    line_start=start_span.line_start,
                     line_end=i + 1 if found_end else len(lines),
                     filename=filename,
                 ),
@@ -582,3 +685,33 @@ class V2Parser(BaseParser):
             severity=Severity.ERROR if self.strict else Severity.WARNING,
             source=span,
         )
+
+
+def _parse_int(value: str | None, *, default: int) -> int:
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except ValueError:
+        return default
+
+
+def _parse_continuation(value: str | None) -> ContinuationLabel | None:
+    if value is None:
+        return None
+    normalized = value.strip().casefold()
+    if normalized in {"continuation", "continue", "продолжение"}:
+        return ContinuationLabel.CONTINUATION
+    if normalized in {"final", "ending", "окончание"}:
+        return ContinuationLabel.FINAL
+    return None
+
+
+def _parse_column_units(value: str | None) -> tuple[str | None, ...]:
+    if value is None:
+        return ()
+    units = []
+    for item in value.split(","):
+        unit = item.strip()
+        units.append(None if unit in {"", "-"} else unit)
+    return tuple(units)

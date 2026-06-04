@@ -30,6 +30,7 @@ class ParagraphRole(Enum):
     TOC_HEADING = auto()
     TOC_ENTRY = auto()
     TABLE_CAPTION = auto()
+    TABLE_UNIT = auto()
     FIGURE_CAPTION = auto()
     FIGURE_EXPLANATORY = auto()
     FIGURE_PLACEHOLDER = auto()
@@ -65,6 +66,7 @@ _ROLE_BY_SFU_STYLE = {
     docx_styles.STRUCTURAL_HEADING: ParagraphRole.STRUCTURAL_HEADING,
     docx_styles.TOC_HEADING: ParagraphRole.TOC_HEADING,
     docx_styles.TABLE_CAPTION: ParagraphRole.TABLE_CAPTION,
+    docx_styles.TABLE_UNIT: ParagraphRole.TABLE_UNIT,
     docx_styles.FIGURE_CAPTION: ParagraphRole.FIGURE_CAPTION,
     docx_styles.FIGURE_EXPLANATORY: ParagraphRole.FIGURE_EXPLANATORY,
     docx_styles.FIGURE_PLACEHOLDER: ParagraphRole.FIGURE_PLACEHOLDER,
