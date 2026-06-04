@@ -359,6 +359,31 @@ def test_docx_renderer_renders_structural_sections_with_special_formatting(tmp_p
     assert heading.paragraph_format.line_spacing == 1.0
     assert heading.runs[0].bold is True
     assert heading.runs[0].underline is False
+    assert heading.style.name == docx_styles.STRUCTURAL_HEADING
+
+
+def test_docx_renderer_renders_toc_heading_with_sfu_style(tmp_path):
+    renderer = DocxRenderer(config_class=SIBFUConfig, base_dir=tmp_path)
+    ast = Document(blocks=(TableOfContentsNode(),))
+    output_path = tmp_path / "toc_style.docx"
+
+    renderer.render_to_file(ast, _common_profile(), str(output_path))
+
+    doc = DocxDocument(str(output_path))
+    heading = next(paragraph for paragraph in doc.paragraphs if paragraph.text == "СОДЕРЖАНИЕ")
+    assert heading.style.name == docx_styles.TOC_HEADING
+
+
+def test_docx_renderer_renders_appendix_heading_with_sfu_style(tmp_path):
+    renderer = DocxRenderer(config_class=SIBFUConfig, base_dir=tmp_path)
+    ast = Document(blocks=(AppendixNode(title="ПРИЛОЖЕНИЕ", letter="А"),))
+    output_path = tmp_path / "appendix_style.docx"
+
+    renderer.render_to_file(ast, _common_profile(), str(output_path))
+
+    doc = DocxDocument(str(output_path))
+    heading = next(paragraph for paragraph in doc.paragraphs if paragraph.text == "ПРИЛОЖЕНИЕ А")
+    assert heading.style.name == docx_styles.APPENDIX_HEADING
 
 
 def test_docx_renderer_implements_renderer_port():
@@ -731,7 +756,7 @@ def test_docx_renderer_renders_appendix_on_new_page_with_centered_heading(tmp_pa
     assert heading.paragraph_format.alignment == WD_ALIGN_PARAGRAPH.CENTER
     assert_close(heading.paragraph_format.first_line_indent, Cm(0))
     assert heading.runs[0].bold is True
-    assert "Heading 1" in heading.style.name
+    assert heading.style.name == docx_styles.APPENDIX_HEADING
     assert type_para.text == "(справочное)"
     assert subtitle.paragraph_format.alignment == WD_ALIGN_PARAGRAPH.CENTER
 

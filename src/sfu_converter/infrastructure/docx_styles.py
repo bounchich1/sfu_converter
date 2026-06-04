@@ -11,6 +11,8 @@ from __future__ import annotations
 
 from docx.enum.style import WD_STYLE_TYPE
 from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_TAB_ALIGNMENT
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
 from docx.shared import Cm, Emu, Pt, RGBColor
 
 from sfu_converter.config import SIBFUConfig
@@ -49,7 +51,8 @@ def register_styles(document) -> None:
     """Attach SFU paragraph styles to ``document``; safe to call repeatedly."""
 
     _register(document, STRUCTURAL_HEADING, base="Normal", bold=True, all_caps=True,
-              alignment=WD_ALIGN_PARAGRAPH.CENTER, first_line_indent=Cm(0))
+              alignment=WD_ALIGN_PARAGRAPH.CENTER, first_line_indent=Cm(0),
+              outline_level=0)
     _register(document, TABLE_CAPTION, base="Caption",
               alignment=WD_ALIGN_PARAGRAPH.LEFT, first_line_indent=Cm(0))
     _register(document, FIGURE_CAPTION, base="Caption",
@@ -70,8 +73,18 @@ def register_styles(document) -> None:
     _register(document, TOC_HEADING, base=STRUCTURAL_HEADING, bold=True, all_caps=True,
               alignment=WD_ALIGN_PARAGRAPH.CENTER, first_line_indent=Cm(0))
     _register(document, APPENDIX_HEADING, base="Normal", bold=True,
-              alignment=WD_ALIGN_PARAGRAPH.CENTER, first_line_indent=Cm(0))
+              alignment=WD_ALIGN_PARAGRAPH.CENTER, first_line_indent=Cm(0),
+              outline_level=0)
     _register(document, FRAME_MAIN_INSCRIPTION, base="Normal")
+
+
+def apply_word_heading_style(document, paragraph, style_name: str) -> None:
+    """Attach a built-in Word heading style when the template provides it."""
+
+    try:
+        paragraph.style = document.styles[style_name]
+    except KeyError:
+        return
 
 
 def _register(
@@ -86,6 +99,7 @@ def _register(
     first_line_indent=None,
     size=None,
     right_tab_pos=None,
+    outline_level: int | None = None,
 ) -> None:
     styles = document.styles
     if name in [s.name for s in styles]:
@@ -111,3 +125,16 @@ def _register(
         pf.first_line_indent = first_line_indent
     if right_tab_pos is not None:
         pf.tab_stops.add_tab_stop(Emu(int(right_tab_pos)), WD_TAB_ALIGNMENT.RIGHT)
+    if outline_level is not None:
+        _set_outline_level(style, outline_level)
+
+
+def _set_outline_level(style, level: int) -> None:
+    p_pr = style.element.get_or_add_pPr()
+    existing = p_pr.find(qn("w:outlineLvl"))
+    if existing is not None:
+        p_pr.remove(existing)
+
+    outline = OxmlElement("w:outlineLvl")
+    outline.set(qn("w:val"), str(level))
+    p_pr.append(outline)

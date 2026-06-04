@@ -122,6 +122,31 @@ class DocxValidator:
                 continue
 
             for paragraph in footer.paragraphs:
+                if " PAGE " not in paragraph._p.xml:
+                    continue
+
+                alignment = paragraph.paragraph_format.alignment
+                if alignment != WD_ALIGN_PARAGRAPH.CENTER:
+                    self._add(
+                        code=DiagnosticCodes.FORMAT_PAGE_NUMBERING,
+                        message=(
+                            f"Section {section_index}: page number alignment "
+                            "must be center"
+                        ),
+                        rule_id=rule_id,
+                    )
+
+                first_line_indent = paragraph.paragraph_format.first_line_indent
+                if first_line_indent is not None and abs(first_line_indent - Cm(0)) > _LENGTH_TOLERANCE_EMU:
+                    self._add(
+                        code=DiagnosticCodes.FORMAT_PAGE_NUMBERING,
+                        message=(
+                            f"Section {section_index}: page number first-line "
+                            f"indent {first_line_indent.cm:.2f} cm, expected 0 cm"
+                        ),
+                        rule_id=rule_id,
+                    )
+
                 for run in paragraph.runs:
                     font_name = run.font.name
                     if font_name and font_name != rule.parameters["font_name"]:

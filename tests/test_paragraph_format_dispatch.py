@@ -18,6 +18,8 @@ ALL_STYLE_TYPES = (
     "h4",
     "list_item",
     "structural_section",
+    "toc_heading",
+    "appendix_heading",
     "caption_img",
     "caption_table",
     "empty_before_header",

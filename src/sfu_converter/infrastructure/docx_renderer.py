@@ -55,6 +55,8 @@ _SFU_STYLE_BY_TYPE = {
     "bibliography_entry": docx_styles.BIBLIOGRAPHY_ENTRY,
     "list_item": docx_styles.LIST_ITEM,
     "structural_section": docx_styles.STRUCTURAL_HEADING,
+    "toc_heading": docx_styles.TOC_HEADING,
+    "appendix_heading": docx_styles.APPENDIX_HEADING,
 }
 
 
@@ -121,7 +123,7 @@ class DocxRenderer(RendererPort):
         self.doc = None
         self.logger = logger or logging.getLogger(__name__)
         self._style_map = self._build_style_map()
-        self._bold_styles = frozenset({"h1", "h2", "structural_section"})
+        self._bold_styles = frozenset({"h1", "h2", "structural_section", "toc_heading", "appendix_heading"})
         self._section_numberer = SectionNumberer()
         self._rendered_body_blocks = False
 
@@ -229,6 +231,20 @@ class DocxRenderer(RendererPort):
                 "space_before": cfg.STRUCTURAL_SECTION["space_before"],
                 "space_after": cfg.STRUCTURAL_SECTION["space_after"],
             },
+            "toc_heading": {
+                "align": cfg.STRUCTURAL_SECTION["align"],
+                "indent": cfg.STRUCTURAL_SECTION["indent"],
+                "line_spacing": cfg.STRUCTURAL_SECTION["line_spacing"],
+                "space_before": cfg.STRUCTURAL_SECTION["space_before"],
+                "space_after": cfg.STRUCTURAL_SECTION["space_after"],
+            },
+            "appendix_heading": {
+                "align": cfg.STRUCTURAL_SECTION["align"],
+                "indent": cfg.STRUCTURAL_SECTION["indent"],
+                "line_spacing": cfg.STRUCTURAL_SECTION["line_spacing"],
+                "space_before": cfg.STRUCTURAL_SECTION["space_before"],
+                "space_after": cfg.STRUCTURAL_SECTION["space_after"],
+            },
             "caption_img": {
                 "align": cfg.CAPTION_IMAGE["align"],
                 "indent": cfg.CAPTION_IMAGE["indent"],
@@ -325,7 +341,7 @@ class DocxRenderer(RendererPort):
         if sfu_style is not None and self.doc is not None and sfu_style in [s.name for s in self.doc.styles]:
             para.style = self.doc.styles[sfu_style]
         elif word_style is not None and self.doc is not None:
-            para.style = self.doc.styles[word_style]
+            docx_styles.apply_word_heading_style(self.doc, para, word_style)
 
         pf = para.paragraph_format
         if "align" in style:
@@ -596,7 +612,6 @@ class DocxRenderer(RendererPort):
         run = p.add_run(title)
         self._set_paragraph_format(p, "structural_section")
         run.underline = False
-        self._apply_word_heading_style(p, "Heading 1")
         self._add_empty_paragraph("empty_after_header")
         self._rendered_body_blocks = True
 
@@ -659,9 +674,8 @@ class DocxRenderer(RendererPort):
 
         heading_para = self.doc.add_paragraph()
         heading_run = heading_para.add_run(heading_text.upper())
-        self._set_paragraph_format(heading_para, "structural_section")
+        self._set_paragraph_format(heading_para, "appendix_heading")
         heading_run.underline = False
-        self._apply_word_heading_style(heading_para, "Heading 1")
 
         if block.appendix_type:
             type_para = self.doc.add_paragraph()
@@ -702,9 +716,8 @@ class DocxRenderer(RendererPort):
 
         heading_para = self.doc.add_paragraph()
         heading_run = heading_para.add_run((block.title or "СОДЕРЖАНИЕ").upper())
-        self._set_paragraph_format(heading_para, "structural_section")
+        self._set_paragraph_format(heading_para, "toc_heading")
         heading_run.underline = False
-        self._apply_word_heading_style(heading_para, "Heading 1")
 
         self._add_empty_paragraph("empty_after_header")
 
@@ -735,19 +748,9 @@ class DocxRenderer(RendererPort):
         self._rendered_body_blocks = True
 
     def _apply_word_heading_style(self, paragraph, style_name):
-        """Attach a built-in heading style so the TOC field can find the entry.
-
-        We only assign ``pStyle``; the formatting parameters from the registry
-        already win because ``_set_paragraph_format`` overrides spacing,
-        alignment, and run properties after the style is applied.
-        """
-
         if self.doc is None:
             return
-        try:
-            paragraph.style = self.doc.styles[style_name]
-        except KeyError:
-            return
+        docx_styles.apply_word_heading_style(self.doc, paragraph, style_name)
 
     def _render_paragraph(self, block):
         para = self.doc.add_paragraph()

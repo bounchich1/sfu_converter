@@ -295,6 +295,100 @@ def test_validator_reports_wrong_footer_font(tmp_path):
     )
 
 
+def test_validator_reports_wrong_footer_alignment(tmp_path):
+    """Validator catches a PAGE field that is not bottom-centred."""
+    doc = DocxDocument()
+    section = doc.sections[0]
+    section.top_margin = Cm(2)
+    section.bottom_margin = Cm(2)
+    section.left_margin = Cm(3)
+    section.right_margin = Cm(1)
+    section.different_first_page_header_footer = True
+
+    footer = section.footer
+    footer.is_linked_to_previous = False
+    paragraph = footer.paragraphs[0] if footer.paragraphs else footer.add_paragraph()
+    paragraph.clear()
+    paragraph.paragraph_format.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    paragraph.paragraph_format.first_line_indent = Cm(0)
+    run = paragraph.add_run()
+    run.font.name = "Times New Roman"
+    run.font.size = Pt(14)
+    from docx.oxml import OxmlElement
+    field_begin = OxmlElement("w:fldChar")
+    field_begin.set(qn("w:fldCharType"), "begin")
+    run._element.append(field_begin)
+    instruction = OxmlElement("w:instrText")
+    instruction.set(qn("xml:space"), "preserve")
+    instruction.text = " PAGE "
+    run._element.append(instruction)
+    field_end = OxmlElement("w:fldChar")
+    field_end.set(qn("w:fldCharType"), "end")
+    run._element.append(field_end)
+
+    first_footer = section.first_page_footer
+    first_footer.is_linked_to_previous = False
+    fp = first_footer.paragraphs[0] if first_footer.paragraphs else first_footer.add_paragraph()
+    fp.clear()
+
+    path = tmp_path / "wrong_alignment.docx"
+    doc.save(str(path))
+
+    diagnostics = DocxValidator(get_profile("common")).validate_file(str(path))
+    assert any(
+        d.rule_id == "common.page.numbering"
+        and "alignment" in d.message.lower()
+        for d in diagnostics
+    )
+
+
+def test_validator_reports_footer_first_line_indent(tmp_path):
+    """Validator catches a PAGE field paragraph with first-line indent."""
+    doc = DocxDocument()
+    section = doc.sections[0]
+    section.top_margin = Cm(2)
+    section.bottom_margin = Cm(2)
+    section.left_margin = Cm(3)
+    section.right_margin = Cm(1)
+    section.different_first_page_header_footer = True
+
+    footer = section.footer
+    footer.is_linked_to_previous = False
+    paragraph = footer.paragraphs[0] if footer.paragraphs else footer.add_paragraph()
+    paragraph.clear()
+    paragraph.paragraph_format.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    paragraph.paragraph_format.first_line_indent = Cm(1)
+    run = paragraph.add_run()
+    run.font.name = "Times New Roman"
+    run.font.size = Pt(14)
+    from docx.oxml import OxmlElement
+    field_begin = OxmlElement("w:fldChar")
+    field_begin.set(qn("w:fldCharType"), "begin")
+    run._element.append(field_begin)
+    instruction = OxmlElement("w:instrText")
+    instruction.set(qn("xml:space"), "preserve")
+    instruction.text = " PAGE "
+    run._element.append(instruction)
+    field_end = OxmlElement("w:fldChar")
+    field_end.set(qn("w:fldCharType"), "end")
+    run._element.append(field_end)
+
+    first_footer = section.first_page_footer
+    first_footer.is_linked_to_previous = False
+    fp = first_footer.paragraphs[0] if first_footer.paragraphs else first_footer.add_paragraph()
+    fp.clear()
+
+    path = tmp_path / "wrong_indent.docx"
+    doc.save(str(path))
+
+    diagnostics = DocxValidator(get_profile("common")).validate_file(str(path))
+    assert any(
+        d.rule_id == "common.page.numbering"
+        and "indent" in d.message.lower()
+        for d in diagnostics
+    )
+
+
 def test_validator_page_numbering_no_longer_unsupported(tmp_path):
     """common.page.numbering should NOT appear in unsupported list."""
     doc = DocxDocument()
