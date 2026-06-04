@@ -303,7 +303,15 @@ def test_unknown_profile_returns_missing_profile_diagnostic(tmp_path, capsys):
 
     assert exit_code == cli.ExitCodes.MISSING_RESOURCE
     assert payload["ok"] is False
-    assert payload["diagnostics"][0]["code"] == "MISSING_PROFILE"
+    diagnostic = payload["diagnostics"][0]
+    assert diagnostic["code"] == "MISSING_PROFILE"
+    assert diagnostic["ruleId"] is None
+    assert diagnostic["source"] == {
+        "document": None,
+        "section": None,
+        "lineStart": None,
+        "lineEnd": None,
+    }
 
 
 def test_validate_docx_command_missing_input_returns_missing_resource(tmp_path, capsys):
@@ -363,9 +371,36 @@ def test_parse_command_outputs_json_ast(tmp_path, capsys):
     assert payload["ok"] is True
     assert payload["command"] == "parse"
     assert payload["syntaxVersion"] == 1
-    assert payload["ast"]["type"] == "document"
-    assert payload["ast"]["blocks"][0]["type"] == "heading"
+    assert payload["profile"] == "common"
+    assert payload["ast"]["type"] == "DOCUMENT"
+    assert payload["ast"]["blocks"][0]["type"] == "HEADING"
     assert payload["diagnostics"] == []
+
+
+def test_parse_unknown_syntax_version_returns_structured_diagnostic(tmp_path, capsys):
+    input_file = tmp_path / "report.txt"
+    input_file.write_text("Body text", encoding="utf-8")
+
+    exit_code = cli.main(
+        [
+            "--format",
+            "json",
+            "--workdir",
+            str(tmp_path),
+            "parse",
+            "--input",
+            "report.txt",
+            "--syntax-version",
+            "99",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+
+    assert exit_code == cli.ExitCodes.MISSING_RESOURCE
+    assert payload["ok"] is False
+    assert payload["diagnostics"][0]["code"] == "UNKNOWN_SYNTAX_VERSION"
 
 
 def test_lint_reports_malformed_markers_without_writing_docx(tmp_path, capsys):
@@ -389,6 +424,7 @@ def test_lint_reports_malformed_markers_without_writing_docx(tmp_path, capsys):
 
     assert exit_code == cli.ExitCodes.VALIDATION_ERROR
     assert payload["ok"] is False
+    assert payload["summary"]["errors"] >= 1
     assert any(diagnostic["code"] == "TXT_MISSING_BLOCK_END" for diagnostic in payload["diagnostics"])
     assert not list(tmp_path.glob("*.docx"))
 
@@ -428,11 +464,19 @@ def test_list_profiles_outputs_registered_profile_keys(capsys):
     payload = json.loads(captured.out)
 
     assert exit_code == cli.ExitCodes.SUCCESS
-    assert set(payload["profiles"]) == set(PROFILES)
-    common = payload["profiles"]["common"]
+    assert {profile["name"] for profile in payload["profiles"]} == set(PROFILES)
+    assert payload["total"] == len(PROFILES)
+    common = next(profile for profile in payload["profiles"] if profile["name"] == "common")
     assert common["ruleCount"] > 0
-    assert "renderer" in common["unsupportedRuleIds"]
-    assert "validator" in common["unsupportedRuleIds"]
+    assert "rendererSupport" in common
+    assert "validatorSupport" in common
+    assert "unsupportedRendererRuleIds" in common
+    assert "unsupportedValidatorRuleIds" in common
+
+    coursework = next(profile for profile in payload["profiles"] if profile["name"] == "coursework")
+    assert "coursework.frame.course_project_explanatory_note" in coursework["unsupportedRendererRuleIds"]
+    assert "student" in coursework["requiredMetadata"]
+    assert coursework["titlePageForm"] == "appendix_i"
 
 
 def test_export_schema_diagnostics_contains_required_fields(capsys):
@@ -447,8 +491,9 @@ def test_export_schema_diagnostics_contains_required_fields(capsys):
     )
 
     captured = capsys.readouterr()
-    payload = json.loads(captured.out)
+    schema = json.loads(captured.out)
 
     assert exit_code == cli.ExitCodes.SUCCESS
-    required = set(payload["schema"]["required"])
+    required = set(schema["required"])
     assert {"code", "severity", "message", "ruleId", "source"} <= required
+    assert schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"

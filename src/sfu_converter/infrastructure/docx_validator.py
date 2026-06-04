@@ -511,26 +511,41 @@ class DocxValidator:
 
 
 def diagnostic_to_json(diagnostic: Diagnostic) -> dict[str, object]:
+    source = _diagnostic_source(diagnostic)
     payload: dict[str, object] = {
         "code": diagnostic.code,
         "severity": diagnostic.severity.value,
         "message": diagnostic.message,
+        "ruleId": diagnostic.rule_id,
+        "source": source,
+        "data": dict(diagnostic.data or {}),
     }
     if diagnostic.rule_id:
-        payload["ruleId"] = diagnostic.rule_id
         try:
             rule = get_rule(diagnostic.rule_id)
         except KeyError:
             rule = None
         if rule is not None:
-            payload["source"] = f"{rule.source_doc}#{_slug(rule.source_section)}"
+            payload["source"] = {
+                **source,
+                "document": rule.source_doc,
+                "section": rule.source_section,
+            }
     if diagnostic.target is not None:
         payload["target"] = diagnostic.target
-    if diagnostic.data:
-        payload["data"] = dict(diagnostic.data)
     if diagnostic.suggestion:
         payload["suggestion"] = diagnostic.suggestion
     return payload
+
+
+def _diagnostic_source(diagnostic: Diagnostic) -> dict[str, object]:
+    span = diagnostic.source
+    return {
+        "document": span.filename if span is not None else None,
+        "section": None,
+        "lineStart": span.line_start if span is not None else None,
+        "lineEnd": span.line_end if span is not None else None,
+    }
 
 
 def _source_for_index(index) -> SourceSpan | None:

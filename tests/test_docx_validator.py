@@ -67,7 +67,8 @@ def test_docx_validator_returns_structured_margin_diagnostic_with_rule_id(tmp_pa
     assert payload["code"] == "FORMAT_MARGIN_LEFT"
     assert payload["severity"] == "error"
     assert payload["ruleId"] == "common.page.margins.portrait"
-    assert payload["source"].startswith("docs/formatting requirements/common.md#")
+    assert payload["source"]["document"] == "docs/formatting requirements/common.md"
+    assert payload["source"]["section"] == "Page and Paper Setup"
 
 
 def test_docx_validator_reports_common_unsupported_validator_rules(tmp_path):
@@ -96,7 +97,8 @@ def test_docx_validator_reports_common_unsupported_validator_rules(tmp_path):
 
     payload = diagnostic_to_json(unsupported[0])
     assert payload["ruleId"] == unsupported[0].rule_id
-    assert payload["source"].startswith("docs/formatting requirements/common.md#")
+    assert payload["source"]["document"] == "docs/formatting requirements/common.md"
+    assert payload["source"]["section"]
 
 
 def test_docx_validator_checks_line_spacing_regression(tmp_path):
@@ -247,7 +249,8 @@ def test_docx_validator_helpers_cover_optional_json_fields():
 
     payload = diagnostic_to_json(diagnostic)
     assert payload["suggestion"] == "Suggestion"
-    assert payload["source"].startswith("docs/formatting requirements/common.md#")
+    assert payload["source"]["document"] == "docs/formatting requirements/common.md"
+    assert payload["source"]["section"] == "Page and Paper Setup"
     assert _pt_value(None) == 0
     assert _pt_value(2.5) == 2.5
     assert _spacing_value(Pt(12)) == 12
@@ -257,7 +260,13 @@ def test_docx_validator_helpers_cover_optional_json_fields():
     without_rule = diagnostic_to_json(
         Diagnostic(code="NO_RULE", message="Message", severity=Severity.ERROR)
     )
-    assert "ruleId" not in without_rule
+    assert without_rule["ruleId"] is None
+    assert without_rule["source"] == {
+        "document": None,
+        "section": None,
+        "lineStart": None,
+        "lineEnd": None,
+    }
 
     assert (
         DocxValidator(FormattingProfile("empty", "Empty", ()))._rule(

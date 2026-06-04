@@ -7,6 +7,7 @@ from sfu_converter.application.convert import ConvertTextToDocx
 from sfu_converter.config import PathConfig, SIBFUConfig
 from sfu_converter.domain.ast_nodes import Document as AstDocument
 from sfu_converter.domain.diagnostics import Severity
+from sfu_converter.domain.formatting import FormattingProfile
 from sfu_converter.infrastructure.docx_renderer import DocxRenderer
 from sfu_converter.parser import V1Parser, get_parser
 from sfu_converter.registry import get_profile
@@ -100,12 +101,12 @@ class TextToDocxConverter:
         insert_at_bookmark: str | None = None,
         syntax_version: int = 1,
         strict: bool = False,
-        profile=None,
+        *,
+        profile: FormattingProfile,
     ):
         """Convert a TXT file by explicit input and output paths."""
         input_file = Path(input_file)
         output_file = Path(output_file)
-        profile = profile or get_profile("common")
 
         self.logger.info(f"Начало конвертации: {input_file}")
         source = input_file.read_text(encoding="utf-8")
@@ -165,7 +166,4 @@ class TextToDocxConverter:
 
         input_file = self.base_dir / PathConfig.EXAMPLES_DIR / input_path
         output_file = self.base_dir / PathConfig.RESULTS_DIR / output_path
-        return self.convert_file(input_file, output_file, template)
-
-    def _default_profile(self):
-        return get_profile("common")
+        return self.convert_file(input_file, output_file, template, profile=get_profile("common"))

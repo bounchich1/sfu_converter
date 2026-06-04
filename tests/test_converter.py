@@ -11,6 +11,7 @@ from sfu_converter.domain.ast_nodes import Document as AstDocument, ParagraphNod
 from sfu_converter.domain.diagnostics import Diagnostic, Severity
 from sfu_converter.converter import TextToDocxConverter
 import sfu_converter.converter as converter_module
+from sfu_converter.registry import get_profile
 
 
 @pytest.fixture
@@ -132,7 +133,7 @@ class TestTextToDocxConverter:
         """Тест: Конвертер принимает явные пути входа и выхода"""
         output_file = tmp_path / 'artifacts' / 'output.docx'
 
-        output_path = converter.convert_file(sample_txt_file, output_file)
+        output_path = converter.convert_file(sample_txt_file, output_file, profile=get_profile("common"))
 
         assert output_path == str(output_file)
         assert output_file.exists()
@@ -147,7 +148,7 @@ class TestTextToDocxConverter:
         """Тест: Конвертер создает директорию для выходного файла"""
         output_file = tmp_path / 'nested' / 'results' / 'heading.docx'
 
-        converter.convert_file(sample_txt_file, output_file)
+        converter.convert_file(sample_txt_file, output_file, profile=get_profile("common"))
 
         assert output_file.parent.exists()
         assert output_file.exists()
@@ -184,7 +185,7 @@ class TestTextToDocxConverter:
 
         output_file = tmp_path / 'exports' / 'table.docx'
 
-        converter.convert_file(txt_file, output_file)
+        converter.convert_file(txt_file, output_file, profile=get_profile("common"))
         doc = Document(str(output_file))
 
         assert len(doc.tables) == 1
@@ -236,6 +237,12 @@ class TestTextToDocxConverter:
 
         assert converter.convert("input.txt") is None
 
+    def test_convert_file_requires_profile_argument(self, converter, sample_txt_file, tmp_path):
+        output_file = tmp_path / "artifacts" / "output.docx"
+
+        with pytest.raises(TypeError):
+            converter.convert_file(sample_txt_file, output_file)
+
     def test_converter_template_composition_missing_diagnostic_branch(self, converter, tmp_path, monkeypatch):
         input_file = tmp_path / "input.txt"
         input_file.write_text("Body", encoding="utf-8")
@@ -276,4 +283,5 @@ class TestTextToDocxConverter:
             template="template.docx",
             template_mode="preserve-prefix",
             insert_after_page=1,
+            profile=get_profile("common"),
         ) == str(output_file)

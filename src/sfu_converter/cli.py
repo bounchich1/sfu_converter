@@ -4,13 +4,13 @@ import argparse
 import json
 import sys
 import time
-from collections.abc import Mapping
 from dataclasses import fields, is_dataclass
 from enum import Enum
 from pathlib import Path
 
-from sfu_converter.config import PathConfig, SIBFUConfig
 from sfu_converter.application import composition
+from sfu_converter.config import PathConfig, SIBFUConfig
+from sfu_converter.domain.ast_nodes import BlockType, SourceSpan
 from sfu_converter.domain.diagnostics import Diagnostic, DiagnosticCodes, Severity
 from sfu_converter.domain.formatting import FormattingProfile, RuleStatus, unsupported_rule_diagnostics
 from sfu_converter.infrastructure.docx_validator import diagnostic_to_json
@@ -27,6 +27,16 @@ class ExitCodes:
     WRITE_FAILURE = 4
     INTERNAL_ERROR = 5
     INVALID_USAGE = 64
+
+
+class CliError(Exception):
+    """Base class for structured CLI errors."""
+
+
+class ProfileNotFoundError(CliError):
+    def __init__(self, profile_name: str):
+        self.profile_name = profile_name
+        super().__init__(f"Unknown profile: {profile_name}")
 
 
 class ConverterArgumentParser(argparse.ArgumentParser):
@@ -70,17 +80,20 @@ def create_parser() -> argparse.ArgumentParser:
     parse_p = subparsers.add_parser("parse", help="Parse TXT to AST")
     _add_common_options(parse_p, include_defaults=False)
     parse_p.add_argument("--input", required=True, type=Path)
-    parse_p.add_argument("--syntax-version", type=int, choices=[1, 2], default=1)
+    parse_p.add_argument("--profile", default="common")
+    parse_p.add_argument("--syntax-version", type=int, default=1)
+    parse_p.add_argument("--strict", action="store_true")
 
     lint_p = subparsers.add_parser("lint", help="Lint TXT syntax")
     _add_common_options(lint_p, include_defaults=False)
     lint_p.add_argument("--input", required=True, type=Path)
     lint_p.add_argument("--profile", default="common")
-    lint_p.add_argument("--syntax-version", type=int, choices=[1, 2], default=1)
+    lint_p.add_argument("--syntax-version", type=int, default=1)
     lint_p.add_argument("--strict", action="store_true")
 
     list_profiles_p = subparsers.add_parser("list-profiles", help="List formatting profiles")
     _add_common_options(list_profiles_p, include_defaults=False)
+    list_profiles_p.add_argument("--profile", default="common")
 
     explain_p = subparsers.add_parser("explain-syntax", help="Show TXT syntax")
     _add_common_options(explain_p, include_defaults=False)
@@ -88,10 +101,11 @@ def create_parser() -> argparse.ArgumentParser:
 
     schema_p = subparsers.add_parser("export-schema", help="Export JSON schemas")
     _add_common_options(schema_p, include_defaults=False)
+    schema_p.add_argument("--profile", default="common")
     schema_p.add_argument(
         "--schema",
         required=True,
-        choices=["diagnostics", "ast", "profiles", "results"],
+        choices=["diagnostics", "ast", "profiles", "results", "coverage_matrix"],
     )
 
     interactive_p = subparsers.add_parser("interactive", help="Start interactive menu")
@@ -134,62 +148,6 @@ def make_json_result(command: str, ok: bool, **kwargs) -> dict:
         **kwargs,
         "diagnostics": kwargs.get("diagnostics", []),
     }
-
-
-_SCHEMAS = {
-    "diagnostics": {
-        "type": "object",
-        "required": ["code", "severity", "message", "ruleId", "source"],
-        "properties": {
-            "code": {"type": "string"},
-            "severity": {"enum": ["info", "warning", "error", "fatal"]},
-            "message": {"type": "string"},
-            "ruleId": {"type": "string"},
-            "source": {"type": "string"},
-            "suggestion": {"type": "string"},
-        },
-    },
-    "ast": {
-        "type": "object",
-        "required": ["type", "blocks", "syntax_version"],
-        "properties": {
-            "type": {"const": "document"},
-            "blocks": {"type": "array"},
-            "syntax_version": {"type": "integer"},
-            "metadata": {"type": "object"},
-            "source_file": {"type": ["string", "null"]},
-        },
-    },
-    "profiles": {
-        "type": "object",
-        "additionalProperties": {
-            "type": "object",
-            "required": [
-                "name",
-                "displayName",
-                "sourceDocs",
-                "ruleCount",
-                "rendererSupportCount",
-                "validatorSupportCount",
-                "unsupportedRuleIds",
-            ],
-        },
-    },
-    "results": {
-        "type": "object",
-        "required": ["ok", "command", "diagnostics"],
-        "properties": {
-            "ok": {"type": "boolean"},
-            "command": {"type": "string"},
-            "inputs": {"type": "object"},
-            "outputs": {"type": "object"},
-            "profile": {"type": "string"},
-            "syntaxVersion": {"type": "integer"},
-            "durationMs": {"type": "integer"},
-            "diagnostics": {"type": "array"},
-        },
-    },
-}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -348,6 +306,14 @@ def cmd_validate_docx(args) -> int:
 
 def cmd_parse(args) -> int:
     start = time.time()
+    profile = _resolve_profile_arg(args, "parse")
+    if profile is None:
+        return ExitCodes.MISSING_RESOURCE
+
+    parser = _resolve_parser_arg(args, "parse")
+    if parser is None:
+        return ExitCodes.MISSING_RESOURCE
+
     input_path = _resolve_path(args.workdir, args.input)
     if not input_path.exists():
         _emit_missing_resource(
@@ -359,8 +325,8 @@ def cmd_parse(args) -> int:
         return ExitCodes.MISSING_RESOURCE
 
     source = input_path.read_text(encoding="utf-8")
-    result = get_parser(args.syntax_version).parse(source, filename=str(input_path))
-    exit_code = _exit_code_from_diagnostics(result.diagnostics)
+    result = parser.parse(source, filename=str(input_path))
+    exit_code = _exit_code_from_diagnostics(result.diagnostics, strict=args.strict)
     duration_ms = int((time.time() - start) * 1000)
 
     if args.format == "json":
@@ -371,6 +337,7 @@ def cmd_parse(args) -> int:
                     exit_code == ExitCodes.SUCCESS,
                     inputs={"input": str(input_path)},
                     outputs={},
+                    profile=profile.name,
                     syntaxVersion=args.syntax_version,
                     ast=_ast_to_json(result.document),
                     durationMs=duration_ms,
@@ -390,6 +357,10 @@ def cmd_lint(args) -> int:
     if profile is None:
         return ExitCodes.MISSING_RESOURCE
 
+    parser = _resolve_parser_arg(args, "lint")
+    if parser is None:
+        return ExitCodes.MISSING_RESOURCE
+
     input_path = _resolve_path(args.workdir, args.input)
     if not input_path.exists():
         _emit_missing_resource(
@@ -401,12 +372,13 @@ def cmd_lint(args) -> int:
         return ExitCodes.MISSING_RESOURCE
 
     source = input_path.read_text(encoding="utf-8")
-    result = get_parser(args.syntax_version, strict=args.strict).parse(source, filename=str(input_path))
+    result = parser.parse(source, filename=str(input_path))
     diagnostics = list(result.diagnostics)
     diagnostics.extend(unsupported_rule_diagnostics(profile, component="renderer"))
     diagnostics.extend(unsupported_rule_diagnostics(profile, component="validator"))
     diagnostics.extend(composition.validate(result.document, profile))
     exit_code = _exit_code_from_diagnostics(diagnostics, strict=args.strict)
+    diagnostics_json = _diagnostics_to_json(diagnostics)
     duration_ms = int((time.time() - start) * 1000)
 
     if args.format == "json":
@@ -420,7 +392,8 @@ def cmd_lint(args) -> int:
                     profile=profile.name,
                     syntaxVersion=args.syntax_version,
                     durationMs=duration_ms,
-                    diagnostics=_diagnostics_to_json(diagnostics),
+                    diagnostics=diagnostics_json,
+                    summary=_diagnostic_summary(diagnostics),
                 ),
                 ensure_ascii=False,
             )
@@ -431,14 +404,20 @@ def cmd_lint(args) -> int:
 
 
 def cmd_list_profiles(args) -> int:
-    profiles = {profile.name: _profile_to_json(profile) for profile in iter_profiles()}
+    profile = _resolve_profile_arg(args, "list-profiles")
+    if profile is None:
+        return ExitCodes.MISSING_RESOURCE
+
+    profiles = [_profile_to_json(item) for item in iter_profiles()]
     if args.format == "json":
         print(
             json.dumps(
                 make_json_result(
                     "list-profiles",
                     True,
+                    profile=profile.name,
                     profiles=profiles,
+                    total=len(profiles),
                     diagnostics=[],
                 ),
                 ensure_ascii=False,
@@ -451,22 +430,15 @@ def cmd_list_profiles(args) -> int:
 
 
 def cmd_export_schema(args) -> int:
-    schema = _SCHEMAS[args.schema]
+    profile = _resolve_profile_arg(args, "export-schema")
+    if profile is None:
+        return ExitCodes.MISSING_RESOURCE
+
+    schema = _load_schema(args.schema)
     if args.format == "json":
-        print(
-            json.dumps(
-                make_json_result(
-                    "export-schema",
-                    True,
-                    outputs={"schema": args.schema},
-                    schemaName=args.schema,
-                    schema=schema,
-                    diagnostics=[],
-                ),
-                ensure_ascii=False,
-            )
-        )
+        print(json.dumps(schema, ensure_ascii=False))
     elif not args.quiet:
+        print(f"Schema: {args.schema} (profile: {profile.name})")
         print(json.dumps(schema, ensure_ascii=False, indent=2))
     return ExitCodes.SUCCESS
 
@@ -508,13 +480,33 @@ def cmd_not_implemented(args) -> int:
 
 def _resolve_profile_arg(args, command: str) -> FormattingProfile | None:
     try:
-        return get_profile(args.profile)
-    except KeyError:
+        return _resolve_profile(args.profile)
+    except ProfileNotFoundError as exc:
         _emit_missing_resource(
             args,
             command,
             DiagnosticCodes.MISSING_PROFILE,
-            f"Unknown profile: {args.profile}",
+            str(exc),
+        )
+        return None
+
+
+def _resolve_profile(name: str) -> FormattingProfile:
+    try:
+        return get_profile(name)
+    except KeyError as exc:
+        raise ProfileNotFoundError(name) from exc
+
+
+def _resolve_parser_arg(args, command: str):
+    try:
+        return get_parser(args.syntax_version, strict=getattr(args, "strict", False))
+    except ValueError:
+        _emit_missing_resource(
+            args,
+            command,
+            "UNKNOWN_SYNTAX_VERSION",
+            f"Unsupported syntax version: {args.syntax_version}",
         )
         return None
 
@@ -557,42 +549,102 @@ def _print_text_diagnostics(diagnostics: list[Diagnostic]) -> None:
 
 
 def _profile_to_json(profile: FormattingProfile) -> dict[str, object]:
-    from sfu_converter.infrastructure.title_pages import select_title_page_form
     renderer_unsupported = [
         rule.id for rule in profile.rules if rule.renderer_status is RuleStatus.NOT_SUPPORTED
     ]
     validator_unsupported = [
         rule.id for rule in profile.rules if rule.validator_status is RuleStatus.NOT_SUPPORTED
     ]
-    form = select_title_page_form(profile, {})
     return {
         "name": profile.name,
         "displayName": profile.display_name,
-        "sourceDocs": list(profile.source_docs),
+        "sourceDocs": sorted(profile.source_docs),
         "ruleCount": len(profile.rules),
-        "rendererSupportCount": len(profile.rules) - len(renderer_unsupported),
-        "validatorSupportCount": len(profile.rules) - len(validator_unsupported),
-        "titlePageForm": form.form_id,
-        "unsupportedRuleIds": {
-            "renderer": renderer_unsupported,
-            "validator": validator_unsupported,
-        },
+        "rendererSupport": sum(rule.renderer_status is RuleStatus.IMPLEMENTED for rule in profile.rules),
+        "validatorSupport": sum(rule.validator_status is RuleStatus.IMPLEMENTED for rule in profile.rules),
+        "unsupportedRendererRuleIds": sorted(renderer_unsupported),
+        "unsupportedValidatorRuleIds": sorted(validator_unsupported),
+        "requiredMetadata": _required_metadata(profile),
+        "titlePageForm": _title_page_form(profile),
     }
 
 
+def _required_metadata(profile: FormattingProfile) -> list[str]:
+    fields = set()
+    for rule in profile.rules:
+        if rule.id.endswith(".metadata.required") or ".metadata.required" in rule.id:
+            fields.update(rule.parameters.get("required_metadata", ()))
+    return sorted(fields)
+
+
+def _title_page_form(profile: FormattingProfile) -> str | None:
+    for rule in sorted(profile.rules, key=lambda item: item.id):
+        if ".title_page." in rule.id and "form" in rule.parameters:
+            return str(rule.parameters["form"])
+    return None
+
+
 def _ast_to_json(value):
+    from sfu_converter.domain.ast_nodes import Document
+
+    if isinstance(value, Document):
+        return {
+            "type": BlockType.DOCUMENT.name,
+            "blocks": [_ast_to_json(block) for block in value.blocks],
+            "syntax_version": value.syntax_version,
+            "metadata": _ast_to_json(value.metadata),
+            "source_file": value.source_file,
+        }
+    if isinstance(value, SourceSpan):
+        return {
+            "line_start": value.line_start,
+            "line_end": value.line_end,
+            "col_start": value.col_start,
+            "col_end": value.col_end,
+            "filename": value.filename,
+        }
     if is_dataclass(value):
-        payload = {"type": _camel_to_snake(value.__class__.__name__.removesuffix("Node"))}
+        payload = {"type": _node_type_name(value)}
         for field in fields(value):
             payload[field.name] = _ast_to_json(getattr(value, field.name))
         return payload
     if isinstance(value, Enum):
-        return value.value if isinstance(value.value, str) else value.name.lower()
-    if isinstance(value, Mapping):
+        return {"name": value.name, "value": value.value}
+    if isinstance(value, dict) or hasattr(value, "items"):
         return {key: _ast_to_json(value[key]) for key in sorted(value)}
     if isinstance(value, (list, tuple)):
         return [_ast_to_json(item) for item in value]
     return value
+
+
+_BLOCK_TYPE_BY_NODE = {
+    "Paragraph": BlockType.PARAGRAPH,
+    "Heading": BlockType.HEADING,
+    "Table": BlockType.TABLE,
+    "Figure": BlockType.FIGURE,
+    "Formula": BlockType.FORMULA,
+    "List": BlockType.LIST,
+    "ListItem": BlockType.LIST_ITEM,
+    "PageBreak": BlockType.PAGE_BREAK,
+    "StructuralSection": BlockType.STRUCTURAL_SECTION,
+    "Appendix": BlockType.APPENDIX,
+    "BibliographyEntry": BlockType.BIBLIOGRAPHY_ENTRY,
+    "RawBlock": BlockType.RAW_BLOCK,
+    "TableCaption": BlockType.TABLE_CAPTION,
+    "FigureCaption": BlockType.FIGURE_CAPTION,
+    "Metadata": BlockType.METADATA,
+    "TableOfContents": BlockType.TABLE_OF_CONTENTS,
+    "TitlePage": BlockType.TITLE_PAGE,
+    "Reference": BlockType.REFERENCE,
+}
+
+
+def _node_type_name(value) -> str:
+    node_name = value.__class__.__name__.removesuffix("Node")
+    block_type = _BLOCK_TYPE_BY_NODE.get(node_name)
+    if block_type is not None:
+        return block_type.name
+    return _camel_to_snake(node_name)
 
 
 def _camel_to_snake(value: str) -> str:
@@ -602,6 +654,19 @@ def _camel_to_snake(value: str) -> str:
             chars.append("_")
         chars.append(char.lower())
     return "".join(chars)
+
+
+def _diagnostic_summary(diagnostics: list[Diagnostic]) -> dict[str, int]:
+    return {
+        "errors": sum(diagnostic.severity in (Severity.ERROR, Severity.FATAL) for diagnostic in diagnostics),
+        "warnings": sum(diagnostic.severity is Severity.WARNING for diagnostic in diagnostics),
+        "infos": sum(diagnostic.severity is Severity.INFO for diagnostic in diagnostics),
+    }
+
+
+def _load_schema(name: str) -> dict[str, object]:
+    path = Path(__file__).with_name("cli_schemas") / f"{name}.json"
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def _resolve_path(workdir: Path, path: Path) -> Path:
@@ -626,7 +691,7 @@ def _emit_missing_resource(args, command: str, code: str, message: str) -> None:
                 make_json_result(
                     command,
                     False,
-                    diagnostics=[{"code": code, "message": message, "severity": "error"}],
+                    diagnostics=[_simple_diagnostic_json(code, message)],
                 ),
                 ensure_ascii=False,
             )
@@ -642,7 +707,7 @@ def _emit_write_failure(args, command: str, message: str) -> None:
                 make_json_result(
                     command,
                     False,
-                    diagnostics=[{"code": "WRITE_FAILURE", "message": message, "severity": "error"}],
+                    diagnostics=[_simple_diagnostic_json("WRITE_FAILURE", message)],
                 ),
                 ensure_ascii=False,
             )
@@ -663,6 +728,22 @@ def _validation_diagnostics(report):
         {"code": "VALIDATION_WARNING", "message": message, "severity": "warning"} for message in report["warning_list"]
     )
     return diagnostics
+
+
+def _simple_diagnostic_json(code: str, message: str) -> dict[str, object]:
+    return {
+        "code": code,
+        "severity": Severity.ERROR.value,
+        "message": message,
+        "ruleId": None,
+        "source": {
+            "document": None,
+            "section": None,
+            "lineStart": None,
+            "lineEnd": None,
+        },
+        "data": {},
+    }
 
 
 if __name__ == "__main__":

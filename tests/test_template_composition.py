@@ -14,6 +14,7 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 
 from sfu_converter.converter import TextToDocxConverter
+from sfu_converter.registry import get_profile
 
 
 @pytest.fixture
@@ -59,6 +60,7 @@ def test_converter_appends_after_template_in_append_mode(workdir):
         output_path,
         template=str(template),
         template_mode="append",
+        profile=get_profile("common"),
     )
 
     composed = DocxDocument(str(output_path))
@@ -79,6 +81,7 @@ def test_converter_preserve_prefix_truncates_template_after_anchor(workdir):
         template=str(template),
         template_mode="preserve-prefix",
         insert_after_page=1,
+        profile=get_profile("common"),
     )
 
     composed = DocxDocument(str(output_path))
@@ -100,6 +103,7 @@ def test_converter_writes_pristine_output_when_bookmark_missing(workdir, caplog)
             output_path,
             template=str(template),
             insert_at_bookmark="DOES_NOT_EXIST",
+            profile=get_profile("common"),
         )
 
     # Output exists (the pristine generated body) but template was not composed.

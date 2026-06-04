@@ -436,8 +436,9 @@ def test_menu_run_conversion_success_and_error(tmp_path, monkeypatch, capsys):
     menu.selected_files = ["ok.txt", "bad.txt"]
 
     class Converter:
-        def convert_file(self, input_file, output_file, template):
+        def convert_file(self, input_file, output_file, template, *, profile):
             assert template == "template.docx"
+            assert profile.name == "common"
             if input_file.name == "bad.txt":
                 raise RuntimeError("boom")
             output_file.parent.mkdir(parents=True, exist_ok=True)

@@ -2,6 +2,7 @@ import sys
 from pathlib import Path
 
 from sfu_converter.config import PathConfig
+from sfu_converter.registry import get_profile
 
 
 class ConsoleMenu:
@@ -153,7 +154,12 @@ class ConsoleMenu:
                     try:
                         input_file = self.base_dir / PathConfig.EXAMPLES_DIR / txt_file
                         output_file = self.base_dir / PathConfig.RESULTS_DIR / output_name
-                        converter.convert_file(input_file, output_file, self.selected_template)
+                        converter.convert_file(
+                            input_file,
+                            output_file,
+                            self.selected_template,
+                            profile=get_profile("common"),
+                        )
                         print("  ✓ Успешно")
                     except Exception as e:
                         print(f"  ✗ Ошибка: {e}")
