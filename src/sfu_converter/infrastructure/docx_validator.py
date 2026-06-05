@@ -98,6 +98,8 @@ class DocxValidator:
                 self._previous_non_empty_role = role
                 self._previous_non_empty_paragraph = paragraph
 
+        self._validate_toc(paragraphs)
+
         for table_index, table in enumerate(doc.tables, start=1):
             self._validate_table(table, table_index)
 
@@ -372,6 +374,87 @@ class DocxValidator:
                 rule_id="common.heading.no_period",
                 source=SourceSpan(index, index),
             )
+
+    def _validate_toc(self, paragraphs) -> None:
+        entries: list[tuple[int, object]] = []
+        heading_texts: set[str] = set()
+        appendix_letters: list[str] = []
+
+        for index, paragraph in enumerate(paragraphs, start=1):
+            role = classify(paragraph, profile=self.profile)
+            if role is ParagraphRole.TOC_ENTRY:
+                entries.append((index, paragraph))
+                continue
+            if role in _HEADING_ROLES or role is ParagraphRole.STRUCTURAL_HEADING:
+                heading_texts.add(_normalize_toc_text(paragraph.text))
+                continue
+            if role is ParagraphRole.APPENDIX_HEADING:
+                heading_texts.add(_normalize_toc_text(paragraph.text))
+                letter = _appendix_letter_from_heading(paragraph.text)
+                if letter:
+                    appendix_letters.append(letter)
+
+        if not entries:
+            return
+
+        self._validate_toc_indents(entries)
+        self._validate_toc_matches_headings(entries, heading_texts)
+        self._validate_toc_appendix_grouping(entries, appendix_letters)
+
+    def _validate_toc_indents(self, entries: list[tuple[int, object]]) -> None:
+        for index, paragraph in entries:
+            level = _toc_style_level(paragraph)
+            if level is None:
+                continue
+            expected_cm = max(level - 1, 0) * 0.5
+            left_indent = paragraph.paragraph_format.left_indent
+            actual_cm = left_indent.cm if left_indent is not None else 0
+            if abs(actual_cm - expected_cm) > 0.05:
+                self._add(
+                    code=DiagnosticCodes.TOC_INDENT_LEVEL,
+                    message=(
+                        f"Paragraph {index}: TOC level {level} indent "
+                        f"{actual_cm:.2f} cm, expected {expected_cm:.2f} cm"
+                    ),
+                    rule_id="common.toc.indent_levels",
+                    source=SourceSpan(index, index),
+                )
+
+    def _validate_toc_matches_headings(
+        self,
+        entries: list[tuple[int, object]],
+        heading_texts: set[str],
+    ) -> None:
+        for index, paragraph in entries:
+            entry_text = _toc_entry_heading_text(paragraph.text)
+            normalized = _normalize_toc_text(entry_text)
+            if not normalized or normalized.startswith("приложения "):
+                continue
+            if normalized.startswith("приложение "):
+                continue
+            if normalized not in heading_texts:
+                self._add(
+                    code=DiagnosticCodes.TOC_ENTRY_MISMATCH,
+                    message=f"Paragraph {index}: TOC entry '{entry_text}' does not match a document heading",
+                    rule_id="common.toc.matches_headings",
+                    source=SourceSpan(index, index),
+                )
+
+    def _validate_toc_appendix_grouping(
+        self,
+        entries: list[tuple[int, object]],
+        appendix_letters: list[str],
+    ) -> None:
+        if len(appendix_letters) < 3 or not _letters_are_contiguous(appendix_letters):
+            return
+        expected = f"Приложения {appendix_letters[0]}–{appendix_letters[-1]}"
+        if any(_toc_entry_heading_text(paragraph.text).startswith(expected) for _, paragraph in entries):
+            return
+        self._add(
+            code=DiagnosticCodes.TOC_APPENDIX_GROUPING,
+            message=f"TOC must include grouped appendix entry '{expected}'",
+            rule_id="common.toc.appendix_grouping",
+        )
 
     def _validate_table(self, table, table_index: int) -> None:
         if _style_name(table) == docx_styles.ABBREVIATIONS_TABLE:
@@ -952,6 +1035,68 @@ def _style_name(element) -> str:
     if style is None:
         return ""
     return getattr(style, "name", "") or ""
+
+
+_APPENDIX_LETTERS = (
+    "А",
+    "Б",
+    "В",
+    "Г",
+    "Д",
+    "Е",
+    "Ж",
+    "И",
+    "К",
+    "Л",
+    "М",
+    "Н",
+    "П",
+    "Р",
+    "С",
+    "Т",
+    "У",
+    "Ф",
+    "Х",
+    "Ц",
+    "Ш",
+    "Щ",
+    "Э",
+    "Ю",
+    "Я",
+)
+_APPENDIX_LETTER_BY_VALUE = {letter: index for index, letter in enumerate(_APPENDIX_LETTERS)}
+_APPENDIX_HEADING_LETTER_RE = re.compile(r"\bПРИЛОЖЕНИЕ\s+([А-Я])\b", re.IGNORECASE)
+
+
+def _toc_style_level(paragraph) -> int | None:
+    match = re.match(r"TOC\s+(\d+)$", _style_name(paragraph))
+    if match is None:
+        return None
+    return int(match.group(1))
+
+
+def _toc_entry_heading_text(text: str) -> str:
+    heading = (text or "").split("\t", 1)[0]
+    heading = re.sub(r"\s*[.\u2024\u2025\u2026·…]{2,}\s*\d+(?:[-–—]\d+)?\s*$", "", heading)
+    return " ".join(heading.strip().split())
+
+
+def _normalize_toc_text(text: str) -> str:
+    return _toc_entry_heading_text(text).casefold()
+
+
+def _appendix_letter_from_heading(text: str) -> str | None:
+    match = _APPENDIX_HEADING_LETTER_RE.search(text or "")
+    if match is None:
+        return None
+    return match.group(1).upper()
+
+
+def _letters_are_contiguous(letters: list[str]) -> bool:
+    if any(letter not in _APPENDIX_LETTER_BY_VALUE for letter in letters):
+        return False
+    positions = [_APPENDIX_LETTER_BY_VALUE[letter] for letter in letters]
+    return positions == list(range(positions[0], positions[0] + len(positions)))
 
 
 def _cell_margin_twips(cell, edge: str) -> int | None:

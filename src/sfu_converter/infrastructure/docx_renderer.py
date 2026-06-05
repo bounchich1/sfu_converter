@@ -6,7 +6,8 @@ from io import BytesIO
 from pathlib import Path
 
 from docx import Document as DocxDocument
-from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.enum.style import WD_STYLE_TYPE
+from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_TAB_ALIGNMENT
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Cm, Pt, RGBColor
@@ -26,6 +27,7 @@ from sfu_converter.domain.ast_nodes import (
     HeadingNode,
     ListNode,
     ListType,
+    MetadataNode,
     PageBreakNode,
     ParagraphNode,
     RawBlockNode,
@@ -61,6 +63,7 @@ from sfu_converter.infrastructure.page_numbering import (
     PageNumberingSection,
     configure as configure_page_numbering,
 )
+from sfu_converter.infrastructure.toc import TocEntry, TocField, build_toc_field
 from sfu_converter.parser.citations import format_citation_node
 from sfu_converter.ports.renderer import RendererPort
 from sfu_converter.registry import get_profile
@@ -188,6 +191,7 @@ class DocxRenderer(RendererPort):
             diagnostics
             + self._title_page_diagnostics
             + self._abbreviation_diagnostics
+            + self._toc_diagnostics
             + self._reference_diagnostics
             + self._figure_diagnostics
             + self._bibliography_diagnostics
@@ -780,6 +784,8 @@ class DocxRenderer(RendererPort):
         self._reference_diagnostics = []
         self._bibliography_diagnostics = []
         self._footnote_diagnostics = []
+        self._toc_diagnostics = []
+        self._toc_field: TocField | None = None
         self._footnote_bodies: dict[str, str] = {}
         self._footnote_ids: dict[str, int] = {}
         self._rendered_footnotes: dict[int, str] = {}
@@ -791,6 +797,13 @@ class DocxRenderer(RendererPort):
         self._abbreviation_entries = abbreviations_for_document(document)
         self._abbreviation_explicit = explicit_abbreviations(document) is not None
         self._abbreviation_diagnostics = []
+        if self._profile is not None:
+            self._toc_field = build_toc_field(
+                document,
+                profile=self._profile,
+                total_pages=_document_total_pages(document),
+            )
+            self._toc_diagnostics = list(self._toc_field.diagnostics)
         source_records = tuple(block for block in document.blocks if isinstance(block, SourceRecordNode))
         self._bibliography_diagnostics = validate_records(source_records) if source_records else []
         self._prepare_footnotes(document)
@@ -852,11 +865,24 @@ class DocxRenderer(RendererPort):
         }
         self._rendered_footnotes = {}
 
-    def _render_from_ast(self, document):
+    def _render_from_ast(self, document, *, allow_auto_toc: bool = True):
         blocks = tuple(document.blocks)
+        auto_toc_pending = (
+            allow_auto_toc
+            and self._toc_field is not None
+            and self._toc_field.should_insert
+            and not self._toc_field.explicit
+        )
         for index, block in enumerate(blocks):
             previous_block = blocks[index - 1] if index else None
             next_block = blocks[index + 1] if index + 1 < len(blocks) else None
+            if auto_toc_pending and _is_toc_insertion_point(block):
+                self._render_table_of_contents(
+                    TableOfContentsNode(title=self._toc_field.title, levels=self._toc_field.levels),
+                    field=self._toc_field,
+                )
+                auto_toc_pending = False
+
             if isinstance(block, StructuralSectionNode):
                 self._render_structural_section(block)
             elif isinstance(block, HeadingNode):
@@ -898,7 +924,10 @@ class DocxRenderer(RendererPort):
             elif isinstance(block, AppendixNode):
                 self._render_appendix(block)
             elif isinstance(block, TableOfContentsNode):
-                self._render_table_of_contents(block)
+                self._render_table_of_contents(
+                    block,
+                    field=self._toc_field if self._toc_field is not None else None,
+                )
             elif isinstance(block, BibliographyEntryNode):
                 self._render_bibliography_entry(block)
             elif isinstance(block, SourceRecordNode):
@@ -940,7 +969,10 @@ class DocxRenderer(RendererPort):
 
     def _render_structural_section(self, block):
         if block.section_type is StructuralSectionType.CONTENTS:
-            self._render_table_of_contents(TableOfContentsNode(title=block.title, source=block.source))
+            self._render_table_of_contents(
+                TableOfContentsNode(title=block.title, source=block.source),
+                field=self._toc_field if self._toc_field is not None else None,
+            )
             return
         if block.section_type is StructuralSectionType.ABBREVIATIONS:
             self._render_abbreviations_section(block)
@@ -1091,13 +1123,13 @@ class DocxRenderer(RendererPort):
                 self._numbering.enter_appendix(block.letter)
                 entered = True
             try:
-                self._render_from_ast(Document(blocks=block.blocks))
+                self._render_from_ast(Document(blocks=block.blocks), allow_auto_toc=False)
             finally:
                 if entered:
                     self._numbering.leave_appendix()
         self._rendered_body_blocks = True
 
-    def _render_table_of_contents(self, block):
+    def _render_table_of_contents(self, block, *, field: TocField | None = None):
         """Insert a ``СОДЕРЖАНИЕ`` heading and a Word TOC field.
 
         ``python-docx`` does not support TOCs natively, so we emit raw OOXML
@@ -1138,7 +1170,23 @@ class DocxRenderer(RendererPort):
         fld_end.set(qn("w:fldCharType"), "end")
         placeholder_run._element.append(fld_end)
 
+        for entry in (field.entries if field is not None else ()):
+            self._render_toc_entry(entry)
+
         self._rendered_body_blocks = True
+
+    def _render_toc_entry(self, entry: TocEntry) -> None:
+        paragraph = self.doc.add_paragraph(entry.rendered_text)
+        _apply_toc_style(self.doc, paragraph, entry.level)
+        pf = paragraph.paragraph_format
+        pf.first_line_indent = Cm(0)
+        pf.left_indent = Cm(entry.left_indent_cm)
+        pf.line_spacing = 1.0
+        pf.space_before = Pt(0)
+        pf.space_after = Pt(0)
+        pf.tab_stops.add_tab_stop(Cm(16.5), WD_TAB_ALIGNMENT.RIGHT)
+        for run in paragraph.runs:
+            self._set_run_style(run, bold=False)
 
     def _apply_word_heading_style(self, paragraph, style_name):
         if self.doc is None:
@@ -1342,6 +1390,37 @@ def _russian_list_letter(index: int) -> str:
     if index < len(_RUSSIAN_LIST_LETTERS):
         return _RUSSIAN_LIST_LETTERS[index]
     return str(index + 1)
+
+
+def _document_total_pages(document: Document) -> int | None:
+    for key in ("total_pages", "page_count", "pages"):
+        value = document.metadata.get(key)
+        if value is None:
+            continue
+        try:
+            total = int(str(value).strip())
+        except ValueError:
+            continue
+        if total > 0:
+            return total
+    return None
+
+
+def _is_toc_insertion_point(block) -> bool:
+    return not isinstance(block, (MetadataNode, TitlePageNode, FootnoteNode))
+
+
+def _apply_toc_style(document, paragraph, level: int) -> None:
+    style_name = f"TOC {max(1, min(level, 4))}"
+    try:
+        paragraph.style = document.styles[style_name]
+        return
+    except KeyError:
+        pass
+
+    style = document.styles.add_style(style_name, WD_STYLE_TYPE.PARAGRAPH)
+    style.base_style = document.styles["Normal"]
+    paragraph.style = style
 
 
 def _footnote_id(marker: str, fallback: int) -> int:
