@@ -34,6 +34,7 @@ from sfu_converter.domain.ast_nodes import (
 from sfu_converter.domain.diagnostics import Diagnostic, DiagnosticCodes, Severity
 from sfu_converter.parser.attributes import parse_attributes
 from sfu_converter.parser.base import BaseParser, ParserResult
+from sfu_converter.parser.citations import split_citation_runs, starts_with_citation
 
 _IMAGE_RE = re.compile(r"\[IMAGE(?:=([^\]]+))?\]")
 _INLINE_FORMATTING_RE = re.compile(
@@ -303,6 +304,13 @@ class V1Parser(BaseParser):
                 diagnostics.extend(formula_diagnostics)
                 blocks.append(formula_node)
                 i = end_index
+            elif stripped.startswith("[") and starts_with_citation(stripped):
+                blocks.append(
+                    ParagraphNode(
+                        runs=_parse_inline_formatting(stripped, span, diagnostics),
+                        source=span,
+                    )
+                )
             elif stripped.startswith("[") and not stripped.startswith(_KNOWN_MARKERS):
                 diagnostics.append(
                     Diagnostic(
@@ -330,14 +338,14 @@ class V1Parser(BaseParser):
                     else:
                         blocks.append(
                             ParagraphNode(
-                                runs=_parse_inline_formatting(stripped),
+                                runs=_parse_inline_formatting(stripped, span, diagnostics),
                                 source=span,
                             )
                         )
                 else:
                     blocks.append(
                         ParagraphNode(
-                            runs=_parse_inline_formatting(stripped),
+                            runs=_parse_inline_formatting(stripped, span, diagnostics),
                             source=span,
                         )
                     )
@@ -1014,7 +1022,25 @@ def _formula_continuation_lines(lines: list[str]) -> tuple[str, ...]:
     return tuple(line.strip("\n") for line in lines[1:])
 
 
-def _parse_inline_formatting(text: str) -> tuple[TextRun, ...]:
+def _parse_inline_formatting(
+    text: str,
+    source: SourceSpan | None = None,
+    diagnostics: list[Diagnostic] | None = None,
+) -> tuple:
+    """Split text into TextRuns by ``***bi***``, ``**bold**``, ``*italic*``."""
+
+    return split_citation_runs(
+        text,
+        source=source,
+        diagnostics=diagnostics,
+        parse_text=lambda value: _parse_inline_formatting_without_citations(value, source),
+    )
+
+
+def _parse_inline_formatting_without_citations(
+    text: str,
+    source: SourceSpan | None = None,
+) -> tuple[TextRun, ...]:
     """Split text into TextRuns by ``***bi***``, ``**bold**``, ``*italic*``."""
 
     runs: list[TextRun] = []
@@ -1022,17 +1048,17 @@ def _parse_inline_formatting(text: str) -> tuple[TextRun, ...]:
     for match in _INLINE_FORMATTING_RE.finditer(text):
         start, end = match.span()
         if start > cursor:
-            runs.append(TextRun(text=text[cursor:start]))
+            runs.append(TextRun(text=text[cursor:start], source=source))
         bi, bold, italic = match.group(1), match.group(2), match.group(3)
         if bi is not None:
-            runs.append(TextRun(text=bi, bold=True, italic=True))
+            runs.append(TextRun(text=bi, bold=True, italic=True, source=source))
         elif bold is not None:
-            runs.append(TextRun(text=bold, bold=True))
+            runs.append(TextRun(text=bold, bold=True, source=source))
         else:
-            runs.append(TextRun(text=italic, italic=True))
+            runs.append(TextRun(text=italic, italic=True, source=source))
         cursor = end
     if cursor < len(text):
-        runs.append(TextRun(text=text[cursor:]))
+        runs.append(TextRun(text=text[cursor:], source=source))
     if not runs:
-        return (TextRun(text=text),)
+        return (TextRun(text=text, source=source),)
     return tuple(runs)

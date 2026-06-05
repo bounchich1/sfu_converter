@@ -89,11 +89,41 @@ class FootnoteAnchor:
     source: SourceSpan | None = None
 
 
+PageRange = int | tuple[int, int]
+
+
+@dataclass(frozen=True)
+class Citation:
+    """One bibliography citation item inside an in-text source reference."""
+
+    number: int
+    volume: int | None = None
+    pages: PageRange | None = None
+
+
+@dataclass(frozen=True)
+class CitationNode:
+    """Inline structured source citation such as ``[20, с. 29]``."""
+
+    citations: tuple[Citation, ...]
+    source: SourceSpan | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "citations", tuple(self.citations))
+
+    @property
+    def text(self) -> str:
+        return _format_citation_node(self)
+
+
+InlineNode = TextRun | FootnoteAnchor | CitationNode
+
+
 @dataclass(frozen=True)
 class ParagraphNode:
     """A normal text paragraph."""
 
-    runs: tuple[TextRun, ...]
+    runs: tuple[InlineNode, ...]
     source: SourceSpan | None = None
 
     def __post_init__(self) -> None:
@@ -381,3 +411,21 @@ class Document:
         object.__setattr__(self, "blocks", tuple(self.blocks))
         if not isinstance(self.metadata, MappingProxyType):
             object.__setattr__(self, "metadata", MappingProxyType(dict(self.metadata)))
+
+
+def _format_citation_node(node: CitationNode) -> str:
+    return "[" + "; ".join(_format_citation(citation) for citation in node.citations) + "]"
+
+
+def _format_citation(citation: Citation) -> str:
+    parts = [str(citation.number)]
+    if citation.volume is not None:
+        parts.append(f"т. {citation.volume}")
+    if citation.pages is not None:
+        pages = citation.pages
+        if isinstance(pages, tuple):
+            page_text = f"{pages[0]}–{pages[1]}"
+        else:
+            page_text = str(pages)
+        parts.append(f"с. {page_text}")
+    return ", ".join(parts)

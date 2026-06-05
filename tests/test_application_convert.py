@@ -123,6 +123,21 @@ def test_convert_text_to_docx_reports_composition_diagnostics():
     assert DiagnosticCodes.STRUCTURE_MAIN_PART_MISSING in codes
 
 
+def test_convert_text_to_docx_reports_reference_graph_diagnostics():
+    document = Document(blocks=(ParagraphNode(runs=(TextRun("Нет объекта (рисунок 99)."),)),))
+    parser = FakeParser(ParserResult(document, []))
+    renderer = FakeRenderer()
+    profile = get_profile("common")
+
+    diagnostics = ConvertTextToDocx(parser, renderer).execute("source text", profile, "out.docx")
+
+    assert any(
+        diagnostic.code == DiagnosticCodes.REFERENCE_UNRESOLVED
+        and diagnostic.target == "figure:99"
+        for diagnostic in diagnostics
+    )
+
+
 def test_convert_text_to_docx_omits_composition_diagnostics_when_valid():
     document = Document(
         blocks=(

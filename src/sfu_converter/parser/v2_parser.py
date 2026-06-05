@@ -114,7 +114,7 @@ class V2Parser(BaseParser):
                     blocks.append(structural if structural is not None else heading)
             elif stripped.startswith("[P]"):
                 text = stripped.removeprefix("[P]").strip()
-                paragraph, footnotes = _parse_v2_paragraph(text, span)
+                paragraph, footnotes = _parse_v2_paragraph(text, span, diagnostics)
                 blocks.append(paragraph)
                 blocks.extend(footnotes)
             elif stripped.startswith("[FIGURE"):
@@ -870,13 +870,17 @@ def _parse_bool(value: str | None) -> bool:
 _FOOTNOTE_INLINE_RE = re.compile(r"\[(FN|FN_ANCHOR)\b[^\]]*\]")
 
 
-def _parse_v2_paragraph(text: str, span: SourceSpan) -> tuple[ParagraphNode, tuple[FootnoteNode, ...]]:
+def _parse_v2_paragraph(
+    text: str,
+    span: SourceSpan,
+    diagnostics: list[Diagnostic] | None = None,
+) -> tuple[ParagraphNode, tuple[FootnoteNode, ...]]:
     runs = []
     footnotes: list[FootnoteNode] = []
     cursor = 0
     for match in _FOOTNOTE_INLINE_RE.finditer(text):
         if match.start() > cursor:
-            runs.extend(_parse_inline_formatting(text[cursor : match.start()]))
+            runs.extend(_parse_inline_formatting(text[cursor : match.start()], span, diagnostics))
         attrs = parse_attributes(match.group(0))
         marker = attrs.get("id", "").strip()
         if marker:
@@ -891,7 +895,7 @@ def _parse_v2_paragraph(text: str, span: SourceSpan) -> tuple[ParagraphNode, tup
                 )
         cursor = match.end()
     if cursor < len(text):
-        runs.extend(_parse_inline_formatting(text[cursor:]))
+        runs.extend(_parse_inline_formatting(text[cursor:], span, diagnostics))
     return ParagraphNode(runs=tuple(runs), source=span), tuple(footnotes)
 
 

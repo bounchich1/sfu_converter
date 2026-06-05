@@ -97,6 +97,21 @@ def test_unreferenced_figure_emits_warning_diagnostic(tmp_path):
     assert diagnostic.rule_id == "common.reference.figure_table_formula"
 
 
+def test_renderer_emits_reference_graph_unresolved_diagnostic(tmp_path):
+    _, diagnostics = _render(
+        tmp_path,
+        Document(blocks=(ParagraphNode(runs=(TextRun("Нет объекта (рисунок 99)."),)),)),
+    )
+
+    diagnostic = next(
+        item
+        for item in diagnostics
+        if item.code == DiagnosticCodes.REFERENCE_UNRESOLVED
+    )
+    assert diagnostic.severity is Severity.ERROR
+    assert diagnostic.target == "figure:99"
+
+
 def test_figure_before_late_first_reference_emits_placement_info(tmp_path):
     _, diagnostics = _render(
         tmp_path,

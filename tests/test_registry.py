@@ -365,3 +365,19 @@ def test_task_18_and_19_rules_are_marked_implemented():
     for rule_id in implemented:
         assert get_rule(rule_id).renderer_status is RuleStatus.IMPLEMENTED
         assert get_rule(rule_id).validator_status is RuleStatus.IMPLEMENTED
+
+
+def test_task_20_and_21_reference_rules_are_marked_implemented():
+    implemented = {
+        "common.reference.in_text_simple",
+        "common.reference.in_text_pages",
+        "common.reference.in_text_volume",
+        "common.reference.in_text_group",
+        "common.reference.cross_check",
+        "common.reference.figure_table_formula",
+        "common.appendix.in_text_reference",
+    }
+
+    for rule_id in implemented:
+        assert get_rule(rule_id).renderer_status is RuleStatus.IMPLEMENTED
+        assert get_rule(rule_id).validator_status is RuleStatus.IMPLEMENTED

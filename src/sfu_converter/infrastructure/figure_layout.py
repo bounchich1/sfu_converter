@@ -15,6 +15,7 @@ from sfu_converter.domain.ast_nodes import (
     TableCaptionNode,
 )
 from sfu_converter.domain.diagnostics import Diagnostic, DiagnosticCodes, Severity
+from sfu_converter.domain.reference_graph import ReferenceGraph, ReferenceTargetKind, build_reference_graph
 
 
 def figure_caption_text(block: FigureNode, number: str) -> str | None:
@@ -33,46 +34,58 @@ def normalize_caption_dashes(text: str) -> str:
     return re.sub(r"\s[-–]\s", " — ", text)
 
 
-def figure_reference_diagnostics(document: Document) -> list[Diagnostic]:
-    figures: dict[str, tuple[int, FigureNode]] = {}
-    references: dict[str, int] = {}
-    for position, block in enumerate(_walk_reference_blocks(document.blocks), start=1):
-        if isinstance(block, FigureNode) and block.id:
-            figures.setdefault(block.id, (position, block))
-        elif isinstance(block, ReferenceNode):
-            references.setdefault(block.target, position)
-
+def figure_reference_diagnostics(
+    document: Document,
+    graph: ReferenceGraph | None = None,
+) -> list[Diagnostic]:
+    graph = graph or build_reference_graph(document)
     diagnostics: list[Diagnostic] = []
-    for figure_id, (figure_position, block) in figures.items():
-        reference_position = references.get(figure_id)
+    figure_blocks = _figure_blocks_by_canonical(document, graph)
+    for definition in graph.definitions:
+        if definition.kind is not ReferenceTargetKind.FIGURE:
+            continue
+        reference_position = graph.first_reference_position(ReferenceTargetKind.FIGURE, definition.canonical)
+        block = figure_blocks.get(definition.canonical)
         if reference_position is None:
             diagnostics.append(
                 Diagnostic(
                     code=DiagnosticCodes.FIGURE_NEVER_REFERENCED,
-                    message=f"Figure '{figure_id}' is never referenced",
+                    message=f"Figure '{definition.canonical}' is never referenced",
                     severity=Severity.WARNING,
                     rule_id="common.reference.figure_table_formula",
-                    source=block.source,
-                    target=figure_id,
+                    source=definition.source,
+                    target=definition.canonical,
                 )
             )
             continue
 
-        if reference_position - figure_position > 3:
+        if reference_position - definition.position > 3:
             diagnostics.append(
                 Diagnostic(
                     code=DiagnosticCodes.FIGURE_PLACEMENT_NEXT_PAGE,
                     message=(
-                        f"Figure '{figure_id}' appears more than three paragraphs "
+                        f"Figure '{definition.canonical}' appears more than three paragraphs "
                         "before its first reference"
                     ),
                     severity=Severity.INFO,
                     rule_id="common.figure.placement_after_reference",
-                    source=block.source,
-                    target=figure_id,
+                    source=block.source if block is not None else definition.source,
+                    target=definition.canonical,
                 )
             )
     return diagnostics
+
+
+def _figure_blocks_by_canonical(document: Document, graph: ReferenceGraph) -> dict[str, FigureNode]:
+    figures = [block for block in _walk_reference_blocks(document.blocks) if isinstance(block, FigureNode)]
+    by_canonical: dict[str, FigureNode] = {}
+    for definition in graph.definitions:
+        if definition.kind is not ReferenceTargetKind.FIGURE:
+            continue
+        match = next((block for block in figures if block.source == definition.source), None)
+        if match is not None:
+            by_canonical[definition.canonical] = match
+    return by_canonical
 
 
 def _walk_reference_blocks(blocks: Iterable) -> Iterable:

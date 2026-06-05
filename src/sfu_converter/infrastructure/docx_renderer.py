@@ -15,6 +15,7 @@ from sfu_converter.config import PathConfig, SIBFUConfig
 from sfu_converter.domain.ast_nodes import (
     AppendixNode,
     BibliographyEntryNode,
+    CitationNode,
     ContinuationLabel,
     Document,
     FigureNode,
@@ -40,6 +41,7 @@ from sfu_converter.domain.ast_nodes import (
 )
 from sfu_converter.domain.diagnostics import Diagnostic, DiagnosticCodes, Severity
 from sfu_converter.domain.formatting import FormattingProfile, unsupported_rule_diagnostics
+from sfu_converter.domain.reference_graph import build_reference_graph
 from sfu_converter.infrastructure.abbreviations import abbreviations_for_document, explicit_abbreviations
 from sfu_converter.infrastructure.bibliography import format_record, validate_records
 from sfu_converter.infrastructure import docx_styles
@@ -59,6 +61,7 @@ from sfu_converter.infrastructure.page_numbering import (
     PageNumberingSection,
     configure as configure_page_numbering,
 )
+from sfu_converter.parser.citations import format_citation_node
 from sfu_converter.ports.renderer import RendererPort
 from sfu_converter.registry import get_profile
 from sfu_converter.utils_image_insert import insert_image
@@ -173,7 +176,9 @@ class DocxRenderer(RendererPort):
         diagnostics = unsupported_rule_diagnostics(profile, component="renderer")
         self._initialize_document(template_path, template_mode=template_mode, profile=profile)
         self._prepare_document_level_state(document)
-        self._figure_diagnostics = figure_reference_diagnostics(document)
+        reference_graph = build_reference_graph(document)
+        self._reference_diagnostics = reference_graph.diagnostics()
+        self._figure_diagnostics = figure_reference_diagnostics(document, reference_graph)
         self._render_from_ast(document)
         destination = Path(output_path)
         destination.parent.mkdir(parents=True, exist_ok=True)
@@ -183,6 +188,7 @@ class DocxRenderer(RendererPort):
             diagnostics
             + self._title_page_diagnostics
             + self._abbreviation_diagnostics
+            + self._reference_diagnostics
             + self._figure_diagnostics
             + self._bibliography_diagnostics
             + self._footnote_diagnostics
@@ -771,6 +777,7 @@ class DocxRenderer(RendererPort):
         self._abbreviation_explicit = False
         self._abbreviation_diagnostics = []
         self._figure_diagnostics = []
+        self._reference_diagnostics = []
         self._bibliography_diagnostics = []
         self._footnote_diagnostics = []
         self._footnote_bodies: dict[str, str] = {}
@@ -1143,11 +1150,16 @@ class DocxRenderer(RendererPort):
         for text_run in block.runs:
             if isinstance(text_run, FootnoteAnchor):
                 self._add_footnote_anchor(para, text_run)
+            elif isinstance(text_run, CitationNode):
+                para.add_run(format_citation_node(text_run))
             else:
                 para.add_run(text_run.text)
         self._set_paragraph_format(para, "normal")
         for docx_run, text_run in zip(para.runs, block.runs, strict=False):
             if isinstance(text_run, FootnoteAnchor):
+                continue
+            if isinstance(text_run, CitationNode):
+                self._set_run_style(docx_run, bold=False, italic=False)
                 continue
             self._set_run_style(
                 docx_run,
