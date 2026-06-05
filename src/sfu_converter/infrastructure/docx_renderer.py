@@ -14,6 +14,12 @@ from docx.oxml.ns import qn
 from docx.shared import Cm, Pt, RGBColor
 
 from sfu_converter.config import PathConfig, SIBFUConfig
+from sfu_converter.domain.constants import (
+    APPENDIX_TITLE,
+    DASH_SEPARATOR,
+    EM_DASH,
+    EN_DASH,
+)
 from sfu_converter.domain.ast_nodes import (
     AppendixNode,
     BibliographyEntryNode,
@@ -69,6 +75,7 @@ from sfu_converter.infrastructure.formula_layout import (
 )
 from sfu_converter.infrastructure.footnotes import add_footnote_reference, patch_docx_bytes, patch_docx_file
 from sfu_converter.infrastructure import frames, main_inscription, section_setup
+from sfu_converter.infrastructure.docx_measurements import ABBREVIATIONS_COLUMN_WIDTHS, NO_INDENT_CM
 from sfu_converter.infrastructure.list_layout import apply_list_item_layout, list_marker
 from sfu_converter.infrastructure.numbering import NumberingContext, build_numbering_context
 from sfu_converter.infrastructure.page_numbering import (
@@ -124,35 +131,6 @@ class SectionNumberer:
 
     def reset(self):
         self._counters = [0, 0, 0, 0]
-
-
-_RUSSIAN_LIST_LETTERS = (
-    "а",
-    "б",
-    "в",
-    "г",
-    "д",
-    "е",
-    "ж",
-    "и",
-    "к",
-    "л",
-    "м",
-    "н",
-    "п",
-    "р",
-    "с",
-    "т",
-    "у",
-    "ф",
-    "х",
-    "ц",
-    "ш",
-    "щ",
-    "э",
-    "ю",
-    "я",
-)
 
 
 class DocxRenderer(RendererPort):
@@ -236,7 +214,7 @@ class DocxRenderer(RendererPort):
 
         cfg = self.config
         zero = Pt(0)
-        no_indent = Cm(0)
+        no_indent = NO_INDENT_CM
 
         return {
             "normal": {
@@ -545,7 +523,7 @@ class DocxRenderer(RendererPort):
                         pf.alignment = WD_ALIGN_PARAGRAPH.CENTER if is_header else WD_ALIGN_PARAGRAPH.LEFT
                         pf.space_before = table_cfg["cell_padding"]
                         pf.space_after = table_cfg["cell_padding"]
-                        pf.first_line_indent = Cm(0)
+                        pf.first_line_indent = NO_INDENT_CM
                         pf.line_spacing = table_cfg["line_spacing"]
 
                         for run in para.runs:
@@ -654,7 +632,7 @@ class DocxRenderer(RendererPort):
         self._set_cell_margins(cell, top=120, bottom=120)
         paragraph = cell.paragraphs[0]
         paragraph.paragraph_format.alignment = WD_ALIGN_PARAGRAPH.LEFT
-        paragraph.paragraph_format.first_line_indent = Cm(0)
+        paragraph.paragraph_format.first_line_indent = NO_INDENT_CM
         paragraph.paragraph_format.line_spacing = self.config.TABLE["line_spacing"]
         marker = paragraph.add_run(note.marker)
         self._set_run_style(marker, bold=False)
@@ -743,7 +721,7 @@ class DocxRenderer(RendererPort):
             return None
         if text.startswith("Таблица"):
             return _normalize_caption_dashes(text)
-        return f"Таблица {table_number} — {text}"
+        return f"Таблица {table_number}{DASH_SEPARATOR}{text}"
 
     def _format_figure_caption(self, block: FigureNode):
         if not block.caption and not (block.sheet is not None and block.sheet >= 2):
@@ -1071,7 +1049,7 @@ class DocxRenderer(RendererPort):
         self._rendered_body_blocks = True
 
     def _create_abbreviations_table(self, entries) -> None:
-        rows = [[entry.short, f"— {entry.long}"] for entry in entries]
+        rows = [[entry.short, f"{EM_DASH} {entry.long}"] for entry in entries]
         if not rows:
             return
 
@@ -1080,7 +1058,7 @@ class DocxRenderer(RendererPort):
         table.autofit = False
         self._set_table_borders(table, borderless=True)
 
-        widths = (Cm(4), Cm(13))
+        widths = ABBREVIATIONS_COLUMN_WIDTHS
         for row_idx, row_data in enumerate(rows):
             for col_idx, text in enumerate(row_data):
                 cell = table.rows[row_idx].cells[col_idx]
@@ -1089,7 +1067,7 @@ class DocxRenderer(RendererPort):
                 self._set_cell_margins(cell, top=0, bottom=0)
                 for paragraph in cell.paragraphs:
                     paragraph.paragraph_format.alignment = WD_ALIGN_PARAGRAPH.LEFT
-                    paragraph.paragraph_format.first_line_indent = Cm(0)
+                    paragraph.paragraph_format.first_line_indent = NO_INDENT_CM
                     paragraph.paragraph_format.space_before = Pt(0)
                     paragraph.paragraph_format.space_after = Pt(0)
                     paragraph.paragraph_format.line_spacing = 1.0
@@ -1142,7 +1120,7 @@ class DocxRenderer(RendererPort):
                 )
 
     def _render_appendix(self, block, metadata=None):
-        """Render ``ПРИЛОЖЕНИЕ X`` on a new page with the standard heading layout.
+        """Render appendix heading on a new page with the standard layout.
 
         STU 7.5-07-2021 requires: page break before, centered bold heading using
         Russian uppercase letters (no Ё, З, Й, О, Ч, Ъ, Ы, Ь), optional content
@@ -1162,9 +1140,9 @@ class DocxRenderer(RendererPort):
         else:
             self.doc.add_page_break()
 
-        heading_text = block.title or "ПРИЛОЖЕНИЕ"
+        heading_text = block.title or APPENDIX_TITLE
         if block.letter and block.letter not in heading_text:
-            heading_text = f"ПРИЛОЖЕНИЕ {block.letter}"
+            heading_text = f"{APPENDIX_TITLE} {block.letter}"
 
         heading_para = self.doc.add_paragraph()
         heading_run = heading_para.add_run(heading_text.upper())
@@ -1235,7 +1213,7 @@ class DocxRenderer(RendererPort):
         self._add_empty_paragraph("empty_after_header")
 
         toc_para = self.doc.add_paragraph()
-        toc_para.paragraph_format.first_line_indent = Cm(0)
+        toc_para.paragraph_format.first_line_indent = NO_INDENT_CM
         begin_run = toc_para.add_run()
         self._set_run_style(begin_run, bold=False)
         fld_begin = OxmlElement("w:fldChar")
@@ -1267,12 +1245,12 @@ class DocxRenderer(RendererPort):
         paragraph = self.doc.add_paragraph(entry.rendered_text)
         _apply_toc_style(self.doc, paragraph, entry.level)
         pf = paragraph.paragraph_format
-        pf.first_line_indent = Cm(0)
+        pf.first_line_indent = NO_INDENT_CM
         pf.left_indent = Cm(entry.left_indent_cm)
         pf.line_spacing = 1.0
         pf.space_before = Pt(0)
         pf.space_after = Pt(0)
-        pf.tab_stops.add_tab_stop(Cm(16.5), WD_TAB_ALIGNMENT.RIGHT)
+        pf.tab_stops.add_tab_stop(self.config.FORMULA["number_tab_pos"], WD_TAB_ALIGNMENT.RIGHT)
         for run in paragraph.runs:
             self._set_run_style(run, bold=False)
 
@@ -1581,12 +1559,6 @@ def _normalize_list_item_punctuation(
     return f"{stripped}{ending}"
 
 
-def _russian_list_letter(index: int) -> str:
-    if index < len(_RUSSIAN_LIST_LETTERS):
-        return _RUSSIAN_LIST_LETTERS[index]
-    return str(index + 1)
-
-
 def _document_total_pages(document: Document) -> int | None:
     for key in ("total_pages", "page_count", "pages"):
         value = document.metadata.get(key)
@@ -1699,4 +1671,4 @@ def _footnote_id(marker: str, fallback: int) -> int:
 def _normalize_caption_dashes(text: str) -> str:
     """Replace ASCII hyphens used as dash separators with em-dash (U+2014)."""
 
-    return re.sub(r"\s[-–]\s", " — ", text)
+    return re.sub(rf"\s[-{EN_DASH}]\s", DASH_SEPARATOR, text)

@@ -12,6 +12,7 @@ from sfu_converter.application import composition, heading_checks, metadata_chec
 from sfu_converter.application.style_check import validate_style
 from sfu_converter.application.units import validate_unit_consistency
 from sfu_converter.config import PathConfig, SIBFUConfig
+from sfu_converter.domain.constants import DEFAULT_PROFILE_NAME
 from sfu_converter.domain.ast_nodes import BlockType, SourceSpan
 from sfu_converter.domain.diagnostics import Diagnostic, DiagnosticCodes, Severity
 from sfu_converter.domain.formatting import FormattingProfile, RuleStatus, unsupported_rule_diagnostics
@@ -22,6 +23,7 @@ from sfu_converter.infrastructure.project_designation import validate_document_d
 from sfu_converter.parser import get_parser
 from sfu_converter.parser.syntax_spec import get_syntax_spec
 from sfu_converter.registry import get_profile, iter_profiles
+from sfu_converter.registry.coverage import build_rows, parser_support_for_rule, render_json, render_markdown
 
 
 class ExitCodes:
@@ -63,7 +65,7 @@ def create_parser() -> argparse.ArgumentParser:
     _add_common_options(convert_p, include_defaults=False)
     convert_p.add_argument("--input", required=True, type=Path)
     convert_p.add_argument("--output", required=True, type=Path)
-    convert_p.add_argument("--profile", default="common")
+    convert_p.add_argument("--profile", default=DEFAULT_PROFILE_NAME)
     convert_p.add_argument("--template", type=Path, default=None)
     convert_p.add_argument(
         "--template-mode",
@@ -81,25 +83,25 @@ def create_parser() -> argparse.ArgumentParser:
     validate_p = subparsers.add_parser("validate-docx", help="Validate existing DOCX")
     _add_common_options(validate_p, include_defaults=False)
     validate_p.add_argument("--input", required=True, type=Path)
-    validate_p.add_argument("--profile", default="common")
+    validate_p.add_argument("--profile", default=DEFAULT_PROFILE_NAME)
 
     parse_p = subparsers.add_parser("parse", help="Parse TXT to AST")
     _add_common_options(parse_p, include_defaults=False)
     parse_p.add_argument("--input", required=True, type=Path)
-    parse_p.add_argument("--profile", default="common")
+    parse_p.add_argument("--profile", default=DEFAULT_PROFILE_NAME)
     parse_p.add_argument("--syntax-version", type=int, default=1)
     parse_p.add_argument("--strict", action="store_true")
 
     lint_p = subparsers.add_parser("lint", help="Lint TXT syntax")
     _add_common_options(lint_p, include_defaults=False)
     lint_p.add_argument("--input", required=True, type=Path)
-    lint_p.add_argument("--profile", default="common")
+    lint_p.add_argument("--profile", default=DEFAULT_PROFILE_NAME)
     lint_p.add_argument("--syntax-version", type=int, default=1)
     lint_p.add_argument("--strict", action="store_true")
 
     list_profiles_p = subparsers.add_parser("list-profiles", help="List formatting profiles")
     _add_common_options(list_profiles_p, include_defaults=False)
-    list_profiles_p.add_argument("--profile", default="common")
+    list_profiles_p.add_argument("--profile", default=DEFAULT_PROFILE_NAME)
 
     explain_p = subparsers.add_parser("explain-syntax", help="Show TXT syntax")
     _add_common_options(explain_p, include_defaults=False)
@@ -107,7 +109,7 @@ def create_parser() -> argparse.ArgumentParser:
 
     schema_p = subparsers.add_parser("export-schema", help="Export JSON schemas")
     _add_common_options(schema_p, include_defaults=False)
-    schema_p.add_argument("--profile", default="common")
+    schema_p.add_argument("--profile", default=DEFAULT_PROFILE_NAME)
     schema_p.add_argument(
         "--schema",
         required=True,
@@ -116,6 +118,9 @@ def create_parser() -> argparse.ArgumentParser:
 
     interactive_p = subparsers.add_parser("interactive", help="Start interactive menu")
     _add_common_options(interactive_p, include_defaults=False)
+
+    coverage_p = subparsers.add_parser("export-coverage", help="Export standard coverage matrix")
+    coverage_p.add_argument("--format", choices=["md", "json"], default="md")
 
     return parser
 
@@ -169,6 +174,7 @@ def main(argv: list[str] | None = None) -> int:
         "list-profiles": cmd_list_profiles,
         "explain-syntax": cmd_explain_syntax,
         "export-schema": cmd_export_schema,
+        "export-coverage": cmd_export_coverage,
     }
     handler = handlers.get(args.command)
     if handler is None:
@@ -505,8 +511,17 @@ def cmd_list_profiles(args) -> int:
             )
         )
     elif not args.quiet:
-        for profile in profiles.values():
-            print(f"{profile['name']}: {profile['displayName']}")
+        for profile_data in profiles:
+            print(f"{profile_data['name']}: {profile_data['displayName']}")
+    return ExitCodes.SUCCESS
+
+
+def cmd_export_coverage(args) -> int:
+    rows = build_rows()
+    if args.format == "json":
+        print(render_json(rows), end="")
+    else:
+        print(render_markdown(rows), end="")
     return ExitCodes.SUCCESS
 
 
@@ -636,6 +651,7 @@ def _profile_to_json(profile: FormattingProfile) -> dict[str, object]:
     validator_unsupported = [
         rule.id for rule in profile.rules if rule.validator_status is RuleStatus.NOT_SUPPORTED
     ]
+    support = _profile_support(profile)
     return {
         "name": profile.name,
         "displayName": profile.display_name,
@@ -645,9 +661,38 @@ def _profile_to_json(profile: FormattingProfile) -> dict[str, object]:
         "validatorSupport": sum(rule.validator_status is RuleStatus.IMPLEMENTED for rule in profile.rules),
         "unsupportedRendererRuleIds": sorted(renderer_unsupported),
         "unsupportedValidatorRuleIds": sorted(validator_unsupported),
+        "support": support,
+        "ruleSupport": _profile_rule_support(profile),
         "requiredMetadata": _required_metadata(profile),
         "titlePageForm": _title_page_form(profile),
     }
+
+
+def _profile_support(profile: FormattingProfile) -> dict[str, object]:
+    return {
+        "parserSupport": sum(parser_support_for_rule(rule) for rule in profile.rules),
+        "renderer": _status_counts(rule.renderer_status for rule in profile.rules),
+        "validator": _status_counts(rule.validator_status for rule in profile.rules),
+    }
+
+
+def _profile_rule_support(profile: FormattingProfile) -> list[dict[str, object]]:
+    return [
+        {
+            "ruleId": rule.id,
+            "parserSupport": parser_support_for_rule(rule),
+            "rendererStatus": rule.renderer_status.value,
+            "validatorStatus": rule.validator_status.value,
+        }
+        for rule in sorted(profile.rules, key=lambda item: item.id)
+    ]
+
+
+def _status_counts(statuses) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for status in statuses:
+        counts[status.value] = counts.get(status.value, 0) + 1
+    return counts
 
 
 def _required_metadata(profile: FormattingProfile) -> list[str]:

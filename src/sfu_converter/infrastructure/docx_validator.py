@@ -13,10 +13,19 @@ from docx.oxml.ns import qn
 
 from sfu_converter.application import metadata_check
 from sfu_converter.config import SIBFUConfig
+from sfu_converter.domain.constants import (
+    APPENDIX_LETTERS,
+    DEFAULT_PROFILE_NAME,
+)
+from sfu_converter.infrastructure.docx_measurements import (
+    FIRST_LINE_INDENT_CM,
+    LIST_HANGING_INDENT_CM,
+    NO_INDENT_CM,
+    NUMBERED_LIST_LEFT_INDENT_CM,
+)
 from sfu_converter.domain.ast_nodes import Document as AstDocument, SourceSpan
 from sfu_converter.domain.diagnostics import Diagnostic, DiagnosticCodes, Severity
 from sfu_converter.domain.formatting import FormattingProfile, FormattingRule, unsupported_rule_diagnostics
-from sfu_converter.infrastructure.appendix import APPENDIX_LETTERS
 from sfu_converter.infrastructure.frames import has_frame
 from sfu_converter.infrastructure.formula_layout import OPERATOR_SIGNS
 from sfu_converter.infrastructure.list_layout import RUSSIAN_LIST_LETTER_INDEX
@@ -62,7 +71,7 @@ class DocxValidator:
         *,
         config_class=SIBFUConfig,
     ):
-        self.profile = profile or get_profile("common")
+        self.profile = profile or get_profile(DEFAULT_PROFILE_NAME)
         self.config = config_class
         self.diagnostics: list[Diagnostic] = []
 
@@ -175,7 +184,7 @@ class DocxValidator:
                     )
 
                 first_line_indent = paragraph.paragraph_format.first_line_indent
-                if first_line_indent is not None and abs(first_line_indent - Cm(0)) > _LENGTH_TOLERANCE_EMU:
+                if first_line_indent is not None and abs(first_line_indent - NO_INDENT_CM) > _LENGTH_TOLERANCE_EMU:
                     self._add(
                         code=DiagnosticCodes.FORMAT_PAGE_NUMBERING,
                         message=(
@@ -368,7 +377,7 @@ class DocxValidator:
         if left_indent is None:
             return
         marker = _list_marker(paragraph.text)
-        expected_left = Cm(1.75) if marker and marker[:-1].isdigit() else Cm(1.25)
+        expected_left = NUMBERED_LIST_LEFT_INDENT_CM if marker and marker[:-1].isdigit() else FIRST_LINE_INDENT_CM
         if abs(left_indent - expected_left) > _LENGTH_TOLERANCE_EMU:
             self._add(
                 code=DiagnosticCodes.FORMAT_INDENT,
@@ -379,7 +388,7 @@ class DocxValidator:
                 rule_id="common.list.item",
                 source=SourceSpan(index, index),
             )
-        if first_line_indent is not None and abs(first_line_indent - Cm(-0.5)) > _LENGTH_TOLERANCE_EMU:
+        if first_line_indent is not None and abs(first_line_indent - LIST_HANGING_INDENT_CM) > _LENGTH_TOLERANCE_EMU:
             self._add(
                 code=DiagnosticCodes.FORMAT_INDENT,
                 message=(

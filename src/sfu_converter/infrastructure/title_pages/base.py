@@ -17,10 +17,10 @@ from typing import Any
 
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.ns import qn
-from docx.shared import Cm, Pt, RGBColor
+from docx.shared import Pt, RGBColor
 
-
-SIGNATURE_LINE = "____________"
+from sfu_converter.domain.constants import DEFAULT_APPROVAL_DATE, DEFAULT_CITY, DEFAULT_YEAR, SIGNATURE_LINE
+from sfu_converter.infrastructure.docx_measurements import NO_INDENT_CM
 
 
 @dataclass
@@ -75,8 +75,8 @@ class TitlePageLayout:
             self.add_centered(department)
 
     def add_footer(self, metadata: dict[str, Any]) -> None:
-        city = metadata.get("city", "Красноярск")
-        year = metadata.get("year", "")
+        city = metadata.get("city", DEFAULT_CITY)
+        year = metadata.get("year", DEFAULT_YEAR)
         footer = " ".join(part for part in (city, year) if part)
         if footer:
             self.add_centered(footer)
@@ -97,7 +97,7 @@ class TitlePageLayout:
 
     def add_approval_block(self, metadata: dict[str, Any]) -> None:
         head = metadata.get("department_head", "")
-        approval_date = metadata.get("approval_date", "«___» _____________ 20__ г.")
+        approval_date = metadata.get("approval_date", DEFAULT_APPROVAL_DATE)
         self.add_right("УТВЕРЖДАЮ")
         self.add_right(f"Заведующий кафедрой {SIGNATURE_LINE} {head}".strip())
         self.add_right(approval_date)
@@ -105,7 +105,7 @@ class TitlePageLayout:
     def _paragraph(self, text: str, *, align, bold: bool = False, size: Pt | None = None) -> None:
         para = self.doc.add_paragraph()
         para.paragraph_format.alignment = align
-        para.paragraph_format.first_line_indent = Cm(0)
+        para.paragraph_format.first_line_indent = NO_INDENT_CM
         para.paragraph_format.space_before = Pt(0)
         para.paragraph_format.space_after = Pt(0)
         para.paragraph_format.line_spacing = 1.0

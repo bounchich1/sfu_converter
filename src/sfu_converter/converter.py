@@ -5,6 +5,7 @@ from pathlib import Path
 
 from sfu_converter.application.convert import ConvertTextToDocx
 from sfu_converter.config import PathConfig, SIBFUConfig
+from sfu_converter.domain.constants import DEFAULT_PROFILE_NAME
 from sfu_converter.domain.ast_nodes import Document as AstDocument
 from sfu_converter.domain.diagnostics import Severity
 from sfu_converter.domain.formatting import FormattingProfile
@@ -166,4 +167,4 @@ class TextToDocxConverter:
 
         input_file = self.base_dir / PathConfig.EXAMPLES_DIR / input_path
         output_file = self.base_dir / PathConfig.RESULTS_DIR / output_path
-        return self.convert_file(input_file, output_file, template, profile=get_profile("common"))
+        return self.convert_file(input_file, output_file, template, profile=get_profile(DEFAULT_PROFILE_NAME))

@@ -2,37 +2,10 @@ from __future__ import annotations
 
 from dataclasses import replace
 
+from sfu_converter.domain.constants import APPENDIX_LETTERS, APPENDIX_TITLE
 from sfu_converter.domain.ast_nodes import AppendixNode, Document
 from sfu_converter.domain.diagnostics import Diagnostic, DiagnosticCodes, Severity
 
-
-APPENDIX_LETTERS: tuple[str, ...] = (
-    "А",
-    "Б",
-    "В",
-    "Г",
-    "Д",
-    "Е",
-    "Ж",
-    "И",
-    "К",
-    "Л",
-    "М",
-    "Н",
-    "П",
-    "Р",
-    "С",
-    "Т",
-    "У",
-    "Ф",
-    "Х",
-    "Ц",
-    "Ш",
-    "Щ",
-    "Э",
-    "Ю",
-    "Я",
-)
 
 _APPENDIX_INDEX = {letter: index for index, letter in enumerate(APPENDIX_LETTERS)}
 
@@ -88,12 +61,12 @@ def _assign_appendix(
 
 
 def _title_with_letter(title: str, letter: str) -> str:
-    text = (title or "ПРИЛОЖЕНИЕ").strip()
+    text = (title or APPENDIX_TITLE).strip()
     upper = text.upper()
-    if "ПРИЛОЖЕНИЕ" in upper and letter in upper:
+    if APPENDIX_TITLE in upper and letter in upper:
         return text
-    if upper == "ПРИЛОЖЕНИЕ":
-        return f"ПРИЛОЖЕНИЕ {letter}"
+    if upper == APPENDIX_TITLE:
+        return f"{APPENDIX_TITLE} {letter}"
     return text
 
 

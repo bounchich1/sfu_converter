@@ -18,8 +18,9 @@ from enum import Enum
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
-from docx.shared import Cm, Pt, RGBColor
+from docx.shared import Pt, RGBColor
 
+from sfu_converter.infrastructure.docx_measurements import NO_INDENT_CM
 
 class Location(Enum):
     """Where to render the page number for a section."""
@@ -90,7 +91,7 @@ def _populate_footer(section, descriptor: PageNumberingSection, config) -> None:
     paragraph.clear()
     pf = paragraph.paragraph_format
     pf.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    pf.first_line_indent = Cm(0)
+    pf.first_line_indent = NO_INDENT_CM
     pf.space_before = Pt(0)
     pf.space_after = Pt(0)
 

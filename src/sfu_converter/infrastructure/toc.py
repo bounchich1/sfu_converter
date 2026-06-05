@@ -4,6 +4,7 @@ import re
 from collections.abc import Iterable
 from dataclasses import dataclass
 
+from sfu_converter.domain.constants import APPENDIX_LETTERS, APPENDIX_TITLE, EN_DASH
 from sfu_converter.domain.ast_nodes import (
     AppendixNode,
     Document,
@@ -17,35 +18,8 @@ from sfu_converter.domain.formatting import FormattingProfile
 from sfu_converter.infrastructure.numbering import build_numbering_context
 
 
-_APPENDIX_LETTERS = (
-    "А",
-    "Б",
-    "В",
-    "Г",
-    "Д",
-    "Е",
-    "Ж",
-    "И",
-    "К",
-    "Л",
-    "М",
-    "Н",
-    "П",
-    "Р",
-    "С",
-    "Т",
-    "У",
-    "Ф",
-    "Х",
-    "Ц",
-    "Ш",
-    "Щ",
-    "Э",
-    "Ю",
-    "Я",
-)
-_APPENDIX_LETTER_BY_VALUE = {letter: index for index, letter in enumerate(_APPENDIX_LETTERS)}
-_APPENDIX_TITLE_RE = re.compile(r"\bПРИЛОЖЕНИЕ\s+([А-Я])\b", re.IGNORECASE)
+_APPENDIX_LETTER_BY_VALUE = {letter: index for index, letter in enumerate(APPENDIX_LETTERS)}
+_APPENDIX_TITLE_RE = re.compile(rf"\b{APPENDIX_TITLE}\s+([А-Я])\b", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -60,7 +34,7 @@ class TocEntry:
         if self.page is None:
             return self.text
         if isinstance(self.page, tuple):
-            page_text = f"{self.page[0]}–{self.page[1]}"
+            page_text = f"{self.page[0]}{EN_DASH}{self.page[1]}"
         else:
             page_text = str(self.page)
         return f"{self.text}\t{page_text}"
@@ -220,7 +194,7 @@ def _appendix_entries(
         pages = tuple(next(page_numbers) for _ in appendices)
         return (
             TocEntry(
-                text=f"Приложения {letters[0]}–{letters[-1]}",
+                text=f"Приложения {letters[0]}{EN_DASH}{letters[-1]}",
                 level=1,
                 page=(pages[0], pages[-1]),
                 left_indent_cm=0,

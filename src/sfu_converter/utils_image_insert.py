@@ -14,6 +14,7 @@ from docx.shared import Cm, Emu, Inches, Pt
 from PIL import Image
 
 from sfu_converter.config import MeasurementConfig
+from sfu_converter.infrastructure.docx_measurements import NO_INDENT_CM
 
 logger = logging.getLogger(__name__)
 DEFAULT_DPI = MeasurementConfig.DEFAULT_DPI
@@ -221,7 +222,7 @@ def insert_image_into_paragraph(
     pf.space_before = space_before
     pf.space_after = space_after
     pf.alignment = alignment
-    pf.first_line_indent = Cm(0)
+    pf.first_line_indent = NO_INDENT_CM
 
     run = para.add_run()
     run.add_picture(image_buffer, width=width, height=height)

@@ -470,6 +470,9 @@ def test_list_profiles_outputs_registered_profile_keys(capsys):
     assert common["ruleCount"] > 0
     assert "rendererSupport" in common
     assert "validatorSupport" in common
+    assert "support" in common
+    assert "parserSupport" in common["support"]
+    assert "ruleSupport" in common
     assert "unsupportedRendererRuleIds" in common
     assert "unsupportedValidatorRuleIds" in common
 
@@ -478,6 +481,22 @@ def test_list_profiles_outputs_registered_profile_keys(capsys):
     assert "coursework.title_block.field_2_designation" in coursework["unsupportedRendererRuleIds"]
     assert "student" in coursework["requiredMetadata"]
     assert coursework["titlePageForm"] == "appendix_i"
+
+
+def test_export_coverage_outputs_markdown_and_json(capsys):
+    md_exit = cli.main(["export-coverage", "--format", "md"])
+    md_output = capsys.readouterr().out
+
+    json_exit = cli.main(["export-coverage", "--format", "json"])
+    json_output = capsys.readouterr().out
+    payload = json.loads(json_output)
+
+    assert md_exit == cli.ExitCodes.SUCCESS
+    assert md_output.startswith("# SFU Standard Coverage Matrix\n")
+    assert "| Rule ID | Profiles | Source | Severity | Parser | Renderer | Validator | Tests |" in md_output
+    assert json_exit == cli.ExitCodes.SUCCESS
+    assert payload["rows"]
+    assert payload["rows"][0]["ruleId"]
 
 
 def test_export_schema_diagnostics_contains_required_fields(capsys):

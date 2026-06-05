@@ -4,38 +4,15 @@ from dataclasses import dataclass
 
 from docx.shared import Cm
 
+from sfu_converter.domain.constants import (
+    DISALLOWED_RUSSIAN_LIST_LETTERS,
+    RUSSIAN_LIST_LETTERS,
+)
+from sfu_converter.infrastructure.docx_measurements import LIST_HANGING_INDENT_CM, LIST_HANGING_WIDTH_CM
 from sfu_converter.domain.ast_nodes import ListType
 
 
-RUSSIAN_LIST_LETTERS: tuple[str, ...] = (
-    "а",
-    "б",
-    "в",
-    "г",
-    "д",
-    "е",
-    "ж",
-    "и",
-    "к",
-    "л",
-    "м",
-    "н",
-    "п",
-    "р",
-    "с",
-    "т",
-    "у",
-    "ф",
-    "х",
-    "ц",
-    "ш",
-    "щ",
-    "э",
-    "ю",
-    "я",
-)
 RUSSIAN_LIST_LETTER_INDEX = {letter: index for index, letter in enumerate(RUSSIAN_LIST_LETTERS)}
-DISALLOWED_RUSSIAN_LIST_LETTERS = frozenset("ёзйочьыъ")
 
 
 @dataclass(frozen=True)
@@ -61,8 +38,8 @@ def list_item_layout(list_type: ListType, *, level: int = 0) -> ListItemLayout:
     left_indent_cm = 1.25 + max(level, 0) * 0.5
     return ListItemLayout(
         left_indent=Cm(left_indent_cm),
-        first_line_indent=Cm(-0.5),
-        hanging_indent=Cm(0.5),
+        first_line_indent=LIST_HANGING_INDENT_CM,
+        hanging_indent=LIST_HANGING_WIDTH_CM,
     )
 
 

@@ -2,6 +2,7 @@ import sys
 from pathlib import Path
 
 from sfu_converter.config import PathConfig
+from sfu_converter.domain.constants import DEFAULT_PROFILE_NAME
 from sfu_converter.registry import get_profile
 
 
@@ -158,7 +159,7 @@ class ConsoleMenu:
                             input_file,
                             output_file,
                             self.selected_template,
-                            profile=get_profile("common"),
+                            profile=get_profile(DEFAULT_PROFILE_NAME),
                         )
                         print("  ✓ Успешно")
                     except Exception as e:

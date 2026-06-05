@@ -3,9 +3,8 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from docx.shared import Cm
-
 from sfu_converter.config import SIBFUConfig
+from sfu_converter.domain.constants import DEFAULT_PROFILE_NAME
 from sfu_converter.domain.diagnostics import Severity
 from sfu_converter.domain.formatting import FormattingProfile
 from sfu_converter.infrastructure.docx_validator import (
@@ -81,7 +80,7 @@ class StyleValidator:
                 issues.append(f"Абзац {para_index}: Заголовок имеет отступ {current_indent:.1f}pt (должен быть 0)")
             return issues
 
-        expected_indent_pt = Cm(1.25).pt
+        expected_indent_pt = self.config.FIRST_LINE_INDENT.pt
         if abs(current_indent - expected_indent_pt) > 5:
             issues.append(f"Абзац {para_index}: Отступ {current_indent:.1f}pt вместо {expected_indent_pt:.1f}pt")
 
@@ -140,4 +139,4 @@ def _resolve_profile(
     selected = profile if profile is not None else profile_name
     if isinstance(selected, FormattingProfile):
         return selected
-    return get_profile(selected or "common")
+    return get_profile(selected or DEFAULT_PROFILE_NAME)
