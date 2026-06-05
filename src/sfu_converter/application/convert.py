@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from sfu_converter.application import composition, heading_checks
+from sfu_converter.application import composition, heading_checks, metadata_check
 from sfu_converter.application.style_check import validate_style
 from sfu_converter.application.units import validate_unit_consistency
 from sfu_converter.domain.diagnostics import Diagnostic
 from sfu_converter.domain.formatting import FormattingProfile, unsupported_rule_diagnostics
 from sfu_converter.domain.reference_graph import build_reference_graph
+from sfu_converter.infrastructure.appendix import assign_appendix_letters
 from sfu_converter.infrastructure.graphics import validate as validate_graphics
 from sfu_converter.infrastructure.project_designation import validate_document_designations
 from sfu_converter.parser.base import BaseParser
@@ -27,17 +28,20 @@ class ConvertTextToDocx:
         filename: str | None = None,
     ) -> list[Diagnostic]:
         result = self._parser.parse(source, filename)
+        document, appendix_diagnostics = assign_appendix_letters(result.document)
         diagnostics = list(result.diagnostics)
+        diagnostics.extend(appendix_diagnostics)
         diagnostics.extend(unsupported_rule_diagnostics(profile, component="renderer"))
-        diagnostics.extend(composition.validate(result.document, profile))
-        diagnostics.extend(validate_document_designations(result.document, profile))
-        diagnostics.extend(heading_checks.run(result.document, profile))
-        diagnostics.extend(validate_graphics(result.document, profile))
-        diagnostics.extend(validate_style(result.document))
-        diagnostics.extend(validate_unit_consistency(result.document))
-        diagnostics.extend(build_reference_graph(result.document).diagnostics())
+        diagnostics.extend(composition.validate(document, profile))
+        diagnostics.extend(metadata_check.run(document, profile))
+        diagnostics.extend(validate_document_designations(document, profile))
+        diagnostics.extend(heading_checks.run(document, profile))
+        diagnostics.extend(validate_graphics(document, profile))
+        diagnostics.extend(validate_style(document))
+        diagnostics.extend(validate_unit_consistency(document))
+        diagnostics.extend(build_reference_graph(document).diagnostics())
         render_diagnostics = self._renderer.render_to_file(
-            result.document,
+            document,
             profile,
             output_path,
             template_path,

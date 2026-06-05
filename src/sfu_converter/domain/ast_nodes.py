@@ -407,6 +407,8 @@ class AppendixNode:
     letter: str | None = None
     appendix_type: str | None = None
     subtitle: str | None = None
+    sheet_format: SheetFormat = SheetFormat.A4
+    independent: bool = False
     blocks: tuple = ()
     source: SourceSpan | None = None
 

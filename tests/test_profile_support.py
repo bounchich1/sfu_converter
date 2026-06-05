@@ -35,10 +35,6 @@ COMMON_VALIDATOR_UNSUPPORTED_IDS: tuple[str, ...] = (
     "common.formula.cross_reference",
     "common.table.section_numbering",
     "common.table.appendix_numbering",
-    "common.appendix.auto_letter",
-    "common.appendix.continuation_label",
-    "common.appendix.section_numbering",
-    "common.appendix.sheet_format",
     "common.referat.template",
     "common.referat.keywords_uppercase",
 )

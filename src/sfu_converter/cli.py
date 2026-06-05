@@ -8,13 +8,14 @@ from dataclasses import fields, is_dataclass
 from enum import Enum
 from pathlib import Path
 
-from sfu_converter.application import composition, heading_checks
+from sfu_converter.application import composition, heading_checks, metadata_check
 from sfu_converter.application.style_check import validate_style
 from sfu_converter.application.units import validate_unit_consistency
 from sfu_converter.config import PathConfig, SIBFUConfig
 from sfu_converter.domain.ast_nodes import BlockType, SourceSpan
 from sfu_converter.domain.diagnostics import Diagnostic, DiagnosticCodes, Severity
 from sfu_converter.domain.formatting import FormattingProfile, RuleStatus, unsupported_rule_diagnostics
+from sfu_converter.infrastructure.appendix import assign_appendix_letters
 from sfu_converter.infrastructure.docx_validator import diagnostic_to_json
 from sfu_converter.infrastructure.graphics import validate as validate_graphics
 from sfu_converter.infrastructure.project_designation import validate_document_designations
@@ -282,17 +283,20 @@ def _cmd_convert_pptx(args) -> int:
 
     source = input_path.read_text(encoding="utf-8")
     result = parser.parse(source, filename=str(input_path))
+    document, appendix_diagnostics = assign_appendix_letters(result.document)
     diagnostics = list(result.diagnostics)
+    diagnostics.extend(appendix_diagnostics)
     diagnostics.extend(unsupported_rule_diagnostics(profile, component="renderer"))
-    diagnostics.extend(composition.validate(result.document, profile))
-    diagnostics.extend(validate_document_designations(result.document, profile))
-    diagnostics.extend(heading_checks.run(result.document, profile))
-    diagnostics.extend(validate_graphics(result.document, profile))
-    diagnostics.extend(validate_style(result.document))
-    diagnostics.extend(validate_unit_consistency(result.document))
+    diagnostics.extend(composition.validate(document, profile))
+    diagnostics.extend(metadata_check.run(document, profile))
+    diagnostics.extend(validate_document_designations(document, profile))
+    diagnostics.extend(heading_checks.run(document, profile))
+    diagnostics.extend(validate_graphics(document, profile))
+    diagnostics.extend(validate_style(document))
+    diagnostics.extend(validate_unit_consistency(document))
 
     try:
-        diagnostics.extend(PptxRenderer().render_to_file(result.document, profile, str(output_path)))
+        diagnostics.extend(PptxRenderer().render_to_file(document, profile, str(output_path)))
     except OSError as exc:
         _emit_write_failure(args, "convert", str(exc))
         return ExitCodes.WRITE_FAILURE
@@ -442,15 +446,18 @@ def cmd_lint(args) -> int:
 
     source = input_path.read_text(encoding="utf-8")
     result = parser.parse(source, filename=str(input_path))
+    document, appendix_diagnostics = assign_appendix_letters(result.document)
     diagnostics = list(result.diagnostics)
+    diagnostics.extend(appendix_diagnostics)
     diagnostics.extend(unsupported_rule_diagnostics(profile, component="renderer"))
     diagnostics.extend(unsupported_rule_diagnostics(profile, component="validator"))
-    diagnostics.extend(composition.validate(result.document, profile))
-    diagnostics.extend(validate_document_designations(result.document, profile))
-    diagnostics.extend(heading_checks.run(result.document, profile))
-    diagnostics.extend(validate_graphics(result.document, profile))
-    diagnostics.extend(validate_style(result.document))
-    diagnostics.extend(validate_unit_consistency(result.document))
+    diagnostics.extend(composition.validate(document, profile))
+    diagnostics.extend(metadata_check.run(document, profile))
+    diagnostics.extend(validate_document_designations(document, profile))
+    diagnostics.extend(heading_checks.run(document, profile))
+    diagnostics.extend(validate_graphics(document, profile))
+    diagnostics.extend(validate_style(document))
+    diagnostics.extend(validate_unit_consistency(document))
     exit_code = _exit_code_from_diagnostics(diagnostics, strict=args.strict)
     diagnostics_json = _diagnostics_to_json(diagnostics)
     duration_ms = int((time.time() - start) * 1000)

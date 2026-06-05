@@ -39,6 +39,7 @@ from sfu_converter.domain.ast_nodes import (
     ReferenceNode,
     SectionSetupNode,
     SectionOrientation,
+    SheetFormat,
     SourceRecordNode,
     SlideDeckNode,
     StructuralSectionNode,
@@ -54,6 +55,7 @@ from sfu_converter.domain.diagnostics import Diagnostic, DiagnosticCodes, Severi
 from sfu_converter.domain.formatting import FormattingProfile, unsupported_rule_diagnostics
 from sfu_converter.domain.reference_graph import build_reference_graph
 from sfu_converter.infrastructure.abbreviations import abbreviations_for_document, explicit_abbreviations
+from sfu_converter.infrastructure.appendix import assign_appendix_letters
 from sfu_converter.infrastructure.bibliography import format_record, validate_records
 from sfu_converter.infrastructure import docx_styles
 from sfu_converter.infrastructure.figure_layout import (
@@ -173,7 +175,9 @@ class DocxRenderer(RendererPort):
         template_path: str | None = None,
         template_mode: str = "append",
     ) -> bytes:
+        document, appendix_diagnostics = assign_appendix_letters(document)
         self._initialize_document(template_path, template_mode=template_mode, profile=profile)
+        self._appendix_diagnostics = appendix_diagnostics
         self._prepare_document_level_state(document)
         self._render_from_ast(document)
         buffer = BytesIO()
@@ -188,8 +192,10 @@ class DocxRenderer(RendererPort):
         template_path: str | None = None,
         template_mode: str = "append",
     ) -> list[Diagnostic]:
+        document, appendix_diagnostics = assign_appendix_letters(document)
         diagnostics = unsupported_rule_diagnostics(profile, component="renderer")
         self._initialize_document(template_path, template_mode=template_mode, profile=profile)
+        self._appendix_diagnostics = appendix_diagnostics
         self._prepare_document_level_state(document)
         reference_graph = build_reference_graph(document)
         self._reference_diagnostics = reference_graph.diagnostics()
@@ -201,6 +207,7 @@ class DocxRenderer(RendererPort):
         patch_docx_file(destination, self._rendered_footnotes)
         return (
             diagnostics
+            + self._appendix_diagnostics
             + self._title_page_diagnostics
             + self._abbreviation_diagnostics
             + self._toc_diagnostics
@@ -793,6 +800,7 @@ class DocxRenderer(RendererPort):
         self._abbreviation_explicit = False
         self._abbreviation_diagnostics = []
         self._figure_diagnostics = []
+        self._appendix_diagnostics = []
         self._reference_diagnostics = []
         self._bibliography_diagnostics = []
         self._footnote_diagnostics = []
@@ -806,6 +814,7 @@ class DocxRenderer(RendererPort):
         self._numbering: NumberingContext = build_numbering_context(profile)
 
     def _prepare_document_level_state(self, document: Document) -> None:
+        self._embed_core_metadata(document.metadata)
         self._abbreviation_entries = abbreviations_for_document(document)
         self._abbreviation_explicit = explicit_abbreviations(document) is not None
         self._abbreviation_diagnostics = []
@@ -819,6 +828,21 @@ class DocxRenderer(RendererPort):
         source_records = tuple(block for block in document.blocks if isinstance(block, SourceRecordNode))
         self._bibliography_diagnostics = validate_records(source_records) if source_records else []
         self._prepare_footnotes(document)
+
+    def _embed_core_metadata(self, metadata) -> None:
+        if self.doc is None:
+            return
+        metadata = dict(metadata or {})
+        core = self.doc.core_properties
+        if metadata.get("title"):
+            core.title = metadata["title"]
+        if metadata.get("student"):
+            core.author = metadata["student"]
+        if metadata.get("subject"):
+            core.subject = metadata["subject"]
+        keywords = _core_metadata_keywords(metadata)
+        if keywords:
+            core.keywords = keywords
 
     def _prepare_footnotes(self, document: Document) -> None:
         self._footnote_diagnostics = []
@@ -947,7 +971,7 @@ class DocxRenderer(RendererPort):
             elif isinstance(block, SlideDeckNode):
                 self._render_slide_deck_placeholder(block)
             elif isinstance(block, AppendixNode):
-                self._render_appendix(block)
+                self._render_appendix(block, document.metadata)
             elif isinstance(block, TableOfContentsNode):
                 self._render_table_of_contents(
                     block,
@@ -1073,10 +1097,10 @@ class DocxRenderer(RendererPort):
                         self._set_run_style(run, bold=False)
                         run.font.size = Pt(14)
 
-    def _render_title_page(self, metadata, profile_name=None):
+    def _render_title_page(self, metadata, profile_name=None, *, force: bool = False):
         if self._template_mode == "preserve-prefix":
             return
-        if self._title_page_emitted:
+        if self._title_page_emitted and not force:
             return
 
         from sfu_converter.infrastructure.title_pages import (
@@ -1093,7 +1117,8 @@ class DocxRenderer(RendererPort):
         form.render(layout, metadata)
 
         self.doc.add_page_break()
-        self._title_page_emitted = True
+        if not force:
+            self._title_page_emitted = True
 
     def _resolve_title_profile(self, profile_name):
         if profile_name:
@@ -1116,7 +1141,7 @@ class DocxRenderer(RendererPort):
                     )
                 )
 
-    def _render_appendix(self, block):
+    def _render_appendix(self, block, metadata=None):
         """Render ``ПРИЛОЖЕНИЕ X`` on a new page with the standard heading layout.
 
         STU 7.5-07-2021 requires: page break before, centered bold heading using
@@ -1124,7 +1149,18 @@ class DocxRenderer(RendererPort):
         type below, and an optional appendix title separated by one blank line.
         """
 
-        self.doc.add_page_break()
+        if block.independent:
+            self._render_title_page(_appendix_metadata(metadata, block), force=True)
+        elif block.sheet_format is not SheetFormat.A4:
+            self.doc.add_section(WD_SECTION.NEW_PAGE)
+            section = self.doc.sections[-1]
+            section_setup.configure(
+                self.doc,
+                section,
+                SectionSetupNode(sheet_format=block.sheet_format),
+            )
+        else:
+            self.doc.add_page_break()
 
         heading_text = block.title or "ПРИЛОЖЕНИЕ"
         if block.letter and block.letter not in heading_text:
@@ -1156,11 +1192,30 @@ class DocxRenderer(RendererPort):
                 self._numbering.enter_appendix(block.letter)
                 entered = True
             try:
-                self._render_from_ast(Document(blocks=block.blocks), allow_auto_toc=False)
+                self._render_appendix_blocks(block, metadata)
             finally:
                 if entered:
                     self._numbering.leave_appendix()
         self._rendered_body_blocks = True
+
+    def _render_appendix_blocks(self, block: AppendixNode, metadata) -> None:
+        chunks = _split_appendix_pages(block.blocks)
+        if len(chunks) == 1:
+            self._render_from_ast(Document(blocks=chunks[0], metadata=metadata or {}), allow_auto_toc=False)
+            return
+
+        for page_index, chunk in enumerate(chunks):
+            if page_index > 0:
+                self.doc.add_page_break()
+                label = "Окончание" if page_index == len(chunks) - 1 else "Продолжение"
+                self._render_appendix_continuation_label(f"{label} приложения {block.letter}")
+            self._render_from_ast(Document(blocks=chunk, metadata=metadata or {}), allow_auto_toc=False)
+
+    def _render_appendix_continuation_label(self, text: str) -> None:
+        paragraph = self.doc.add_paragraph()
+        run = paragraph.add_run(text)
+        self._set_paragraph_format(paragraph, "appendix_heading")
+        run.underline = False
 
     def _render_table_of_contents(self, block, *, field: TocField | None = None):
         """Insert a ``СОДЕРЖАНИЕ`` heading and a Word TOC field.
@@ -1546,6 +1601,35 @@ def _document_total_pages(document: Document) -> int | None:
     return None
 
 
+def _core_metadata_keywords(metadata: dict[str, str]) -> str:
+    priority = (
+        "group",
+        "supervisor",
+        "teacher",
+        "reviewer",
+        "direction_code",
+        "direction_name",
+        "master_program_code",
+        "master_program_name",
+        "specialty_code",
+        "consultants",
+        "norm_controller",
+    )
+    ordered_keys = [key for key in priority if metadata.get(key)]
+    ordered_keys.extend(key for key in sorted(metadata) if key not in ordered_keys and metadata.get(key))
+
+    parts: list[str] = []
+    length = 0
+    for key in ordered_keys:
+        part = f"{key}={metadata[key]}"
+        next_length = length + len(part) + (2 if parts else 0)
+        if next_length > 255:
+            continue
+        parts.append(part)
+        length = next_length
+    return "; ".join(parts)
+
+
 def _title_block_fields(
     metadata,
     *,
@@ -1559,6 +1643,25 @@ def _title_block_fields(
     if designation is not None:
         fields["2"] = format_designation(designation)
     return fields
+
+
+def _split_appendix_pages(blocks: tuple) -> tuple[tuple, ...]:
+    pages: list[list] = [[]]
+    for block in blocks:
+        if isinstance(block, PageBreakNode):
+            pages.append([])
+            continue
+        pages[-1].append(block)
+    return tuple(tuple(page) for page in pages)
+
+
+def _appendix_metadata(metadata, block: AppendixNode) -> dict[str, str]:
+    result = dict(metadata or {})
+    for child in block.blocks:
+        if isinstance(child, MetadataNode):
+            result[child.key] = child.value
+    result.setdefault("title", block.subtitle or block.title)
+    return result
 
 
 def _first_project_designation(blocks) -> ProjectDesignationNode | None:

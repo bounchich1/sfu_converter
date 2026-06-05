@@ -11,10 +11,12 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Cm
 from docx.oxml.ns import qn
 
+from sfu_converter.application import metadata_check
 from sfu_converter.config import SIBFUConfig
-from sfu_converter.domain.ast_nodes import SourceSpan
+from sfu_converter.domain.ast_nodes import Document as AstDocument, SourceSpan
 from sfu_converter.domain.diagnostics import Diagnostic, DiagnosticCodes, Severity
 from sfu_converter.domain.formatting import FormattingProfile, FormattingRule, unsupported_rule_diagnostics
+from sfu_converter.infrastructure.appendix import APPENDIX_LETTERS
 from sfu_converter.infrastructure.frames import has_frame
 from sfu_converter.infrastructure.formula_layout import OPERATOR_SIGNS
 from sfu_converter.infrastructure.list_layout import RUSSIAN_LIST_LETTER_INDEX
@@ -86,6 +88,13 @@ class DocxValidator:
             return self.diagnostics
 
         self.diagnostics.extend(unsupported_rule_diagnostics(self.profile, component="validator"))
+        self.diagnostics.extend(
+            metadata_check.run(
+                AstDocument(blocks=(), metadata=_metadata_from_docx(doc)),
+                self.profile,
+                severity=Severity.WARNING,
+            )
+        )
         self._validate_margins(doc)
         self._validate_page_numbering(doc)
         self._seen_formula_symbols: set[str] = set()
@@ -108,6 +117,7 @@ class DocxValidator:
 
         self._validate_heading_subpoint_structure(paragraphs)
         self._validate_toc(paragraphs)
+        self._validate_appendix_compliance(paragraphs)
         self._validate_frame_requirements(doc)
 
         for table_index, table in enumerate(doc.tables, start=1):
@@ -623,6 +633,57 @@ class DocxValidator:
             message=f"TOC must include grouped appendix entry '{expected}'",
             rule_id="common.toc.appendix_grouping",
         )
+
+    def _validate_appendix_compliance(self, paragraphs) -> None:
+        appendix_letters: list[str] = []
+        current_letter: str | None = None
+        label_letters: set[str] = set()
+
+        for index, paragraph in enumerate(paragraphs, start=1):
+            role = classify(paragraph, profile=self.profile)
+            text = paragraph.text.strip()
+            if role is ParagraphRole.APPENDIX_HEADING:
+                letter = _appendix_letter_from_heading(text)
+                if letter:
+                    appendix_letters.append(letter)
+                    current_letter = letter
+                continue
+
+            label_match = _APPENDIX_CONTINUATION_RE.match(text)
+            if label_match is not None:
+                label_letters.add(label_match.group("letter").upper())
+                continue
+
+            if current_letter and role in _HEADING_ROLES:
+                expected_prefix = _expected_appendix_heading_prefix(current_letter, role)
+                if expected_prefix and not text.startswith(expected_prefix):
+                    self._add(
+                        code=DiagnosticCodes.APPENDIX_SECTION_NUMBERING,
+                        message=(
+                            f"Paragraph {index}: appendix heading must start "
+                            f"with '{expected_prefix}'"
+                        ),
+                        rule_id="common.appendix.section_numbering",
+                        source=SourceSpan(index, index),
+                        data={"letter": current_letter, "expected": expected_prefix},
+                    )
+
+        if appendix_letters and not _letters_are_contiguous(appendix_letters):
+            self._add(
+                code=DiagnosticCodes.APPENDIX_LETTER_SEQUENCE,
+                message="Appendix letters must be contiguous Russian capitals with excluded letters skipped",
+                rule_id="common.appendix.auto_letter",
+                data={"letters": appendix_letters},
+            )
+
+        for label_letter in sorted(label_letters):
+            if label_letter not in appendix_letters:
+                self._add(
+                    code=DiagnosticCodes.APPENDIX_CONTINUATION_LABEL,
+                    message=f"Continuation label references unknown appendix {label_letter}",
+                    rule_id="common.appendix.continuation_label",
+                    data={"letter": label_letter},
+                )
 
     def _validate_frame_requirements(self, doc) -> None:
         rule_ids = {rule.id for rule in self.profile.rules}
@@ -1227,6 +1288,36 @@ def _diagnostic_source(diagnostic: Diagnostic) -> dict[str, object]:
     }
 
 
+def _metadata_from_docx(doc) -> dict[str, str]:
+    metadata: dict[str, str] = {}
+    core = doc.core_properties
+    if core.title:
+        metadata["title"] = core.title
+    if core.author:
+        metadata["student"] = core.author
+    if core.subject:
+        metadata["subject"] = core.subject
+    metadata.update(_parse_metadata_payload(core.keywords or ""))
+
+    for paragraph in doc.paragraphs:
+        if _style_name(paragraph) != "SFUMetadata":
+            continue
+        metadata.update(_parse_metadata_payload(paragraph.text))
+
+    return metadata
+
+
+def _parse_metadata_payload(payload: str) -> dict[str, str]:
+    metadata: dict[str, str] = {}
+    for item in re.split(r"[;\n\r]+", payload or ""):
+        key, separator, value = item.partition("=")
+        key = key.strip()
+        if not separator or not key:
+            continue
+        metadata[key] = value.strip()
+    return metadata
+
+
 def _source_for_index(index) -> SourceSpan | None:
     return SourceSpan(index, index) if isinstance(index, int) else None
 
@@ -1346,35 +1437,19 @@ def _style_name(element) -> str:
     return getattr(style, "name", "") or ""
 
 
-_APPENDIX_LETTERS = (
-    "А",
-    "Б",
-    "В",
-    "Г",
-    "Д",
-    "Е",
-    "Ж",
-    "И",
-    "К",
-    "Л",
-    "М",
-    "Н",
-    "П",
-    "Р",
-    "С",
-    "Т",
-    "У",
-    "Ф",
-    "Х",
-    "Ц",
-    "Ш",
-    "Щ",
-    "Э",
-    "Ю",
-    "Я",
-)
+_APPENDIX_LETTERS = APPENDIX_LETTERS
 _APPENDIX_LETTER_BY_VALUE = {letter: index for index, letter in enumerate(_APPENDIX_LETTERS)}
 _APPENDIX_HEADING_LETTER_RE = re.compile(r"\bПРИЛОЖЕНИЕ\s+([А-Я])\b", re.IGNORECASE)
+_APPENDIX_CONTINUATION_RE = re.compile(
+    r"^(?:Продолжение|Окончание)\s+приложения\s+(?P<letter>[А-Я])$",
+    re.IGNORECASE,
+)
+_APPENDIX_HEADING_PREFIX_BY_ROLE = {
+    ParagraphRole.HEADING_H1: "{letter}.",
+    ParagraphRole.HEADING_H2: "{letter}.",
+    ParagraphRole.HEADING_H3: "{letter}.",
+    ParagraphRole.HEADING_H4: "{letter}.",
+}
 
 
 def _toc_style_level(paragraph) -> int | None:
@@ -1399,6 +1474,13 @@ def _appendix_letter_from_heading(text: str) -> str | None:
     if match is None:
         return None
     return match.group(1).upper()
+
+
+def _expected_appendix_heading_prefix(letter: str, role: ParagraphRole) -> str | None:
+    pattern = _APPENDIX_HEADING_PREFIX_BY_ROLE.get(role)
+    if pattern is None:
+        return None
+    return pattern.format(letter=letter)
 
 
 def _letters_are_contiguous(letters: list[str]) -> bool:

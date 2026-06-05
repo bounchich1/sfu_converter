@@ -89,7 +89,7 @@ def test_docx_validator_reports_common_unsupported_validator_rules(tmp_path):
         if diagnostic.code == DiagnosticCodes.FORMAT_RULE_NOT_SUPPORTED
     ]
 
-    assert len(unsupported) == 13
+    assert len(unsupported) == 9
     assert all(diagnostic.severity is Severity.WARNING for diagnostic in unsupported)
     assert all("not supported by the validator" in diagnostic.message for diagnostic in unsupported)
     unsupported_ids = {diagnostic.rule_id for diagnostic in unsupported}
@@ -677,6 +677,22 @@ def test_docx_validator_reports_missing_coursework_frame(tmp_path):
     assert any(
         diagnostic.code == "FRAME_MISSING"
         and diagnostic.rule_id == "coursework.frame.course_project_explanatory_note"
+        for diagnostic in diagnostics
+    )
+
+
+def test_docx_validator_reports_missing_recovered_metadata_as_warning(tmp_path):
+    doc = Document()
+    _body_paragraph(doc)
+    path = _save_doc(tmp_path, doc, "missing_metadata.docx")
+
+    diagnostics = DocxValidator(get_profile("coursework")).validate_file(str(path))
+
+    assert any(
+        diagnostic.code == DiagnosticCodes.TXT_MISSING_METADATA
+        and diagnostic.rule_id == "coursework.metadata.required"
+        and diagnostic.severity is Severity.WARNING
+        and "supervisor" in diagnostic.data["missing"]
         for diagnostic in diagnostics
     )
 

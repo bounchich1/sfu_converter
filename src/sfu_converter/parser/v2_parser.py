@@ -1178,6 +1178,8 @@ class V2Parser(BaseParser):
             letter=attrs.get("letter"),
             appendix_type=attrs.get("type"),
             subtitle=attrs.get("subtitle"),
+            sheet_format=_parse_sheet_format(attrs.get("sheet", attrs.get("format"))),
+            independent=_parse_bool(attrs.get("independent")),
             source=span,
         )
 

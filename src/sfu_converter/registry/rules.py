@@ -1006,8 +1006,8 @@ COMMON_RULES: tuple[FormattingRule, ...] = (
             "alphabet": "А",
             "skip_letters": ("Ё", "З", "Й", "О", "Ч", "Ь", "Ы", "Ъ"),
         },
-        renderer_status=RuleStatus.NOT_SUPPORTED,
-        validator_status=RuleStatus.NOT_SUPPORTED,
+        renderer_status=RuleStatus.IMPLEMENTED,
+        validator_status=RuleStatus.IMPLEMENTED,
         description="Appendices are auto-assigned Russian letters skipping Ё, З, Й, О, Ч, Ь, Ы, Ъ",
     ),
     FormattingRule(
@@ -1019,8 +1019,8 @@ COMMON_RULES: tuple[FormattingRule, ...] = (
             "continuation": "Продолжение приложения {letter}",
             "final": "Окончание приложения {letter}",
         },
-        renderer_status=RuleStatus.NOT_SUPPORTED,
-        validator_status=RuleStatus.NOT_SUPPORTED,
+        renderer_status=RuleStatus.IMPLEMENTED,
+        validator_status=RuleStatus.IMPLEMENTED,
         description="Multi-page appendices use 'Продолжение приложения А' / 'Окончание приложения А'",
     ),
     FormattingRule(
@@ -1032,7 +1032,7 @@ COMMON_RULES: tuple[FormattingRule, ...] = (
             "patterns": ("{letter}.N", "{letter}.N.M", "{letter}.N.M.K", "{letter}.N.M.K.L"),
         },
         renderer_status=RuleStatus.IMPLEMENTED,
-        validator_status=RuleStatus.NOT_SUPPORTED,
+        validator_status=RuleStatus.IMPLEMENTED,
         description="Appendix internal numbering prefixes section/subsection numbers with the appendix letter",
     ),
     FormattingRule(
@@ -1056,8 +1056,8 @@ COMMON_RULES: tuple[FormattingRule, ...] = (
         source_section="Appendices",
         severity=RuleSeverity.RECOMMENDED,
         parameters={"allowed_formats": ("А4", "А3", "А3×4", "А4×4", "А2", "А1")},
-        renderer_status=RuleStatus.NOT_SUPPORTED,
-        validator_status=RuleStatus.NOT_SUPPORTED,
+        renderer_status=RuleStatus.IMPLEMENTED,
+        validator_status=RuleStatus.IMPLEMENTED,
         description="Appendix sheets may use formats А4, А3, А3×4, А4×4, А2, А1 per GOST 2.301",
     ),
     FormattingRule(
@@ -1148,7 +1148,7 @@ LAB_PRACTICAL_PROJECT_REPORT_RULES: tuple[FormattingRule, ...] = (
             "optional_metadata": ("record_book", "institute", "department", "city", "year"),
         },
         renderer_status=RuleStatus.IMPLEMENTED,
-        validator_status=RuleStatus.NOT_SUPPORTED,
+        validator_status=RuleStatus.IMPLEMENTED,
         description="Lab/practical/project report metadata required by the title page form",
     ),
     FormattingRule(
@@ -1200,7 +1200,7 @@ PRACTICE_REPORT_RULES: tuple[FormattingRule, ...] = (
             ),
         },
         renderer_status=RuleStatus.IMPLEMENTED,
-        validator_status=RuleStatus.NOT_SUPPORTED,
+        validator_status=RuleStatus.IMPLEMENTED,
         description="Practice report metadata required by the title page form",
     ),
     FormattingRule(
@@ -1279,7 +1279,7 @@ RESEARCH_REPORT_RULES: tuple[FormattingRule, ...] = (
             ),
         },
         renderer_status=RuleStatus.IMPLEMENTED,
-        validator_status=RuleStatus.NOT_SUPPORTED,
+        validator_status=RuleStatus.IMPLEMENTED,
         description="Research report metadata required by the title page form",
     ),
     FormattingRule(
@@ -1340,7 +1340,7 @@ SMALL_WRITTEN_WORK_RULES: tuple[FormattingRule, ...] = (
             ),
         },
         renderer_status=RuleStatus.IMPLEMENTED,
-        validator_status=RuleStatus.NOT_SUPPORTED,
+        validator_status=RuleStatus.IMPLEMENTED,
         description="Small written work metadata required by the title page form",
     ),
     FormattingRule(
@@ -1398,7 +1398,7 @@ COURSEWORK_RULES: tuple[FormattingRule, ...] = (
             ),
         },
         renderer_status=RuleStatus.IMPLEMENTED,
-        validator_status=RuleStatus.NOT_SUPPORTED,
+        validator_status=RuleStatus.IMPLEMENTED,
         description="Coursework metadata required by the title page form",
     ),
     FormattingRule(
@@ -1489,8 +1489,8 @@ COURSEWORK_RULES: tuple[FormattingRule, ...] = (
         source_section="Course Project Specifics",
         severity=RuleSeverity.RECOMMENDED,
         parameters={"allowed_formats": ("А4", "А3", "А3×4", "А4×4", "А2", "А1")},
-        renderer_status=RuleStatus.NOT_SUPPORTED,
-        validator_status=RuleStatus.NOT_SUPPORTED,
+        renderer_status=RuleStatus.IMPLEMENTED,
+        validator_status=RuleStatus.IMPLEMENTED,
         description="Course-project appendix sheets may use formats А4, А3, А3×4, А4×4, А2, А1",
     ),
     FormattingRule(
@@ -1547,7 +1547,7 @@ GRADUATION_QUALIFICATION_WORK_RULES: tuple[FormattingRule, ...] = (
             ),
         },
         renderer_status=RuleStatus.IMPLEMENTED,
-        validator_status=RuleStatus.NOT_SUPPORTED,
+        validator_status=RuleStatus.IMPLEMENTED,
         description="VKR metadata required by the selected title page form",
     ),
     FormattingRule(
@@ -1712,8 +1712,8 @@ GRADUATION_QUALIFICATION_WORK_RULES: tuple[FormattingRule, ...] = (
         source_section="Graphic and Demonstration Materials for Defense",
         severity=RuleSeverity.RECOMMENDED,
         parameters={"allowed_formats": ("А4", "А3", "А3×4", "А4×4", "А2", "А1")},
-        renderer_status=RuleStatus.NOT_SUPPORTED,
-        validator_status=RuleStatus.NOT_SUPPORTED,
+        renderer_status=RuleStatus.IMPLEMENTED,
+        validator_status=RuleStatus.IMPLEMENTED,
         description="VKR appendix sheets may use formats А4, А3, А3×4, А4×4, А2, А1",
     ),
     FormattingRule(
@@ -1900,8 +1900,8 @@ GRAPHIC_AND_DEMONSTRATION_MATERIAL_RULES: tuple[FormattingRule, ...] = (
         source_section="Drawings and Schemes",
         severity=RuleSeverity.RECOMMENDED,
         parameters={"allowed_formats": ("А4", "А3", "А3×4", "А4×4", "А2", "А1")},
-        renderer_status=RuleStatus.NOT_SUPPORTED,
-        validator_status=RuleStatus.NOT_SUPPORTED,
+        renderer_status=RuleStatus.IMPLEMENTED,
+        validator_status=RuleStatus.IMPLEMENTED,
         description="Graphic appendix sheets may use formats А4, А3, А3×4, А4×4, А2, А1",
     ),
 )
@@ -2033,8 +2033,8 @@ PROJECT_DESIGNATION_RULES: tuple[FormattingRule, ...] = (
         source_section="Explanatory Note Sheets",
         severity=RuleSeverity.RECOMMENDED,
         parameters={"allowed_formats": ("А4", "А3", "А3×4", "А4×4", "А2", "А1")},
-        renderer_status=RuleStatus.NOT_SUPPORTED,
-        validator_status=RuleStatus.NOT_SUPPORTED,
+        renderer_status=RuleStatus.IMPLEMENTED,
+        validator_status=RuleStatus.IMPLEMENTED,
         description="Project-designation appendix sheets may use formats А4, А3, А3×4, А4×4, А2, А1",
     ),
 )
