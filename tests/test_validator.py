@@ -264,6 +264,8 @@ class TestStyleValidator:
         para1.runs[0].bold = True
         para1.paragraph_format.alignment = WD_ALIGN_PARAGRAPH.CENTER
         para1.paragraph_format.first_line_indent = Cm(0)
+
+        doc.add_paragraph()
         
         # Обычный текст (с отступом первой строки 1.25 см)
         para2 = doc.add_paragraph("Обычный текст")

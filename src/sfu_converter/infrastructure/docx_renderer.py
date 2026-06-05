@@ -20,6 +20,7 @@ from sfu_converter.domain.ast_nodes import (
     CitationNode,
     ContinuationLabel,
     Document,
+    DrawingSheetNode,
     FigureNode,
     FrameType,
     FootnoteAnchor,
@@ -32,17 +33,21 @@ from sfu_converter.domain.ast_nodes import (
     MetadataNode,
     PageBreakNode,
     ParagraphNode,
+    PosterNode,
     ProjectDesignationNode,
     RawBlockNode,
     ReferenceNode,
     SectionSetupNode,
+    SectionOrientation,
     SourceRecordNode,
+    SlideDeckNode,
     StructuralSectionNode,
     StructuralSectionType,
     TableCaptionNode,
     TableNote,
     TableNode,
     TableOfContentsNode,
+    TitleBlockForm,
     TitlePageNode,
 )
 from sfu_converter.domain.diagnostics import Diagnostic, DiagnosticCodes, Severity
@@ -908,6 +913,8 @@ class DocxRenderer(RendererPort):
             elif isinstance(block, TableCaptionNode):
                 p = self.doc.add_paragraph(block.text)
                 self._set_paragraph_format(p, "caption_table")
+            elif isinstance(block, DrawingSheetNode):
+                self._render_drawing_sheet(block, document.metadata)
             elif isinstance(block, FigureNode):
                 caption = self._format_figure_caption(block)
                 self._insert_image(
@@ -935,6 +942,10 @@ class DocxRenderer(RendererPort):
                 )
             elif isinstance(block, ListNode):
                 self._render_list(block)
+            elif isinstance(block, PosterNode):
+                self._render_poster(block, document.metadata)
+            elif isinstance(block, SlideDeckNode):
+                self._render_slide_deck_placeholder(block)
             elif isinstance(block, AppendixNode):
                 self._render_appendix(block)
             elif isinstance(block, TableOfContentsNode):
@@ -1376,6 +1387,77 @@ class DocxRenderer(RendererPort):
                 page_number_in_graph_7=block.frame in {FrameType.TEXT_FIRST, FrameType.TEXT_FOLLOWING},
             )
         self._rendered_body_blocks = True
+
+    def _render_drawing_sheet(self, block: DrawingSheetNode, metadata) -> None:
+        if self._rendered_body_blocks:
+            self.doc.add_section(WD_SECTION.NEW_PAGE)
+        section = self.doc.sections[-1]
+        setup = SectionSetupNode(
+            orientation=SectionOrientation.LANDSCAPE,
+            sheet_format=block.sheet_format,
+            frame=block.frame,
+            title_block_form=block.title_block_form,
+        )
+        section_setup.configure(self.doc, section, setup)
+        if block.frame is not FrameType.NONE:
+            frames.draw(self.doc, section)
+
+        if block.src:
+            self._insert_image(block.src, None)
+        else:
+            paragraph = self.doc.add_paragraph("Графический материал")
+            self._set_paragraph_format(paragraph, "normal")
+
+        form = block.title_block_form or TitleBlockForm.FORM_5
+        fields = _title_block_fields(metadata)
+        if block.designation:
+            fields["2"] = block.designation
+        main_inscription.render(self.doc, form.value, fields=fields, page_number_in_graph_7=False)
+        self._rendered_body_blocks = True
+
+    def _render_poster(self, block: PosterNode, metadata) -> None:
+        if self._rendered_body_blocks:
+            self.doc.add_section(WD_SECTION.NEW_PAGE)
+        section = self.doc.sections[-1]
+        setup = SectionSetupNode(
+            orientation=SectionOrientation.LANDSCAPE,
+            sheet_format=block.sheet_format,
+            frame=FrameType.NONE,
+        )
+        section_setup.configure(self.doc, section, setup)
+
+        if block.title:
+            heading = self.doc.add_paragraph(block.title)
+            self._set_paragraph_format(heading, "h1")
+        if block.blocks:
+            self._render_from_ast(
+                Document(blocks=block.blocks, metadata=metadata),
+                allow_auto_toc=False,
+            )
+
+        self.doc.add_section(WD_SECTION.NEW_PAGE)
+        reverse = self.doc.sections[-1]
+        section_setup.configure(self.doc, reverse, setup)
+        reverse_label = self.doc.add_paragraph("Оборотная сторона")
+        self._set_paragraph_format(reverse_label, "normal")
+        main_inscription.render(
+            self.doc,
+            TitleBlockForm.FORM_5.value,
+            fields=_title_block_fields(metadata),
+            page_number_in_graph_7=False,
+        )
+        self._rendered_body_blocks = True
+
+    def _render_slide_deck_placeholder(self, block: SlideDeckNode) -> None:
+        for index, slide in enumerate(block.slides, start=1):
+            title = slide.fields.get("title", f"Слайд {index}")
+            paragraph = self.doc.add_paragraph(f"Слайд {index}: {title}")
+            self._set_paragraph_format(paragraph, "h2" if index == 1 else "normal")
+            for line in slide.body:
+                body = self.doc.add_paragraph(line)
+                self._set_paragraph_format(body, "normal")
+        if block.slides:
+            self._rendered_body_blocks = True
 
     def _render_list(self, block, *, level: int = 0):
         for index, item in enumerate(block.items):

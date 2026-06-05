@@ -100,10 +100,13 @@ class DocxValidator:
             nxt = paragraphs[index] if index < len(paragraphs) else None
             role = classify(paragraph, prev=prev, next=nxt, profile=self.profile)
             self._validate_paragraph(paragraph, index, role)
+            if role in _HEADING_ROLES:
+                self._validate_heading_blank_lines(paragraph, index, prev, nxt)
             if paragraph.text.strip():
                 self._previous_non_empty_role = role
                 self._previous_non_empty_paragraph = paragraph
 
+        self._validate_heading_subpoint_structure(paragraphs)
         self._validate_toc(paragraphs)
         self._validate_frame_requirements(doc)
 
@@ -474,6 +477,71 @@ class DocxValidator:
                 rule_id="common.heading.no_period",
                 source=SourceSpan(index, index),
             )
+        heading_text = paragraph.text.strip()
+        if "\u00ad" in heading_text or "-\n" in heading_text or "-\r\n" in heading_text:
+            self._add(
+                code=DiagnosticCodes.HEADING_HYPHENATION,
+                message=f"Paragraph {index}: heading must not contain word-break hyphenation",
+                rule_id="common.heading.no_hyphenation",
+                source=SourceSpan(index, index),
+            )
+        if _violates_two_sentence_heading(heading_text):
+            self._add(
+                code=DiagnosticCodes.HEADING_TWO_SENTENCE,
+                message=f"Paragraph {index}: two-sentence heading separator is invalid",
+                rule_id="common.heading.two_sentence_separator",
+                source=SourceSpan(index, index),
+            )
+
+    def _validate_heading_blank_lines(self, paragraph, index: int, prev, nxt) -> None:
+        if _requires_blank_line_before(prev, self.profile):
+            self._add(
+                code=DiagnosticCodes.HEADING_SPACING_BEFORE,
+                message=f"Paragraph {index}: heading must be preceded by one blank line",
+                rule_id="common.heading.spacing_before",
+                source=SourceSpan(index, index),
+            )
+        if _requires_blank_line_after(nxt, self.profile):
+            self._add(
+                code=DiagnosticCodes.HEADING_SPACING_AFTER,
+                message=f"Paragraph {index}: heading must be followed by one blank line",
+                rule_id="common.heading.spacing_after",
+                source=SourceSpan(index, index),
+            )
+
+    def _validate_heading_subpoint_structure(self, paragraphs) -> None:
+        entries = [
+            (index, classify(paragraph, profile=self.profile))
+            for index, paragraph in enumerate(paragraphs, start=1)
+            if paragraph.text.strip()
+        ]
+        min_subpoints = int(self._rule("common.heading.point_requires_subpoints").parameters.get("min_subpoints", 2))
+        for group in _docx_h3_groups(entries):
+            h3_count = sum(1 for _, role in group if role is ParagraphRole.HEADING_H3)
+            has_h4 = any(role is ParagraphRole.HEADING_H4 for _, role in group)
+            if h3_count <= 1 or not has_h4:
+                continue
+            for position, (paragraph_index, role) in enumerate(group):
+                if role is not ParagraphRole.HEADING_H3:
+                    continue
+                direct_h4_count = 0
+                for _, child_role in group[position + 1 :]:
+                    if child_role is ParagraphRole.HEADING_H3:
+                        break
+                    if child_role is ParagraphRole.HEADING_H4:
+                        direct_h4_count += 1
+                if direct_h4_count == 0 or direct_h4_count >= min_subpoints:
+                    continue
+                self._add(
+                    code=DiagnosticCodes.HEADING_POINT_REQUIRES_SUBPOINTS,
+                    message=(
+                        f"Paragraph {paragraph_index}: point heading has "
+                        f"{direct_h4_count} subpoint, expected at least {min_subpoints}"
+                    ),
+                    rule_id="common.heading.point_requires_subpoints",
+                    source=SourceSpan(paragraph_index, paragraph_index),
+                    data={"subpoint_count": direct_h4_count},
+                )
 
     def _validate_toc(self, paragraphs) -> None:
         entries: list[tuple[int, object]] = []
@@ -1107,6 +1175,7 @@ class DocxValidator:
         severity: Severity = Severity.ERROR,
         rule_id: str | None = None,
         source: SourceSpan | None = None,
+        data: dict | None = None,
     ) -> None:
         self.diagnostics.append(
             Diagnostic(
@@ -1115,6 +1184,7 @@ class DocxValidator:
                 severity=severity,
                 rule_id=rule_id,
                 source=source,
+                data=data,
             )
         )
 
@@ -1206,6 +1276,55 @@ def _main_inscription_graph_text(table, graph_number: int) -> str:
     if len(table.rows) <= index or len(table.rows[index].cells) < 2:
         return ""
     return table.rows[index].cells[1].text.strip()
+
+
+def _requires_blank_line_before(paragraph, profile) -> bool:
+    return _requires_heading_blank_line(paragraph, profile)
+
+
+def _requires_blank_line_after(paragraph, profile) -> bool:
+    return _requires_heading_blank_line(paragraph, profile)
+
+
+def _requires_heading_blank_line(paragraph, profile) -> bool:
+    if paragraph is None or not paragraph.text.strip():
+        return False
+    role = classify(paragraph, profile=profile)
+    return role not in _HEADING_ROLES and role not in {
+        ParagraphRole.STRUCTURAL_HEADING,
+        ParagraphRole.APPENDIX_HEADING,
+        ParagraphRole.TOC_HEADING,
+    }
+
+
+def _violates_two_sentence_heading(text: str) -> bool:
+    normalized = " ".join((text or "").strip().splitlines())
+    first_period = normalized.find(".")
+    if first_period < 0 or first_period == len(normalized) - 1:
+        return False
+    follows_single_space = (
+        first_period + 2 < len(normalized)
+        and normalized[first_period + 1] == " "
+        and normalized[first_period + 2] != " "
+    )
+    return not follows_single_space or normalized.endswith(".")
+
+
+def _docx_h3_groups(entries: list[tuple[int, ParagraphRole]]) -> list[list[tuple[int, ParagraphRole]]]:
+    groups: list[list[tuple[int, ParagraphRole]]] = []
+    current: list[tuple[int, ParagraphRole]] = []
+    for entry in entries:
+        _, role = entry
+        if role in {ParagraphRole.HEADING_H1, ParagraphRole.HEADING_H2}:
+            if current:
+                groups.append(current)
+                current = []
+            continue
+        if role in {ParagraphRole.HEADING_H3, ParagraphRole.HEADING_H4}:
+            current.append(entry)
+    if current:
+        groups.append(current)
+    return groups
 
 
 def _formula_body_text(text: str) -> str:

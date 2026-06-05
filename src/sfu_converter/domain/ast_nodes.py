@@ -31,6 +31,10 @@ class BlockType(Enum):
     FOOTNOTE = auto()
     SECTION_SETUP = auto()
     PROJECT_DESIGNATION = auto()
+    DRAWING_SHEET = auto()
+    POSTER = auto()
+    SLIDE_DECK = auto()
+    SLIDE = auto()
 
 
 class HeadingLevel(Enum):
@@ -343,6 +347,55 @@ class ProjectDesignationNode:
 
 
 @dataclass(frozen=True)
+class DrawingSheetNode:
+    sheet_format: SheetFormat = SheetFormat.A1
+    frame: FrameType = FrameType.GRAPHIC
+    title_block_form: TitleBlockForm | None = TitleBlockForm.FORM_5
+    scale: str | None = None
+    src: str | None = None
+    designation: str | None = None
+    font_type: str | None = None
+    source: SourceSpan | None = None
+
+
+@dataclass(frozen=True)
+class PosterNode:
+    sheet_format: SheetFormat = SheetFormat.A1
+    title: str = ""
+    blocks: tuple["BlockNode", ...] = ()
+    fill_percent: float | None = None
+    reverse_title_block: bool = True
+    source: SourceSpan | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "blocks", tuple(self.blocks))
+
+
+@dataclass(frozen=True)
+class SlideNode:
+    first_slide: bool = False
+    fields: Mapping[str, str] = field(default_factory=dict)
+    body: tuple[str, ...] = ()
+    fill_percent: float | None = None
+    source: SourceSpan | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.fields, MappingProxyType):
+            object.__setattr__(self, "fields", MappingProxyType(dict(self.fields)))
+        object.__setattr__(self, "body", tuple(self.body))
+
+
+@dataclass(frozen=True)
+class SlideDeckNode:
+    sheet_format: SheetFormat = SheetFormat.A4
+    slides: tuple[SlideNode, ...] = ()
+    source: SourceSpan | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "slides", tuple(self.slides))
+
+
+@dataclass(frozen=True)
 class PageBreakNode:
     source: SourceSpan | None = None
 
@@ -461,6 +514,10 @@ BlockNode = (
     | AbbreviationsListNode
     | SectionSetupNode
     | ProjectDesignationNode
+    | DrawingSheetNode
+    | PosterNode
+    | SlideDeckNode
+    | SlideNode
 )
 
 

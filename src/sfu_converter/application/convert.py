@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from sfu_converter.application import composition
+from sfu_converter.application import composition, heading_checks
 from sfu_converter.application.style_check import validate_style
 from sfu_converter.application.units import validate_unit_consistency
 from sfu_converter.domain.diagnostics import Diagnostic
 from sfu_converter.domain.formatting import FormattingProfile, unsupported_rule_diagnostics
 from sfu_converter.domain.reference_graph import build_reference_graph
+from sfu_converter.infrastructure.graphics import validate as validate_graphics
 from sfu_converter.infrastructure.project_designation import validate_document_designations
 from sfu_converter.parser.base import BaseParser
 from sfu_converter.ports.renderer import RendererPort
@@ -30,6 +31,8 @@ class ConvertTextToDocx:
         diagnostics.extend(unsupported_rule_diagnostics(profile, component="renderer"))
         diagnostics.extend(composition.validate(result.document, profile))
         diagnostics.extend(validate_document_designations(result.document, profile))
+        diagnostics.extend(heading_checks.run(result.document, profile))
+        diagnostics.extend(validate_graphics(result.document, profile))
         diagnostics.extend(validate_style(result.document))
         diagnostics.extend(validate_unit_consistency(result.document))
         diagnostics.extend(build_reference_graph(result.document).diagnostics())

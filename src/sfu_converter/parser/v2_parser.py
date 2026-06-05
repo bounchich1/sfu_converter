@@ -10,6 +10,7 @@ from sfu_converter.domain.ast_nodes import (
     BibliographyEntryNode,
     ContinuationLabel,
     Document,
+    DrawingSheetNode,
     FigureNode,
     FootnoteAnchor,
     FootnoteNode,
@@ -24,6 +25,7 @@ from sfu_converter.domain.ast_nodes import (
     MetadataNode,
     PageBreakNode,
     ParagraphNode,
+    PosterNode,
     ProjectDesignationNode,
     RawBlockNode,
     ReferenceNode,
@@ -33,6 +35,8 @@ from sfu_converter.domain.ast_nodes import (
     SourceSpan,
     SourceRecordNode,
     SourceRecordType,
+    SlideDeckNode,
+    SlideNode,
     TableNote,
     TableNode,
     TitleBlockForm,
@@ -58,6 +62,8 @@ _KNOWN_V2_MARKERS = (
     "[ABBR",
     "[DOC",
     "[DESIGNATION",
+    "[DRAWING",
+    "[/DRAWING]",
     "[FIGURE",
     "[FN",
     "[FN_ANCHOR",
@@ -71,6 +77,8 @@ _KNOWN_V2_MARKERS = (
     "[META",
     "[P]",
     "[PAGE_BREAK]",
+    "[POSTER",
+    "[/POSTER]",
     "[RAW]",
     "[RAW_END]",
     "[REF",
@@ -78,6 +86,10 @@ _KNOWN_V2_MARKERS = (
     "[/SOURCE]",
     "[SECTION",
     "[/SECTION]",
+    "[SLIDE",
+    "[/SLIDE]",
+    "[SLIDE_DECK",
+    "[/SLIDE_DECK]",
     "[TABLE",
     "[TABLE_END]",
     "[TABLE_NOTE",
@@ -141,6 +153,33 @@ class V2Parser(BaseParser):
                 figure = self._parse_figure(stripped, span)
                 self._remember_id(figure.id, span, seen_ids, diagnostics)
                 blocks.append(figure)
+            elif stripped.startswith("[DRAWING"):
+                drawing, drawing_diagnostics, end_index = self._parse_drawing(
+                    lines,
+                    i,
+                    filename,
+                )
+                diagnostics.extend(drawing_diagnostics)
+                blocks.append(drawing)
+                i = end_index
+            elif stripped.startswith("[POSTER"):
+                poster, poster_diagnostics, end_index = self._parse_poster(
+                    lines,
+                    i,
+                    filename,
+                )
+                diagnostics.extend(poster_diagnostics)
+                blocks.append(poster)
+                i = end_index
+            elif stripped.startswith("[SLIDE_DECK"):
+                deck, deck_diagnostics, end_index = self._parse_slide_deck(
+                    lines,
+                    i,
+                    filename,
+                )
+                diagnostics.extend(deck_diagnostics)
+                blocks.append(deck)
+                i = end_index
             elif stripped.startswith("[TABLE"):
                 table, table_diagnostics, end_index = self._parse_table(
                     lines,
@@ -390,6 +429,228 @@ class V2Parser(BaseParser):
             total_sheets=_parse_optional_int(attrs.get("total_sheets")),
             source=span,
         )
+
+    def _parse_drawing(
+        self,
+        lines: list[str],
+        start_index: int,
+        filename: str | None,
+    ) -> tuple[DrawingSheetNode, list[Diagnostic], int]:
+        diagnostics: list[Diagnostic] = []
+        attrs = self._parse_attributes(lines[start_index].strip())
+        start_span = _span_for_line(lines[start_index], start_index, filename)
+        body_attrs: dict[str, str] = {}
+        i = start_index + 1
+        found_end = False
+        while i < len(lines):
+            stripped = lines[i].strip()
+            if stripped == "[/DRAWING]":
+                found_end = True
+                break
+            if stripped:
+                assignment = _parse_assignment_line(stripped)
+                if assignment:
+                    body_attrs.update(assignment)
+                else:
+                    diagnostics.append(self._unknown_marker(stripped, _span_for_line(lines[i], i, filename)))
+            i += 1
+
+        if not found_end:
+            diagnostics.append(
+                Diagnostic(
+                    code=DiagnosticCodes.TXT_MISSING_BLOCK_END,
+                    message="DRAWING without matching /DRAWING",
+                    severity=Severity.ERROR,
+                    source=start_span,
+                )
+            )
+
+        attrs = {**attrs, **body_attrs}
+        end_index = i if found_end else len(lines) - 1
+        return (
+            DrawingSheetNode(
+                sheet_format=_parse_sheet_format(attrs.get("sheet", attrs.get("format"))),
+                frame=_parse_frame_type(attrs.get("frame", FrameType.GRAPHIC.value)),
+                title_block_form=_parse_title_block_form(attrs.get("form")) or TitleBlockForm.FORM_5,
+                scale=attrs.get("scale"),
+                src=attrs.get("src"),
+                designation=attrs.get("designation"),
+                font_type=attrs.get("font", attrs.get("font_type")),
+                source=SourceSpan(
+                    line_start=start_span.line_start,
+                    line_end=end_index + 1,
+                    filename=filename,
+                ),
+            ),
+            diagnostics,
+            end_index,
+        )
+
+    def _parse_poster(
+        self,
+        lines: list[str],
+        start_index: int,
+        filename: str | None,
+    ) -> tuple[PosterNode, list[Diagnostic], int]:
+        diagnostics: list[Diagnostic] = []
+        attrs = self._parse_attributes(lines[start_index].strip())
+        start_span = _span_for_line(lines[start_index], start_index, filename)
+        body_lines: list[str] = []
+        i = start_index + 1
+        found_end = False
+        while i < len(lines):
+            if lines[i].strip() == "[/POSTER]":
+                found_end = True
+                break
+            body_lines.append(lines[i])
+            i += 1
+
+        if not found_end:
+            diagnostics.append(
+                Diagnostic(
+                    code=DiagnosticCodes.TXT_MISSING_BLOCK_END,
+                    message="POSTER without matching /POSTER",
+                    severity=Severity.ERROR,
+                    source=start_span,
+                )
+            )
+
+        nested_result = V2Parser(strict=self.strict).parse("\n".join(body_lines), filename=filename)
+        diagnostics.extend(nested_result.diagnostics)
+        end_index = i if found_end else len(lines) - 1
+        return (
+            PosterNode(
+                sheet_format=_parse_sheet_format(attrs.get("format", attrs.get("sheet"))),
+                title=attrs.get("title", ""),
+                blocks=nested_result.document.blocks,
+                fill_percent=_parse_optional_float(
+                    attrs.get("fill", attrs.get("fill_percent", attrs.get("fill_density")))
+                ),
+                reverse_title_block=not _is_false(attrs.get("reverse_title_block")),
+                source=SourceSpan(
+                    line_start=start_span.line_start,
+                    line_end=end_index + 1,
+                    filename=filename,
+                ),
+            ),
+            diagnostics,
+            end_index,
+        )
+
+    def _parse_slide_deck(
+        self,
+        lines: list[str],
+        start_index: int,
+        filename: str | None,
+    ) -> tuple[SlideDeckNode, list[Diagnostic], int]:
+        diagnostics: list[Diagnostic] = []
+        attrs = self._parse_attributes(lines[start_index].strip())
+        start_span = _span_for_line(lines[start_index], start_index, filename)
+        slides: list[SlideNode] = []
+        i = start_index + 1
+        found_end = False
+        while i < len(lines):
+            stripped = lines[i].strip()
+            if stripped == "[/SLIDE_DECK]":
+                found_end = True
+                break
+            if stripped.startswith("[SLIDE"):
+                slide, slide_diagnostics, end_index = self._parse_slide(lines, i, filename)
+                diagnostics.extend(slide_diagnostics)
+                slides.append(slide)
+                i = end_index + 1
+                continue
+            if stripped:
+                diagnostics.append(self._unknown_marker(stripped, _span_for_line(lines[i], i, filename)))
+            i += 1
+
+        if not found_end:
+            diagnostics.append(
+                Diagnostic(
+                    code=DiagnosticCodes.TXT_MISSING_BLOCK_END,
+                    message="SLIDE_DECK without matching /SLIDE_DECK",
+                    severity=Severity.ERROR,
+                    source=start_span,
+                )
+            )
+
+        end_index = i if found_end else len(lines) - 1
+        return (
+            SlideDeckNode(
+                sheet_format=_parse_sheet_format(attrs.get("format", attrs.get("sheet"))),
+                slides=tuple(slides),
+                source=SourceSpan(
+                    line_start=start_span.line_start,
+                    line_end=end_index + 1,
+                    filename=filename,
+                ),
+            ),
+            diagnostics,
+            end_index,
+        )
+
+    def _parse_slide(
+        self,
+        lines: list[str],
+        start_index: int,
+        filename: str | None,
+    ) -> tuple[SlideNode, list[Diagnostic], int]:
+        diagnostics: list[Diagnostic] = []
+        stripped = lines[start_index].strip()
+        span = _span_for_line(lines[start_index], start_index, filename)
+        marker, _, trailing = stripped.partition("]")
+        attrs = self._parse_attributes(f"{marker}]")
+        fields = _slide_fields(attrs)
+        body: list[str] = []
+
+        inline_body, inline_end, _ = trailing.partition("[/SLIDE]")
+        if inline_end:
+            if inline_body.strip():
+                body.append(inline_body.strip())
+            return (
+                _make_slide(attrs, fields, body, span),
+                diagnostics,
+                start_index,
+            )
+
+        if trailing.strip():
+            body.append(trailing.strip())
+        i = start_index + 1
+        found_end = False
+        while i < len(lines):
+            body_line = lines[i].strip()
+            if body_line == "[/SLIDE]":
+                found_end = True
+                break
+            assignment = _parse_assignment_line(body_line)
+            if assignment:
+                fields.update(assignment)
+            elif body_line:
+                body.append(body_line)
+            i += 1
+
+        if not found_end:
+            diagnostics.append(
+                Diagnostic(
+                    code=DiagnosticCodes.TXT_MISSING_BLOCK_END,
+                    message="SLIDE without matching /SLIDE",
+                    severity=Severity.ERROR,
+                    source=span,
+                )
+            )
+
+        end_index = i if found_end else len(lines) - 1
+        slide = _make_slide(
+            attrs,
+            fields,
+            body,
+            SourceSpan(
+                line_start=span.line_start,
+                line_end=end_index + 1,
+                filename=filename,
+            ),
+        )
+        return slide, diagnostics, end_index
 
     def _parse_table(
         self,
@@ -1010,6 +1271,51 @@ def _parse_optional_int(value: str | None) -> int | None:
 
 def _parse_bool(value: str | None) -> bool:
     return (value or "").strip().casefold() in {"true", "1", "yes", "да"}
+
+
+def _is_false(value: str | None) -> bool:
+    return (value or "").strip().casefold() in {"false", "0", "no", "нет"}
+
+
+def _parse_optional_float(value: str | None) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except ValueError:
+        return None
+
+
+def _parse_assignment_line(stripped: str) -> dict[str, str]:
+    if "=" not in stripped or stripped.startswith("["):
+        return {}
+    key, _, value = stripped.partition("=")
+    key = key.strip()
+    if not key or not key.replace("_", "").isalnum():
+        return {}
+    return {key: value.strip().strip('"')}
+
+
+def _slide_fields(attrs: dict[str, str]) -> dict[str, str]:
+    excluded = {"first_slide", "fill", "fill_percent", "fill_density"}
+    return {key: value for key, value in attrs.items() if key not in excluded}
+
+
+def _make_slide(
+    attrs: dict[str, str],
+    fields: dict[str, str],
+    body: list[str],
+    source: SourceSpan,
+) -> SlideNode:
+    return SlideNode(
+        first_slide=_parse_bool(attrs.get("first_slide")),
+        fields=fields,
+        body=tuple(body),
+        fill_percent=_parse_optional_float(
+            attrs.get("fill", attrs.get("fill_percent", attrs.get("fill_density")))
+        ),
+        source=source,
+    )
 
 
 def _is_paragraph_marker(stripped: str) -> bool:

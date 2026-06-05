@@ -8,7 +8,7 @@ from dataclasses import fields, is_dataclass
 from enum import Enum
 from pathlib import Path
 
-from sfu_converter.application import composition
+from sfu_converter.application import composition, heading_checks
 from sfu_converter.application.style_check import validate_style
 from sfu_converter.application.units import validate_unit_consistency
 from sfu_converter.config import PathConfig, SIBFUConfig
@@ -16,6 +16,7 @@ from sfu_converter.domain.ast_nodes import BlockType, SourceSpan
 from sfu_converter.domain.diagnostics import Diagnostic, DiagnosticCodes, Severity
 from sfu_converter.domain.formatting import FormattingProfile, RuleStatus, unsupported_rule_diagnostics
 from sfu_converter.infrastructure.docx_validator import diagnostic_to_json
+from sfu_converter.infrastructure.graphics import validate as validate_graphics
 from sfu_converter.infrastructure.project_designation import validate_document_designations
 from sfu_converter.parser import get_parser
 from sfu_converter.parser.syntax_spec import get_syntax_spec
@@ -74,6 +75,7 @@ def create_parser() -> argparse.ArgumentParser:
     convert_p.add_argument("--strict", action="store_true")
     convert_p.add_argument("--validate-output", action="store_true")
     convert_p.add_argument("--diagnostics", type=Path, default=None)
+    convert_p.add_argument("--output-format", choices=["docx", "pptx"], default="docx")
 
     validate_p = subparsers.add_parser("validate-docx", help="Validate existing DOCX")
     _add_common_options(validate_p, include_defaults=False)
@@ -178,6 +180,9 @@ def cmd_convert(args) -> int:
     from sfu_converter.converter import TextToDocxConverter
     from sfu_converter.validator import StyleValidator
 
+    if getattr(args, "output_format", "docx") == "pptx":
+        return _cmd_convert_pptx(args)
+
     start = time.time()
     profile = _resolve_profile_arg(args, "convert")
     if profile is None:
@@ -242,6 +247,67 @@ def cmd_convert(args) -> int:
                     exit_code == ExitCodes.SUCCESS,
                     inputs={"input": str(input_path), "profile": args.profile},
                     outputs={"docx": str(output_path)},
+                    profile=profile.name,
+                    syntaxVersion=args.syntax_version,
+                    durationMs=duration_ms,
+                    diagnostics=diagnostics_json,
+                ),
+                ensure_ascii=False,
+            )
+        )
+    elif not args.quiet:
+        print(f"Profile: {profile.display_name}")
+        print(f"Converted: {input_path} -> {output_path}")
+    return exit_code
+
+
+def _cmd_convert_pptx(args) -> int:
+    from sfu_converter.infrastructure.pptx_renderer import PptxRenderer
+
+    start = time.time()
+    profile = _resolve_profile_arg(args, "convert")
+    if profile is None:
+        return ExitCodes.MISSING_RESOURCE
+
+    parser = _resolve_parser_arg(args, "convert")
+    if parser is None:
+        return ExitCodes.MISSING_RESOURCE
+
+    input_path = _resolve_path(args.workdir, args.input)
+    output_path = _resolve_path(args.workdir, args.output)
+
+    if not input_path.exists():
+        _emit_missing_resource(args, "convert", "MISSING_INPUT", f"File not found: {input_path}")
+        return ExitCodes.MISSING_RESOURCE
+
+    source = input_path.read_text(encoding="utf-8")
+    result = parser.parse(source, filename=str(input_path))
+    diagnostics = list(result.diagnostics)
+    diagnostics.extend(unsupported_rule_diagnostics(profile, component="renderer"))
+    diagnostics.extend(composition.validate(result.document, profile))
+    diagnostics.extend(validate_document_designations(result.document, profile))
+    diagnostics.extend(heading_checks.run(result.document, profile))
+    diagnostics.extend(validate_graphics(result.document, profile))
+    diagnostics.extend(validate_style(result.document))
+    diagnostics.extend(validate_unit_consistency(result.document))
+
+    try:
+        diagnostics.extend(PptxRenderer().render_to_file(result.document, profile, str(output_path)))
+    except OSError as exc:
+        _emit_write_failure(args, "convert", str(exc))
+        return ExitCodes.WRITE_FAILURE
+
+    diagnostics_json = _diagnostics_to_json(diagnostics)
+    exit_code = _exit_code_from_diagnostics(diagnostics, strict=args.strict)
+    duration_ms = int((time.time() - start) * 1000)
+    if args.format == "json":
+        print(
+            json.dumps(
+                make_json_result(
+                    "convert",
+                    exit_code == ExitCodes.SUCCESS,
+                    inputs={"input": str(input_path), "profile": args.profile},
+                    outputs={"pptx": str(output_path)},
                     profile=profile.name,
                     syntaxVersion=args.syntax_version,
                     durationMs=duration_ms,
@@ -381,6 +447,8 @@ def cmd_lint(args) -> int:
     diagnostics.extend(unsupported_rule_diagnostics(profile, component="validator"))
     diagnostics.extend(composition.validate(result.document, profile))
     diagnostics.extend(validate_document_designations(result.document, profile))
+    diagnostics.extend(heading_checks.run(result.document, profile))
+    diagnostics.extend(validate_graphics(result.document, profile))
     diagnostics.extend(validate_style(result.document))
     diagnostics.extend(validate_unit_consistency(result.document))
     exit_code = _exit_code_from_diagnostics(diagnostics, strict=args.strict)
@@ -642,6 +710,10 @@ _BLOCK_TYPE_BY_NODE = {
     "TableOfContents": BlockType.TABLE_OF_CONTENTS,
     "TitlePage": BlockType.TITLE_PAGE,
     "Reference": BlockType.REFERENCE,
+    "DrawingSheet": BlockType.DRAWING_SHEET,
+    "Poster": BlockType.POSTER,
+    "SlideDeck": BlockType.SLIDE_DECK,
+    "Slide": BlockType.SLIDE,
 }
 
 

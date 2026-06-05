@@ -7,15 +7,18 @@ from sfu_converter.domain.ast_nodes import (
     AppendixNode,
     CitationNode,
     Document,
+    DrawingSheetNode,
     FigureNode,
     FootnoteAnchor,
     HeadingNode,
     InlineNode,
     ListNode,
     ParagraphNode,
+    PosterNode,
     ProjectDesignationNode,
     RawBlockNode,
     SectionSetupNode,
+    SlideDeckNode,
     SourceSpan,
     StructuralSectionNode,
     TableCaptionNode,
@@ -129,6 +132,18 @@ def _iter_text_items(blocks: Iterable[object]) -> Iterable[_TextItem]:
             yield _TextItem(block.text, block.source)
         elif isinstance(block, ProjectDesignationNode):
             continue
+        elif isinstance(block, DrawingSheetNode):
+            if block.designation:
+                yield _TextItem(block.designation, block.source)
+        elif isinstance(block, PosterNode):
+            yield _TextItem(block.title, block.source, forbids_abbreviations=True)
+            yield from _iter_text_items(block.blocks)
+        elif isinstance(block, SlideDeckNode):
+            for slide in block.slides:
+                for value in slide.fields.values():
+                    yield _TextItem(str(value), slide.source)
+                for line in slide.body:
+                    yield _TextItem(line, slide.source)
         elif hasattr(block, "blocks"):
             yield from _iter_text_items(getattr(block, "blocks"))
 

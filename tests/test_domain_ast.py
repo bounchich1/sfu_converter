@@ -10,6 +10,7 @@ from sfu_converter.domain.ast_nodes import (
     AppendixNode,
     BibliographyEntryNode,
     BlockNode,
+    DrawingSheetNode,
     FigureNode,
     FootnoteAnchor,
     FootnoteNode,
@@ -22,10 +23,13 @@ from sfu_converter.domain.ast_nodes import (
     MetadataNode,
     PageBreakNode,
     ParagraphNode,
+    PosterNode,
     ProjectDesignationNode,
     RawBlockNode,
     ReferenceNode,
     SectionSetupNode,
+    SlideDeckNode,
+    SlideNode,
     SourceRecordNode,
     SourceRecordType,
     SourceSpan,
@@ -186,6 +190,10 @@ def test_blocknode_union_contains_all_supported_block_classes():
         AbbreviationsListNode,
         SectionSetupNode,
         ProjectDesignationNode,
+        DrawingSheetNode,
+        PosterNode,
+        SlideDeckNode,
+        SlideNode,
     }
 
 

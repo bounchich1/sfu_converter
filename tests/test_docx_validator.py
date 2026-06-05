@@ -89,7 +89,7 @@ def test_docx_validator_reports_common_unsupported_validator_rules(tmp_path):
         if diagnostic.code == DiagnosticCodes.FORMAT_RULE_NOT_SUPPORTED
     ]
 
-    assert len(unsupported) == 18
+    assert len(unsupported) == 13
     assert all(diagnostic.severity is Severity.WARNING for diagnostic in unsupported)
     assert all("not supported by the validator" in diagnostic.message for diagnostic in unsupported)
     unsupported_ids = {diagnostic.rule_id for diagnostic in unsupported}
@@ -106,6 +106,11 @@ def test_docx_validator_reports_common_unsupported_validator_rules(tmp_path):
     assert "common.formula.repeated_symbol" not in unsupported_ids
     assert "common.formula.consecutive_comma" not in unsupported_ids
     assert "common.heading.h4" not in unsupported_ids
+    assert "common.heading.spacing_before" not in unsupported_ids
+    assert "common.heading.spacing_after" not in unsupported_ids
+    assert "common.heading.no_hyphenation" not in unsupported_ids
+    assert "common.heading.two_sentence_separator" not in unsupported_ids
+    assert "common.heading.point_requires_subpoints" not in unsupported_ids
     assert "common.list.item" not in unsupported_ids
     assert "common.list.lettered" not in unsupported_ids
     assert "common.list.nested_numeric" not in unsupported_ids
@@ -220,6 +225,39 @@ def test_docx_validator_rejects_heading_period(tmp_path):
     assert any(
         diagnostic.code == DiagnosticCodes.FORMAT_HEADING_NO_PERIOD
         and diagnostic.rule_id == "common.heading.no_period"
+        for diagnostic in diagnostics
+    )
+
+
+def test_docx_validator_reports_heading_blank_line_mismatches(tmp_path):
+    doc = Document()
+    _body_paragraph(doc, "Before")
+    heading = doc.add_paragraph("Heading")
+    heading.style = doc.styles["Heading 2"]
+    heading.paragraph_format.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    heading.paragraph_format.first_line_indent = Cm(0)
+    heading.paragraph_format.line_spacing = 1.0
+    heading.paragraph_format.space_before = Pt(0)
+    heading.paragraph_format.space_after = Pt(0)
+    heading.runs[0].font.name = "Times New Roman"
+    heading.runs[0].font.size = Pt(14)
+    heading.runs[0].font.color.rgb = RGBColor(0, 0, 0)
+    heading.runs[0].bold = True
+    _body_paragraph(doc, "After")
+    path = _save_doc(tmp_path, doc, "heading_spacing.docx")
+
+    diagnostics = DocxValidator(get_profile("common")).validate_file(str(path))
+
+    assert any(
+        diagnostic.code == DiagnosticCodes.HEADING_SPACING_BEFORE
+        and diagnostic.rule_id == "common.heading.spacing_before"
+        and diagnostic.source.line_start == 2
+        for diagnostic in diagnostics
+    )
+    assert any(
+        diagnostic.code == DiagnosticCodes.HEADING_SPACING_AFTER
+        and diagnostic.rule_id == "common.heading.spacing_after"
+        and diagnostic.source.line_start == 2
         for diagnostic in diagnostics
     )
 

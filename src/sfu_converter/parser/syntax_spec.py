@@ -116,6 +116,35 @@ _SYNTAX_SPECS = {
                 ),
             },
             {
+                "name": "drawing",
+                "marker": '[DRAWING sheet=A1 frame=graphic form=form_5 scale="1:50"]',
+                "node": "DrawingSheetNode",
+                "description": "Create a framed drawing/scheme sheet with form 5/6 title block.",
+                "example": (
+                    '[DRAWING sheet=A1 frame=graphic form=form_5 scale="1:50"]\n'
+                    'src="diagram.svg"\n'
+                    "[/DRAWING]"
+                ),
+            },
+            {
+                "name": "poster",
+                "marker": '[POSTER format=A1 title="..."] ... [/POSTER]',
+                "node": "PosterNode",
+                "description": "Create an A1 poster sheet with reverse-side title block.",
+                "example": '[POSTER format=A1 title="Architecture"]\n[P] Content\n[/POSTER]',
+            },
+            {
+                "name": "slide_deck",
+                "marker": "[SLIDE_DECK format=A4] ... [/SLIDE_DECK]",
+                "node": "SlideDeckNode",
+                "description": "Create an A4-printable slide deck for optional PPTX output.",
+                "example": (
+                    "[SLIDE_DECK format=A4]\n"
+                    '[SLIDE first_slide=true title="Topic" student="Name" supervisor="Name"][/SLIDE]\n'
+                    "[/SLIDE_DECK]"
+                ),
+            },
+            {
                 "name": "table",
                 "marker": '[TABLE caption="..." id=tbl:id number=auto]',
                 "node": "TableNode",

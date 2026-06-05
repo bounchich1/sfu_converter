@@ -28,15 +28,10 @@ from sfu_converter.registry import get_profile
 # baseline ``common`` profile. Encoded explicitly so a regression that adds or
 # silently drops a rule status fails this test instead of going unnoticed.
 COMMON_VALIDATOR_UNSUPPORTED_IDS: tuple[str, ...] = (
-    "common.heading.spacing_before",
-    "common.heading.spacing_after",
     "common.figure.spacing_before",
     "common.figure.spacing_after",
     "common.formula.spacing_before",
     "common.formula.spacing_after",
-    "common.heading.no_hyphenation",
-    "common.heading.two_sentence_separator",
-    "common.heading.point_requires_subpoints",
     "common.formula.cross_reference",
     "common.table.section_numbering",
     "common.table.appendix_numbering",
