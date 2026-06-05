@@ -49,6 +49,7 @@ _FIGURE_CAPTION_RE = re.compile(r"^\s*Рисунок\s+")
 _HEADING_NUMBERED_RE = re.compile(r"^\s*(\d+)(?:\.(\d+))?(?:\.(\d+))?(?:\.(\d+))?\s+\S")
 _LIST_ITEM_RE = re.compile(r"^\s*(?:[аА-яА-Я]\)|\d+\)|[-—–])\s")
 _PLACEHOLDER_RE = re.compile(r"^\s*\[\s*(?:Изображение|Image|Ошибка)")
+_TOC_PLACEHOLDER_RE = re.compile(r"^\s*Обновите оглавление\b", re.IGNORECASE)
 _BIBLIOGRAPHY_RE = re.compile(r"^\s*\d+\.\s+\S")
 _FORMULA_EXPLANATION_RE = re.compile(r"^\s*где\b")
 _APPENDIX_HEADING_RE = re.compile(r"^\s*ПРИЛОЖЕНИЕ\b")
@@ -120,6 +121,9 @@ def classify(
 
     if _PLACEHOLDER_RE.match(stripped):
         return ParagraphRole.FIGURE_PLACEHOLDER
+
+    if _TOC_PLACEHOLDER_RE.match(stripped):
+        return ParagraphRole.TOC_ENTRY
 
     if _FORMULA_EXPLANATION_RE.match(stripped):
         return ParagraphRole.FORMULA_EXPLANATION

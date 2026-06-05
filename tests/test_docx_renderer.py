@@ -39,10 +39,12 @@ from sfu_converter.domain.ast_nodes import (
 )
 from sfu_converter.domain.diagnostics import DiagnosticCodes
 from sfu_converter.domain.formatting import FormattingProfile, FormattingRule, RuleSeverity, RuleStatus
+from sfu_converter.infrastructure.docx_validator import DocxValidator
 import sfu_converter.infrastructure.docx_renderer as renderer_module
 from sfu_converter.infrastructure.docx_renderer import DocxRenderer, SectionNumberer
 from sfu_converter.infrastructure.docx_renderer import _normalize_list_item_punctuation
 from sfu_converter.ports.renderer import RendererPort
+from sfu_converter.registry import get_profile
 
 
 def assert_close(actual, expected) -> None:
@@ -651,6 +653,48 @@ def test_register_styles_exposes_all_sfu_styles_on_rendered_document(tmp_path):
     for name in docx_styles.ALL_SFU_STYLES:
         assert name in names, f"{name} missing from rendered document"
         assert doc.styles[name] is not None
+
+
+def test_renderer_embeds_full_metadata_for_docx_validator(tmp_path):
+    profile = get_profile("graduation_qualification_work")
+    metadata = {
+        "university": "Сибирский федеральный университет",
+        "institute": "Институт космических и информационных технологий",
+        "department": "Кафедра программной инженерии",
+        "title": "Эталонный документ профиля graduation_qualification_work",
+        "student": "Иванов И. И.",
+        "group": "КИ22-01М",
+        "supervisor": "Петров П. П.",
+        "document_type": "МАГИСТЕРСКАЯ ДИССЕРТАЦИЯ",
+        "direction_code": "09.04.01",
+        "direction_name": "Информатика и вычислительная техника",
+        "master_program_code": "09.04.01-01",
+        "master_program_name": "Высокопроизводительные вычисления",
+        "reviewer": "Кузнецов К. К.",
+    }
+    output_path = tmp_path / "metadata.docx"
+
+    DocxRenderer(config_class=SIBFUConfig, base_dir=tmp_path).render_to_file(
+        Document(blocks=(TitlePageNode(profile="form_b"),), metadata=metadata),
+        profile,
+        str(output_path),
+    )
+
+    doc = DocxDocument(str(output_path))
+    metadata_paragraphs = [
+        paragraph
+        for paragraph in doc.paragraphs
+        if paragraph.style.name == docx_styles.METADATA
+    ]
+    diagnostics = DocxValidator(profile).validate_file(str(output_path))
+
+    assert metadata_paragraphs
+    assert "master_program_name=Высокопроизводительные вычисления" in metadata_paragraphs[0].text
+    assert not [
+        diagnostic
+        for diagnostic in diagnostics
+        if diagnostic.code == DiagnosticCodes.TXT_MISSING_METADATA
+    ]
 
 
 def test_caption_styles_are_based_on_caption_builtin():

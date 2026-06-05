@@ -39,6 +39,7 @@ from sfu_converter.domain.ast_nodes import (
     SlideNode,
     TableNote,
     TableNode,
+    TitlePageNode,
     TitleBlockForm,
 )
 from sfu_converter.domain.diagnostics import Diagnostic, DiagnosticCodes, Severity
@@ -93,6 +94,7 @@ _KNOWN_V2_MARKERS = (
     "[TABLE",
     "[TABLE_END]",
     "[TABLE_NOTE",
+    "[TITLE_PAGE",
 )
 
 
@@ -133,6 +135,8 @@ class V2Parser(BaseParser):
                 if metadata_node is not None:
                     metadata[metadata_node.key] = metadata_node.value
                     blocks.append(metadata_node)
+            elif stripped.startswith("[TITLE_PAGE"):
+                blocks.append(self._parse_title_page(stripped, span))
             elif stripped.startswith("[H "):
                 heading = self._parse_heading(stripped, span, diagnostics)
                 if heading is not None:
@@ -330,6 +334,11 @@ class V2Parser(BaseParser):
             )
             return None
         return MetadataNode(key=key, value=attrs.get("value", ""), source=span)
+
+    def _parse_title_page(self, stripped: str, span: SourceSpan) -> TitlePageNode:
+        attrs = self._parse_attributes(stripped)
+        profile = attrs.get("profile")
+        return TitlePageNode(profile=profile.strip() if profile else None, source=span)
 
     def _parse_designation(
         self,

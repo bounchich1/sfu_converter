@@ -20,6 +20,7 @@ from sfu_converter.infrastructure.docx_measurements import FIRST_LINE_INDENT_CM,
 
 
 STRUCTURAL_HEADING = "SFUStructuralHeading"
+METADATA = "SFUMetadata"
 FOOTNOTE_ANCHOR = "SFUFootnoteAnchor"
 FOOTNOTE_TEXT = "SFUFootnoteText"
 TABLE_CAPTION = "SFUTableCaption"
@@ -39,6 +40,7 @@ FRAME_MAIN_INSCRIPTION = "SFUFrameMainInscription"
 
 ALL_SFU_STYLES: tuple[str, ...] = (
     STRUCTURAL_HEADING,
+    METADATA,
     FOOTNOTE_ANCHOR,
     FOOTNOTE_TEXT,
     TABLE_CAPTION,
@@ -64,6 +66,8 @@ def register_styles(document) -> None:
     _register(document, STRUCTURAL_HEADING, base="Normal", bold=True, all_caps=True,
               alignment=WD_ALIGN_PARAGRAPH.CENTER, first_line_indent=NO_INDENT_CM,
               outline_level=0)
+    _register(document, METADATA, base="Normal", hidden=True,
+              first_line_indent=NO_INDENT_CM, line_spacing=1.0)
     _register_character(document, FOOTNOTE_ANCHOR, superscript=True, size=Pt(12))
     _register(document, FOOTNOTE_TEXT, base="Normal", size=Pt(12),
               alignment=WD_ALIGN_PARAGRAPH.LEFT, first_line_indent=NO_INDENT_CM,
@@ -117,6 +121,7 @@ def _register(
     alignment=None,
     first_line_indent=None,
     size=None,
+    hidden: bool = False,
     right_tab_pos=None,
     outline_level: int | None = None,
     line_spacing=None,
@@ -134,6 +139,7 @@ def _register(
     font.size = size or Pt(14)
     font.bold = bold
     font.italic = italic
+    font.hidden = hidden
     font.color.rgb = RGBColor(0, 0, 0)
     if all_caps:
         font.all_caps = True

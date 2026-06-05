@@ -811,6 +811,8 @@ class DocxRenderer(RendererPort):
         if self.doc is None:
             return
         metadata = dict(metadata or {})
+        if metadata:
+            self._embed_hidden_metadata(metadata)
         core = self.doc.core_properties
         if metadata.get("title"):
             core.title = metadata["title"]
@@ -821,6 +823,15 @@ class DocxRenderer(RendererPort):
         keywords = _core_metadata_keywords(metadata)
         if keywords:
             core.keywords = keywords
+
+    def _embed_hidden_metadata(self, metadata: dict[str, str]) -> None:
+        paragraph = self.doc.add_paragraph()
+        paragraph.style = self.doc.styles[docx_styles.METADATA]
+        paragraph.paragraph_format.first_line_indent = NO_INDENT_CM
+        paragraph.paragraph_format.line_spacing = 1.0
+        run = paragraph.add_run(_metadata_payload(metadata))
+        self._set_run_style(run, bold=False)
+        run.font.hidden = True
 
     def _prepare_footnotes(self, document: Document) -> None:
         self._footnote_diagnostics = []
@@ -1575,6 +1586,7 @@ def _document_total_pages(document: Document) -> int | None:
 
 def _core_metadata_keywords(metadata: dict[str, str]) -> str:
     priority = (
+        "document_type",
         "group",
         "supervisor",
         "teacher",
@@ -1600,6 +1612,14 @@ def _core_metadata_keywords(metadata: dict[str, str]) -> str:
         parts.append(part)
         length = next_length
     return "; ".join(parts)
+
+
+def _metadata_payload(metadata: dict[str, str]) -> str:
+    return "; ".join(
+        f"{key}={metadata[key]}"
+        for key in sorted(metadata)
+        if str(metadata.get(key, "")).strip()
+    )
 
 
 def _title_block_fields(

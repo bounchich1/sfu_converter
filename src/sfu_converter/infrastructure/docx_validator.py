@@ -112,7 +112,7 @@ class DocxValidator:
         self._list_expected_letter_by_indent: dict[float, int] = {}
         self._last_letter_indent_cm: float | None = None
 
-        paragraphs = list(doc.paragraphs)
+        paragraphs = _body_paragraphs(list(doc.paragraphs))
         for index, paragraph in enumerate(paragraphs, start=1):
             prev = paragraphs[index - 2] if index >= 2 else None
             nxt = paragraphs[index] if index < len(paragraphs) else None
@@ -129,7 +129,10 @@ class DocxValidator:
         self._validate_appendix_compliance(paragraphs)
         self._validate_frame_requirements(doc)
 
+        main_inscription_elements = {table._tbl for table in _main_inscription_tables(doc)}
         for table_index, table in enumerate(doc.tables, start=1):
+            if table._tbl in main_inscription_elements:
+                continue
             self._validate_table(table, table_index)
 
         self._validate_footnotes_part(doc_path)
@@ -616,6 +619,8 @@ class DocxValidator:
             entry_text = _toc_entry_heading_text(paragraph.text)
             normalized = _normalize_toc_text(entry_text)
             if not normalized or normalized.startswith("приложения "):
+                continue
+            if normalized.startswith("обновите оглавление"):
                 continue
             if normalized.startswith("приложение "):
                 continue
@@ -1309,11 +1314,63 @@ def _metadata_from_docx(doc) -> dict[str, str]:
     metadata.update(_parse_metadata_payload(core.keywords or ""))
 
     for paragraph in doc.paragraphs:
-        if _style_name(paragraph) != "SFUMetadata":
+        if _style_name(paragraph) != docx_styles.METADATA:
             continue
         metadata.update(_parse_metadata_payload(paragraph.text))
 
     return metadata
+
+
+def _body_paragraphs(paragraphs: list) -> list:
+    body = []
+    index = 0
+    while index < len(paragraphs):
+        if _is_metadata_paragraph(paragraphs[index]):
+            index += 1
+            continue
+        if _starts_generated_title_page(paragraphs, index):
+            index = _index_after_page_break(paragraphs, index)
+            continue
+        body.append(paragraphs[index])
+        index += 1
+    return body
+
+
+def _is_metadata_paragraph(paragraph) -> bool:
+    return _style_name(paragraph) == docx_styles.METADATA
+
+
+def _starts_generated_title_page(paragraphs: list, index: int) -> bool:
+    cursor = index
+    while cursor < len(paragraphs):
+        text = " ".join((paragraphs[cursor].text or "").split()).casefold()
+        if text:
+            return (
+                "министерство науки и высшего образования" in text
+                or "сибирский федеральный университет" in text
+            )
+        if _paragraph_has_page_break(paragraphs[cursor]):
+            break
+        cursor += 1
+    return False
+
+
+def _index_after_page_break(paragraphs: list, index: int) -> int:
+    cursor = index
+    while cursor < len(paragraphs):
+        if _paragraph_has_page_break(paragraphs[cursor]):
+            return cursor + 1
+        cursor += 1
+    return index + 1
+
+
+def _paragraph_has_page_break(paragraph) -> bool:
+    for element in paragraph._p.iter():
+        if element.tag == qn("w:br") and element.get(qn("w:type")) == "page":
+            return True
+        if element.tag == qn("w:lastRenderedPageBreak"):
+            return True
+    return False
 
 
 def _parse_metadata_payload(payload: str) -> dict[str, str]:
@@ -1399,6 +1456,7 @@ def _requires_heading_blank_line(paragraph, profile) -> bool:
 
 def _violates_two_sentence_heading(text: str) -> bool:
     normalized = " ".join((text or "").strip().splitlines())
+    normalized = re.sub(r"^\d+(?:\.\d+)*\s+", "", normalized)
     first_period = normalized.find(".")
     if first_period < 0 or first_period == len(normalized) - 1:
         return False

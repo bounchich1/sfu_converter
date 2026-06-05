@@ -239,7 +239,7 @@ class _ReferenceGraphBuilder:
             )
         elif isinstance(block, FootnoteNode):
             self._add_definition(ReferenceTargetKind.FOOTNOTE, block.marker, block.source, position, block.marker)
-        elif isinstance(block, HeadingNode) and block.number:
+        elif isinstance(block, HeadingNode) and block.number and block.number != "auto":
             self._add_definition(ReferenceTargetKind.SECTION, block.number, block.source, position, block.number)
 
     def _collect_sites(self, block, position: int) -> None:
