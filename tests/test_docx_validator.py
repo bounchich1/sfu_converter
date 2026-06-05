@@ -87,7 +87,7 @@ def test_docx_validator_reports_common_unsupported_validator_rules(tmp_path):
         if diagnostic.code == DiagnosticCodes.FORMAT_RULE_NOT_SUPPORTED
     ]
 
-    assert len(unsupported) == 37
+    assert len(unsupported) == 32
     assert all(diagnostic.severity is Severity.WARNING for diagnostic in unsupported)
     assert all("not supported by the validator" in diagnostic.message for diagnostic in unsupported)
     unsupported_ids = {diagnostic.rule_id for diagnostic in unsupported}
@@ -106,6 +106,11 @@ def test_docx_validator_reports_common_unsupported_validator_rules(tmp_path):
     assert "common.heading.h4" not in unsupported_ids
     assert "common.list.item" not in unsupported_ids
     assert "common.bibliography.entry" not in unsupported_ids
+    assert "common.bibliography.gost_record" not in unsupported_ids
+    assert "common.bibliography.gost_abbreviations" not in unsupported_ids
+    assert "common.bibliography.grouping_method" not in unsupported_ids
+    assert "common.bibliography.russian_first" not in unsupported_ids
+    assert "common.reference.footnote" not in unsupported_ids
 
     payload = diagnostic_to_json(unsupported[0])
     assert payload["ruleId"] == unsupported[0].rule_id

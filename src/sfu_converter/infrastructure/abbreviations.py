@@ -100,7 +100,7 @@ def _find_abbreviations(text: str) -> Iterable[tuple[str, str]]:
 def _iter_text(blocks: Iterable[object]) -> Iterable[str]:
     for block in blocks:
         if isinstance(block, ParagraphNode):
-            yield "".join(run.text for run in block.runs)
+            yield "".join(getattr(run, "text", "") for run in block.runs)
         elif isinstance(block, TableNode):
             for row in block.rows:
                 for cell in row.cells:

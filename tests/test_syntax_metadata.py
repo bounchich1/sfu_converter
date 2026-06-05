@@ -20,6 +20,7 @@ def test_v2_syntax_spec_lists_supported_blocks_from_metadata():
         "formula",
         "reference",
         "source",
+        "footnote",
         "page_break",
         "appendix",
         "raw",

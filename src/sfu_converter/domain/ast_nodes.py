@@ -27,6 +27,8 @@ class BlockType(Enum):
     TITLE_PAGE = auto()
     REFERENCE = auto()
     ABBREVIATIONS_LIST = auto()
+    SOURCE_RECORD = auto()
+    FOOTNOTE = auto()
 
 
 class HeadingLevel(Enum):
@@ -76,6 +78,14 @@ class TextRun:
     text: str
     bold: bool = False
     italic: bool = False
+    source: SourceSpan | None = None
+
+
+@dataclass(frozen=True)
+class FootnoteAnchor:
+    """Inline reference to a footnote body."""
+
+    marker: str
     source: SourceSpan | None = None
 
 
@@ -273,6 +283,39 @@ class BibliographyEntryNode:
     source: SourceSpan | None = None
 
 
+class SourceRecordType(str, Enum):
+    NORMATIVE = "normative"
+    PATENT = "patent"
+    BOOK_ONE_AUTHOR = "book_one_author"
+    BOOK_TWO_AUTHORS = "book_two_authors"
+    BOOK_THREE_AUTHORS = "book_three_authors"
+    BOOK_FOUR_PLUS_AUTHORS = "book_four_plus_authors"
+    VOLUME = "volume"
+    DISSERTATION = "dissertation"
+    ELECTRONIC = "electronic"
+    ARTICLE = "article"
+
+
+@dataclass(frozen=True)
+class SourceRecordNode:
+    number: int
+    record_type: SourceRecordType
+    fields: Mapping[str, str]
+    language: str
+    source: SourceSpan | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.fields, MappingProxyType):
+            object.__setattr__(self, "fields", MappingProxyType(dict(self.fields)))
+
+
+@dataclass(frozen=True)
+class FootnoteNode:
+    marker: str
+    text: str
+    source: SourceSpan | None = None
+
+
 @dataclass(frozen=True)
 class ReferenceNode:
     target: str
@@ -314,6 +357,8 @@ BlockNode = (
     | StructuralSectionNode
     | AppendixNode
     | BibliographyEntryNode
+    | SourceRecordNode
+    | FootnoteNode
     | ReferenceNode
     | RawBlockNode
     | MetadataNode

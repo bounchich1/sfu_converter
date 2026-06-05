@@ -11,6 +11,8 @@ from sfu_converter.domain.ast_nodes import (
     BibliographyEntryNode,
     BlockNode,
     FigureNode,
+    FootnoteAnchor,
+    FootnoteNode,
     FormulaNode,
     HeadingLevel,
     HeadingNode,
@@ -22,6 +24,8 @@ from sfu_converter.domain.ast_nodes import (
     ParagraphNode,
     RawBlockNode,
     ReferenceNode,
+    SourceRecordNode,
+    SourceRecordType,
     SourceSpan,
     StructuralSectionNode,
     StructuralSectionType,
@@ -71,6 +75,15 @@ def test_ast_nodes_are_frozen_dataclasses():
     list_node = ListNode(list_type=ListType.BULLET, items=(list_item,), source=span)
     appendix = AppendixNode(title="Appendix A", blocks=(paragraph,), source=span)
     bibliography = BibliographyEntryNode(number=1, text="Source", source=span)
+    source_record = SourceRecordNode(
+        number=2,
+        record_type=SourceRecordType.BOOK_ONE_AUTHOR,
+        fields={"authors": "Author A.", "title": "Book"},
+        language="en",
+        source=span,
+    )
+    footnote_anchor = FootnoteAnchor(marker="1", source=span)
+    footnote = FootnoteNode(marker="1", text="Footnote", source=span)
     reference = ReferenceNode(target="fig:overview", source=span)
     raw = RawBlockNode(text="[literal]", source=span)
     metadata = MetadataNode(key="title", value="Report", source=span)
@@ -94,6 +107,9 @@ def test_ast_nodes_are_frozen_dataclasses():
         PageBreakNode(source=span),
         appendix,
         bibliography,
+        source_record,
+        footnote_anchor,
+        footnote,
         reference,
         raw,
         metadata,
@@ -116,6 +132,13 @@ def test_document_accepts_supported_block_types_and_freezes_metadata():
         PageBreakNode(),
         AppendixNode(title="Appendix", blocks=(RawBlockNode("raw"),)),
         BibliographyEntryNode(number=1, text="Book"),
+        SourceRecordNode(
+            number=2,
+            record_type=SourceRecordType.BOOK_ONE_AUTHOR,
+            fields={"authors": "Author A.", "title": "Book"},
+            language="en",
+        ),
+        FootnoteNode(marker="1", text="Footnote"),
         ReferenceNode(target="fig:overview"),
         MetadataNode(key="author", value="Student"),
         StructuralSectionNode(
@@ -150,6 +173,8 @@ def test_blocknode_union_contains_all_supported_block_classes():
         PageBreakNode,
         AppendixNode,
         BibliographyEntryNode,
+        SourceRecordNode,
+        FootnoteNode,
         ReferenceNode,
         RawBlockNode,
         MetadataNode,

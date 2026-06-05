@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import re
+import xml.etree.ElementTree as ET
 from pathlib import Path
+from zipfile import ZipFile
 
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -98,6 +100,8 @@ class DocxValidator:
 
         for table_index, table in enumerate(doc.tables, start=1):
             self._validate_table(table, table_index)
+
+        self._validate_footnotes_part(doc_path)
 
         return self.diagnostics
 
@@ -231,6 +235,9 @@ class DocxValidator:
                 self._validate_run_font(run, index, run_index, validate_size=False)
             self._validate_styled_paragraph(paragraph, index, "common.figure.explanatory_data")
             self._validate_figure_explanatory(paragraph, index)
+            return
+        if role is ParagraphRole.FOOTNOTE_TEXT:
+            self._validate_footnote_text_paragraph(paragraph, index)
             return
 
         for run_index, run in enumerate(paragraph.runs, start=1):
@@ -561,6 +568,77 @@ class DocxValidator:
                                 ),
                                 rule_id=rule_id,
                             )
+
+    def _validate_footnote_text_paragraph(self, paragraph, index: int) -> None:
+        self._validate_line_spacing(
+            paragraph,
+            index,
+            rule_id="common.reference.footnote",
+            expected=1.0,
+        )
+        for run_index, run in enumerate(paragraph.runs, start=1):
+            self._validate_run_font(run, index, run_index, validate_size=False)
+            size = _pt_value(run.font.size)
+            if size and size > 12 + _POINT_TOLERANCE:
+                self._add(
+                    code=DiagnosticCodes.FOOTNOTE_FORMAT,
+                    message=(
+                        f"Paragraph {index} run {run_index}: footnote size "
+                        f"{size:.1f}pt, expected 12pt or smaller"
+                    ),
+                    rule_id="common.reference.footnote",
+                    source=SourceSpan(index, index),
+                )
+
+    def _validate_footnotes_part(self, doc_path: Path) -> None:
+        try:
+            with ZipFile(doc_path) as package:
+                if "word/footnotes.xml" not in package.namelist():
+                    return
+                footnotes_xml = package.read("word/footnotes.xml")
+        except Exception:
+            return
+
+        namespace = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+        root = ET.fromstring(footnotes_xml)
+        if not any(
+            footnote.get(qn("w:type")) == "separator"
+            for footnote in root.findall("w:footnote", namespace)
+        ):
+            self._add(
+                code=DiagnosticCodes.FOOTNOTE_FORMAT,
+                message="Footnote separator line is missing",
+                severity=Severity.WARNING,
+                rule_id="common.reference.footnote",
+            )
+
+        for footnote in root.findall("w:footnote", namespace):
+            note_type = footnote.get(qn("w:type"))
+            if note_type in {"separator", "continuationSeparator"}:
+                continue
+            self._validate_footnote_xml(footnote, namespace)
+
+    def _validate_footnote_xml(self, footnote, namespace: dict[str, str]) -> None:
+        note_id = footnote.get(qn("w:id"), "?")
+        spacing = footnote.find(".//w:spacing", namespace)
+        if spacing is not None and spacing.get(qn("w:line")) not in {None, "240"}:
+            self._add(
+                code=DiagnosticCodes.FOOTNOTE_FORMAT,
+                message=f"Footnote {note_id}: line spacing must be single",
+                rule_id="common.reference.footnote",
+            )
+        for size in footnote.findall(".//w:sz", namespace):
+            value = size.get(qn("w:val"))
+            try:
+                half_points = int(value) if value is not None else 0
+            except ValueError:
+                continue
+            if half_points > 24:
+                self._add(
+                    code=DiagnosticCodes.FOOTNOTE_FORMAT,
+                    message=f"Footnote {note_id}: text size must be 12pt or smaller",
+                    rule_id="common.reference.footnote",
+                )
 
     def _validate_table_borders(self, table, table_index: int) -> None:
         rule_id = "common.table.borders"

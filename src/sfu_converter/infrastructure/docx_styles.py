@@ -19,6 +19,8 @@ from sfu_converter.config import SIBFUConfig
 
 
 STRUCTURAL_HEADING = "SFUStructuralHeading"
+FOOTNOTE_ANCHOR = "SFUFootnoteAnchor"
+FOOTNOTE_TEXT = "SFUFootnoteText"
 TABLE_CAPTION = "SFUTableCaption"
 TABLE_UNIT = "SFUTableUnit"
 TABLE = "SFUTable"
@@ -36,6 +38,8 @@ FRAME_MAIN_INSCRIPTION = "SFUFrameMainInscription"
 
 ALL_SFU_STYLES: tuple[str, ...] = (
     STRUCTURAL_HEADING,
+    FOOTNOTE_ANCHOR,
+    FOOTNOTE_TEXT,
     TABLE_CAPTION,
     TABLE_UNIT,
     TABLE,
@@ -59,6 +63,10 @@ def register_styles(document) -> None:
     _register(document, STRUCTURAL_HEADING, base="Normal", bold=True, all_caps=True,
               alignment=WD_ALIGN_PARAGRAPH.CENTER, first_line_indent=Cm(0),
               outline_level=0)
+    _register_character(document, FOOTNOTE_ANCHOR, superscript=True, size=Pt(12))
+    _register(document, FOOTNOTE_TEXT, base="Normal", size=Pt(12),
+              alignment=WD_ALIGN_PARAGRAPH.LEFT, first_line_indent=Cm(0),
+              line_spacing=1.0)
     _register(document, TABLE_CAPTION, base="Caption",
               alignment=WD_ALIGN_PARAGRAPH.LEFT, first_line_indent=Cm(0))
     _register(document, TABLE_UNIT, base="Normal", size=Pt(12),
@@ -110,6 +118,7 @@ def _register(
     size=None,
     right_tab_pos=None,
     outline_level: int | None = None,
+    line_spacing=None,
 ) -> None:
     styles = document.styles
     if name in [s.name for s in styles]:
@@ -135,8 +144,29 @@ def _register(
         pf.first_line_indent = first_line_indent
     if right_tab_pos is not None:
         pf.tab_stops.add_tab_stop(Emu(int(right_tab_pos)), WD_TAB_ALIGNMENT.RIGHT)
+    if line_spacing is not None:
+        pf.line_spacing = line_spacing
     if outline_level is not None:
         _set_outline_level(style, outline_level)
+
+
+def _register_character(
+    document,
+    name: str,
+    *,
+    superscript: bool = False,
+    size=None,
+) -> None:
+    styles = document.styles
+    if name in [s.name for s in styles]:
+        return
+
+    style = styles.add_style(name, WD_STYLE_TYPE.CHARACTER)
+    font = style.font
+    font.name = "Times New Roman"
+    font.size = size or Pt(14)
+    font.color.rgb = RGBColor(0, 0, 0)
+    font.superscript = superscript
 
 
 def _register_table(document, name: str) -> None:

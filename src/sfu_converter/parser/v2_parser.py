@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from sfu_converter.domain.ast_nodes import (
     AbbreviationEntryNode,
     AbbreviationsListNode,
@@ -8,6 +10,8 @@ from sfu_converter.domain.ast_nodes import (
     ContinuationLabel,
     Document,
     FigureNode,
+    FootnoteAnchor,
+    FootnoteNode,
     FormulaNode,
     FormulaSymbol,
     HeadingLevel,
@@ -21,6 +25,8 @@ from sfu_converter.domain.ast_nodes import (
     RawBlockNode,
     ReferenceNode,
     SourceSpan,
+    SourceRecordNode,
+    SourceRecordType,
     TableNote,
     TableNode,
 )
@@ -45,6 +51,9 @@ _KNOWN_V2_MARKERS = (
     "[ABBR",
     "[DOC",
     "[FIGURE",
+    "[FN",
+    "[FN_ANCHOR",
+    "[FN_BODY",
     "[FORMULA",
     "[FORMULA_END]",
     "[FORMULA_SYMBOL",
@@ -58,6 +67,7 @@ _KNOWN_V2_MARKERS = (
     "[RAW_END]",
     "[REF",
     "[SOURCE",
+    "[/SOURCE]",
     "[TABLE",
     "[TABLE_END]",
     "[TABLE_NOTE",
@@ -104,12 +114,9 @@ class V2Parser(BaseParser):
                     blocks.append(structural if structural is not None else heading)
             elif stripped.startswith("[P]"):
                 text = stripped.removeprefix("[P]").strip()
-                blocks.append(
-                    ParagraphNode(
-                        runs=_parse_inline_formatting(text),
-                        source=span,
-                    )
-                )
+                paragraph, footnotes = _parse_v2_paragraph(text, span)
+                blocks.append(paragraph)
+                blocks.extend(footnotes)
             elif stripped.startswith("[FIGURE"):
                 figure = self._parse_figure(stripped, span)
                 self._remember_id(figure.id, span, seen_ids, diagnostics)
@@ -159,9 +166,25 @@ class V2Parser(BaseParser):
                 if reference is not None:
                     blocks.append(reference)
             elif stripped.startswith("[SOURCE"):
-                source_node = self._parse_source(stripped, span, diagnostics)
+                source_node, source_diagnostics, end_index = self._parse_source(
+                    lines,
+                    i,
+                    filename,
+                )
+                diagnostics.extend(source_diagnostics)
                 if source_node is not None:
                     blocks.append(source_node)
+                i = end_index
+            elif stripped.startswith("[FN_BODY"):
+                footnote, footnote_diagnostics, end_index = self._parse_footnote_body(
+                    lines,
+                    i,
+                    filename,
+                )
+                diagnostics.extend(footnote_diagnostics)
+                if footnote is not None:
+                    blocks.append(footnote)
+                i = end_index
             elif stripped == "[PAGE_BREAK]":
                 blocks.append(PageBreakNode(source=span))
             elif stripped.startswith("[APPENDIX"):
@@ -602,10 +625,13 @@ class V2Parser(BaseParser):
 
     def _parse_source(
         self,
-        stripped: str,
-        span: SourceSpan,
-        diagnostics: list[Diagnostic],
-    ) -> BibliographyEntryNode | None:
+        lines: list[str],
+        start_index: int,
+        filename: str | None,
+    ) -> tuple[BibliographyEntryNode | SourceRecordNode | None, list[Diagnostic], int]:
+        diagnostics: list[Diagnostic] = []
+        stripped = lines[start_index].strip()
+        span = _span_for_line(lines[start_index], start_index, filename)
         marker, _, text = stripped.partition("]")
         attrs = self._parse_attributes(f"{marker}]")
         try:
@@ -619,8 +645,124 @@ class V2Parser(BaseParser):
                     source=span,
                 )
             )
-            return None
-        return BibliographyEntryNode(number=number, text=text.strip(), source=span)
+            return None, diagnostics, start_index
+
+        record_type = attrs.get("type")
+        if record_type is None:
+            return BibliographyEntryNode(number=number, text=text.strip(), source=span), diagnostics, start_index
+
+        try:
+            source_record_type = SourceRecordType(record_type)
+        except ValueError:
+            diagnostics.append(
+                Diagnostic(
+                    code=DiagnosticCodes.TXT_MALFORMED_ATTRIBUTE,
+                    message=f"Unknown SOURCE type: {record_type}",
+                    severity=Severity.ERROR,
+                    source=span,
+                )
+            )
+            return None, diagnostics, start_index
+
+        fields: dict[str, str] = {}
+        i = start_index + 1
+        found_end = False
+        while i < len(lines):
+            body_line = lines[i].strip()
+            if body_line == "[/SOURCE]":
+                found_end = True
+                break
+            fields.update(parse_attributes(body_line))
+            i += 1
+
+        if not found_end:
+            diagnostics.append(
+                Diagnostic(
+                    code=DiagnosticCodes.TXT_MISSING_BLOCK_END,
+                    message="SOURCE without matching /SOURCE",
+                    severity=Severity.ERROR,
+                    source=span,
+                )
+            )
+
+        return (
+            SourceRecordNode(
+                number=number,
+                record_type=source_record_type,
+                fields=fields,
+                language=attrs.get("lang", attrs.get("language", "ru")),
+                source=SourceSpan(
+                    line_start=span.line_start,
+                    line_end=i + 1 if found_end else len(lines),
+                    filename=filename,
+                ),
+            ),
+            diagnostics,
+            i,
+        )
+
+    def _parse_footnote_body(
+        self,
+        lines: list[str],
+        start_index: int,
+        filename: str | None,
+    ) -> tuple[FootnoteNode | None, list[Diagnostic], int]:
+        diagnostics: list[Diagnostic] = []
+        stripped = lines[start_index].strip()
+        span = _span_for_line(lines[start_index], start_index, filename)
+        marker, _, trailing = stripped.partition("]")
+        attrs = self._parse_attributes(f"{marker}]")
+        marker_id = attrs.get("id", "").strip()
+        if not marker_id:
+            diagnostics.append(
+                Diagnostic(
+                    code=DiagnosticCodes.TXT_MALFORMED_ATTRIBUTE,
+                    message="FN_BODY marker missing required 'id' attribute",
+                    severity=Severity.ERROR,
+                    source=span,
+                )
+            )
+            return None, diagnostics, start_index
+
+        text_parts: list[str] = []
+        end_inline = trailing.partition("[/FN_BODY]")
+        if end_inline[1]:
+            text_parts.append(end_inline[0].strip())
+            return FootnoteNode(marker=marker_id, text="\n".join(text_parts), source=span), diagnostics, start_index
+
+        if trailing.strip():
+            text_parts.append(trailing.strip())
+        i = start_index + 1
+        found_end = False
+        while i < len(lines):
+            body_line = lines[i]
+            if body_line.strip() == "[/FN_BODY]":
+                found_end = True
+                break
+            text_parts.append(body_line)
+            i += 1
+        if not found_end:
+            diagnostics.append(
+                Diagnostic(
+                    code=DiagnosticCodes.TXT_MISSING_BLOCK_END,
+                    message="FN_BODY without matching /FN_BODY",
+                    severity=Severity.ERROR,
+                    source=span,
+                )
+            )
+        return (
+            FootnoteNode(
+                marker=marker_id,
+                text="\n".join(text_parts).strip(),
+                source=SourceSpan(
+                    line_start=span.line_start,
+                    line_end=i + 1 if found_end else len(lines),
+                    filename=filename,
+                ),
+            ),
+            diagnostics,
+            i,
+        )
 
     def _parse_appendix(self, stripped: str, span: SourceSpan) -> AppendixNode:
         attrs = self._parse_attributes(stripped)
@@ -723,6 +865,34 @@ def _parse_optional_int(value: str | None) -> int | None:
 
 def _parse_bool(value: str | None) -> bool:
     return (value or "").strip().casefold() in {"true", "1", "yes", "да"}
+
+
+_FOOTNOTE_INLINE_RE = re.compile(r"\[(FN|FN_ANCHOR)\b[^\]]*\]")
+
+
+def _parse_v2_paragraph(text: str, span: SourceSpan) -> tuple[ParagraphNode, tuple[FootnoteNode, ...]]:
+    runs = []
+    footnotes: list[FootnoteNode] = []
+    cursor = 0
+    for match in _FOOTNOTE_INLINE_RE.finditer(text):
+        if match.start() > cursor:
+            runs.extend(_parse_inline_formatting(text[cursor : match.start()]))
+        attrs = parse_attributes(match.group(0))
+        marker = attrs.get("id", "").strip()
+        if marker:
+            runs.append(FootnoteAnchor(marker=marker, source=span))
+            if match.group(1) == "FN":
+                footnotes.append(
+                    FootnoteNode(
+                        marker=marker,
+                        text=attrs.get("text", ""),
+                        source=span,
+                    )
+                )
+        cursor = match.end()
+    if cursor < len(text):
+        runs.extend(_parse_inline_formatting(text[cursor:]))
+    return ParagraphNode(runs=tuple(runs), source=span), tuple(footnotes)
 
 
 def _parse_explanatory_data(value: str | None) -> tuple[str, ...] | None:

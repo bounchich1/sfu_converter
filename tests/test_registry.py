@@ -351,3 +351,17 @@ def test_task_16_and_17_rules_are_marked_implemented():
         assert get_rule(rule_id).renderer_status is RuleStatus.IMPLEMENTED
     for rule_id in implemented_validator:
         assert get_rule(rule_id).validator_status is RuleStatus.IMPLEMENTED
+
+
+def test_task_18_and_19_rules_are_marked_implemented():
+    implemented = {
+        "common.bibliography.gost_record",
+        "common.bibliography.gost_abbreviations",
+        "common.bibliography.grouping_method",
+        "common.bibliography.russian_first",
+        "common.reference.footnote",
+    }
+
+    for rule_id in implemented:
+        assert get_rule(rule_id).renderer_status is RuleStatus.IMPLEMENTED
+        assert get_rule(rule_id).validator_status is RuleStatus.IMPLEMENTED

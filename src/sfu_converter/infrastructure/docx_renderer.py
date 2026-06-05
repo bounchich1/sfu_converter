@@ -18,6 +18,8 @@ from sfu_converter.domain.ast_nodes import (
     ContinuationLabel,
     Document,
     FigureNode,
+    FootnoteAnchor,
+    FootnoteNode,
     FormulaNode,
     HeadingLevel,
     HeadingNode,
@@ -27,6 +29,7 @@ from sfu_converter.domain.ast_nodes import (
     ParagraphNode,
     RawBlockNode,
     ReferenceNode,
+    SourceRecordNode,
     StructuralSectionNode,
     StructuralSectionType,
     TableCaptionNode,
@@ -38,6 +41,7 @@ from sfu_converter.domain.ast_nodes import (
 from sfu_converter.domain.diagnostics import Diagnostic, DiagnosticCodes, Severity
 from sfu_converter.domain.formatting import FormattingProfile, unsupported_rule_diagnostics
 from sfu_converter.infrastructure.abbreviations import abbreviations_for_document, explicit_abbreviations
+from sfu_converter.infrastructure.bibliography import format_record, validate_records
 from sfu_converter.infrastructure import docx_styles
 from sfu_converter.infrastructure.figure_layout import (
     figure_caption_text,
@@ -48,6 +52,7 @@ from sfu_converter.infrastructure.formula_layout import (
     explanation_lines,
     split_formula_lines,
 )
+from sfu_converter.infrastructure.footnotes import add_footnote_reference, patch_docx_bytes, patch_docx_file
 from sfu_converter.infrastructure.numbering import NumberingContext, build_numbering_context
 from sfu_converter.infrastructure.page_numbering import (
     Location,
@@ -155,7 +160,7 @@ class DocxRenderer(RendererPort):
         self._render_from_ast(document)
         buffer = BytesIO()
         self.doc.save(buffer)
-        return buffer.getvalue()
+        return patch_docx_bytes(buffer.getvalue(), self._rendered_footnotes)
 
     def render_to_file(
         self,
@@ -173,11 +178,14 @@ class DocxRenderer(RendererPort):
         destination = Path(output_path)
         destination.parent.mkdir(parents=True, exist_ok=True)
         self.doc.save(str(destination))
+        patch_docx_file(destination, self._rendered_footnotes)
         return (
             diagnostics
             + self._title_page_diagnostics
             + self._abbreviation_diagnostics
             + self._figure_diagnostics
+            + self._bibliography_diagnostics
+            + self._footnote_diagnostics
         )
 
     def _set_run_style(self, run, bold=False, italic=False):
@@ -763,6 +771,11 @@ class DocxRenderer(RendererPort):
         self._abbreviation_explicit = False
         self._abbreviation_diagnostics = []
         self._figure_diagnostics = []
+        self._bibliography_diagnostics = []
+        self._footnote_diagnostics = []
+        self._footnote_bodies: dict[str, str] = {}
+        self._footnote_ids: dict[str, int] = {}
+        self._rendered_footnotes: dict[int, str] = {}
         self._formula_symbol_numbers: dict[str, str] = {}
         self._formula_numbers_by_id: dict[str, str] = {}
         self._numbering: NumberingContext = build_numbering_context(profile)
@@ -771,6 +784,66 @@ class DocxRenderer(RendererPort):
         self._abbreviation_entries = abbreviations_for_document(document)
         self._abbreviation_explicit = explicit_abbreviations(document) is not None
         self._abbreviation_diagnostics = []
+        source_records = tuple(block for block in document.blocks if isinstance(block, SourceRecordNode))
+        self._bibliography_diagnostics = validate_records(source_records) if source_records else []
+        self._prepare_footnotes(document)
+
+    def _prepare_footnotes(self, document: Document) -> None:
+        self._footnote_diagnostics = []
+        self._footnote_bodies = {
+            block.marker: block.text
+            for block in document.blocks
+            if isinstance(block, FootnoteNode)
+        }
+        anchors: dict[str, list[FootnoteAnchor]] = {}
+        for block in document.blocks:
+            if not isinstance(block, ParagraphNode):
+                continue
+            for run in block.runs:
+                if isinstance(run, FootnoteAnchor):
+                    anchors.setdefault(run.marker, []).append(run)
+
+        for marker, marker_anchors in anchors.items():
+            if len(marker_anchors) > 1:
+                self._footnote_diagnostics.append(
+                    Diagnostic(
+                        code=DiagnosticCodes.FOOTNOTE_DUPLICATE,
+                        message=f"Footnote anchor '{marker}' appears more than once",
+                        severity=Severity.ERROR,
+                        source=marker_anchors[1].source,
+                        rule_id="common.reference.footnote",
+                        data={"marker": marker},
+                    )
+                )
+            if marker not in self._footnote_bodies:
+                self._footnote_diagnostics.append(
+                    Diagnostic(
+                        code=DiagnosticCodes.FOOTNOTE_UNMATCHED_ANCHOR,
+                        message=f"Footnote anchor '{marker}' has no matching FN_BODY",
+                        severity=Severity.ERROR,
+                        source=marker_anchors[0].source,
+                        rule_id="common.reference.footnote",
+                        data={"marker": marker},
+                    )
+                )
+
+        for marker in self._footnote_bodies:
+            if marker not in anchors:
+                self._footnote_diagnostics.append(
+                    Diagnostic(
+                        code=DiagnosticCodes.FOOTNOTE_UNMATCHED_BODY,
+                        message=f"Footnote body '{marker}' has no matching anchor",
+                        severity=Severity.ERROR,
+                        rule_id="common.reference.footnote",
+                        data={"marker": marker},
+                    )
+                )
+
+        self._footnote_ids = {
+            marker: _footnote_id(marker, index)
+            for index, marker in enumerate(self._footnote_bodies, start=1)
+        }
+        self._rendered_footnotes = {}
 
     def _render_from_ast(self, document):
         blocks = tuple(document.blocks)
@@ -821,6 +894,10 @@ class DocxRenderer(RendererPort):
                 self._render_table_of_contents(block)
             elif isinstance(block, BibliographyEntryNode):
                 self._render_bibliography_entry(block)
+            elif isinstance(block, SourceRecordNode):
+                self._render_source_record(block)
+            elif isinstance(block, FootnoteNode):
+                continue
             elif isinstance(block, RawBlockNode):
                 self._render_text_block(block.text)
             elif isinstance(block, ReferenceNode):
@@ -1064,9 +1141,14 @@ class DocxRenderer(RendererPort):
     def _render_paragraph(self, block):
         para = self.doc.add_paragraph()
         for text_run in block.runs:
-            para.add_run(text_run.text)
+            if isinstance(text_run, FootnoteAnchor):
+                self._add_footnote_anchor(para, text_run)
+            else:
+                para.add_run(text_run.text)
         self._set_paragraph_format(para, "normal")
         for docx_run, text_run in zip(para.runs, block.runs, strict=False):
+            if isinstance(text_run, FootnoteAnchor):
+                continue
             self._set_run_style(
                 docx_run,
                 bold=text_run.bold,
@@ -1135,6 +1217,16 @@ class DocxRenderer(RendererPort):
             self._add_empty_paragraph("empty_after_formula")
         self._rendered_body_blocks = True
 
+    def _add_footnote_anchor(self, para, anchor: FootnoteAnchor) -> None:
+        run = para.add_run()
+        self._set_run_style(run, bold=False)
+        if docx_styles.FOOTNOTE_ANCHOR in [s.name for s in self.doc.styles]:
+            run.style = self.doc.styles[docx_styles.FOOTNOTE_ANCHOR]
+        footnote_id = self._footnote_ids.get(anchor.marker, _footnote_id(anchor.marker, len(self._footnote_ids) + 1))
+        add_footnote_reference(run, footnote_id)
+        if anchor.marker in self._footnote_bodies:
+            self._rendered_footnotes[footnote_id] = self._footnote_bodies[anchor.marker]
+
     def _formula_explanation_text(self, block) -> str | None:
         if block.explanations:
             lines = explanation_lines(block.explanations, self._formula_symbol_numbers)
@@ -1161,6 +1253,14 @@ class DocxRenderer(RendererPort):
         """Render a single source list entry with hanging-paragraph layout."""
 
         text = f"{block.number} {block.text}"
+        para = self.doc.add_paragraph(text)
+        self._set_paragraph_format(para, "bibliography_entry")
+        self._rendered_body_blocks = True
+
+    def _render_source_record(self, block: SourceRecordNode):
+        """Render a structured source record using the GOST formatter."""
+
+        text = f"{block.number} {format_record(block)}"
         para = self.doc.add_paragraph(text)
         self._set_paragraph_format(para, "bibliography_entry")
         self._rendered_body_blocks = True
@@ -1230,6 +1330,14 @@ def _russian_list_letter(index: int) -> str:
     if index < len(_RUSSIAN_LIST_LETTERS):
         return _RUSSIAN_LIST_LETTERS[index]
     return str(index + 1)
+
+
+def _footnote_id(marker: str, fallback: int) -> int:
+    try:
+        value = int(marker)
+    except ValueError:
+        return fallback
+    return value if value > 0 else fallback
 
 
 def _normalize_caption_dashes(text: str) -> str:

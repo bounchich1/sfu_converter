@@ -150,10 +150,22 @@ _SYNTAX_SPECS = {
             },
             {
                 "name": "source",
-                "marker": "[SOURCE number=1]",
-                "node": "BibliographyEntryNode",
-                "description": "Add a numbered bibliography/source entry.",
-                "example": "[SOURCE number=1] Author. Title. Year.",
+                "marker": '[SOURCE number=1 type=book_two_authors lang=ru] ... [/SOURCE]',
+                "node": "BibliographyEntryNode | SourceRecordNode",
+                "description": "Add a numbered free-text or structured GOST bibliography/source entry.",
+                "example": (
+                    "[SOURCE number=1 type=book_two_authors lang=ru]\n"
+                    'authors="Иванов И. И., Петров П. П."\n'
+                    'title="Анализ данных" city="Красноярск" publisher="СФУ" year=2023 pages=320\n'
+                    "[/SOURCE]"
+                ),
+            },
+            {
+                "name": "footnote",
+                "marker": '[FN id=1 text="..."]',
+                "node": "FootnoteAnchor | FootnoteNode",
+                "description": "Insert an inline footnote anchor and body; FN_ANCHOR/FN_BODY split placement is also supported.",
+                "example": '[P] Text [FN id=1 text="Source note"].',
             },
             {
                 "name": "page_break",

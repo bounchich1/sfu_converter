@@ -38,6 +38,7 @@ class ParagraphRole(Enum):
     FORMULA_BODY = auto()
     FORMULA_EXPLANATION = auto()
     BIBLIOGRAPHY_ENTRY = auto()
+    FOOTNOTE_TEXT = auto()
     APPENDIX_HEADING = auto()
     PAGE_NUMBER = auto()
     UNKNOWN = auto()
@@ -73,6 +74,7 @@ _ROLE_BY_SFU_STYLE = {
     docx_styles.FORMULA_BODY: ParagraphRole.FORMULA_BODY,
     docx_styles.FORMULA_EXPLANATION: ParagraphRole.FORMULA_EXPLANATION,
     docx_styles.BIBLIOGRAPHY_ENTRY: ParagraphRole.BIBLIOGRAPHY_ENTRY,
+    docx_styles.FOOTNOTE_TEXT: ParagraphRole.FOOTNOTE_TEXT,
     docx_styles.LIST_ITEM: ParagraphRole.LIST_ITEM,
     docx_styles.APPENDIX_HEADING: ParagraphRole.APPENDIX_HEADING,
 }
