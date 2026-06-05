@@ -32,6 +32,7 @@ from sfu_converter.domain.ast_nodes import (
     MetadataNode,
     PageBreakNode,
     ParagraphNode,
+    ProjectDesignationNode,
     RawBlockNode,
     ReferenceNode,
     SectionSetupNode,
@@ -68,6 +69,7 @@ from sfu_converter.infrastructure.page_numbering import (
     PageNumberingSection,
     configure as configure_page_numbering,
 )
+from sfu_converter.infrastructure.project_designation import format_designation
 from sfu_converter.infrastructure.toc import TocEntry, TocField, build_toc_field
 from sfu_converter.parser.citations import format_citation_node
 from sfu_converter.ports.renderer import RendererPort
@@ -870,8 +872,15 @@ class DocxRenderer(RendererPort):
         }
         self._rendered_footnotes = {}
 
-    def _render_from_ast(self, document, *, allow_auto_toc: bool = True):
+    def _render_from_ast(
+        self,
+        document,
+        *,
+        allow_auto_toc: bool = True,
+        default_project_designation: ProjectDesignationNode | None = None,
+    ):
         blocks = tuple(document.blocks)
+        project_designation = _first_project_designation(blocks) or default_project_designation
         auto_toc_pending = (
             allow_auto_toc
             and self._toc_field is not None
@@ -946,7 +955,13 @@ class DocxRenderer(RendererPort):
             elif isinstance(block, TitlePageNode):
                 self._render_title_page(document.metadata, block.profile)
             elif isinstance(block, SectionSetupNode):
-                self._render_section_setup(block, document.metadata)
+                self._render_section_setup(
+                    block,
+                    document.metadata,
+                    default_project_designation=project_designation,
+                )
+            elif isinstance(block, ProjectDesignationNode):
+                continue
 
     def _render_heading(self, block):
         if block.level is HeadingLevel.H1 and self._rendered_body_blocks:
@@ -1332,7 +1347,14 @@ class DocxRenderer(RendererPort):
         self._set_paragraph_format(para, "bibliography_entry")
         self._rendered_body_blocks = True
 
-    def _render_section_setup(self, block: SectionSetupNode, metadata) -> None:
+    def _render_section_setup(
+        self,
+        block: SectionSetupNode,
+        metadata,
+        *,
+        default_project_designation: ProjectDesignationNode | None = None,
+    ) -> None:
+        project_designation = _first_project_designation(block.blocks) or default_project_designation
         if self._rendered_body_blocks:
             self.doc.add_section(WD_SECTION.NEW_PAGE)
         section = self.doc.sections[-1]
@@ -1340,13 +1362,17 @@ class DocxRenderer(RendererPort):
         if block.frame is not FrameType.NONE:
             frames.draw(self.doc, section)
 
-        self._render_from_ast(Document(blocks=block.blocks, metadata=metadata), allow_auto_toc=False)
+        self._render_from_ast(
+            Document(blocks=block.blocks, metadata=metadata),
+            allow_auto_toc=False,
+            default_project_designation=project_designation,
+        )
 
         if block.title_block_form is not None:
             main_inscription.render(
                 self.doc,
                 block.title_block_form.value,
-                fields=_title_block_fields(metadata),
+                fields=_title_block_fields(metadata, designation=project_designation),
                 page_number_in_graph_7=block.frame in {FrameType.TEXT_FIRST, FrameType.TEXT_FOLLOWING},
             )
         self._rendered_body_blocks = True
@@ -1438,13 +1464,26 @@ def _document_total_pages(document: Document) -> int | None:
     return None
 
 
-def _title_block_fields(metadata) -> dict[str, str]:
+def _title_block_fields(
+    metadata,
+    *,
+    designation: ProjectDesignationNode | None = None,
+) -> dict[str, str]:
     fields: dict[str, str] = {}
     for graph_number in range(1, 18):
         value = metadata.get(f"title_block_{graph_number}") if metadata else None
         if value is not None:
             fields[str(graph_number)] = str(value)
+    if designation is not None:
+        fields["2"] = format_designation(designation)
     return fields
+
+
+def _first_project_designation(blocks) -> ProjectDesignationNode | None:
+    for block in blocks:
+        if isinstance(block, ProjectDesignationNode):
+            return block
+    return None
 
 
 def _is_toc_insertion_point(block) -> bool:

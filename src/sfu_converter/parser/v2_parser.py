@@ -24,6 +24,7 @@ from sfu_converter.domain.ast_nodes import (
     MetadataNode,
     PageBreakNode,
     ParagraphNode,
+    ProjectDesignationNode,
     RawBlockNode,
     ReferenceNode,
     SectionOrientation,
@@ -56,6 +57,7 @@ _KNOWN_V2_MARKERS = (
     "[ABBREVIATIONS_END]",
     "[ABBR",
     "[DOC",
+    "[DESIGNATION",
     "[FIGURE",
     "[FN",
     "[FN_ANCHOR",
@@ -110,6 +112,10 @@ class V2Parser(BaseParser):
 
             if stripped.startswith("[DOC"):
                 self._parse_doc(stripped, span, metadata, diagnostics)
+            elif stripped.startswith("[DESIGNATION"):
+                designation = self._parse_designation(stripped, span, diagnostics)
+                if designation is not None:
+                    blocks.append(designation)
             elif stripped.startswith("[META"):
                 metadata_node = self._parse_metadata(stripped, span, diagnostics)
                 if metadata_node is not None:
@@ -120,9 +126,15 @@ class V2Parser(BaseParser):
                 if heading is not None:
                     structural = _structural_section_from_title(heading.text, span)
                     blocks.append(structural if structural is not None else heading)
-            elif stripped.startswith("[P]"):
-                text = stripped.removeprefix("[P]").strip()
-                paragraph, footnotes = _parse_v2_paragraph(text, span, diagnostics)
+            elif _is_paragraph_marker(stripped):
+                marker, _, text = stripped.partition("]")
+                paragraph_attrs = self._parse_attributes(f"{marker}]")
+                paragraph, footnotes = _parse_v2_paragraph(
+                    text.strip(),
+                    span,
+                    diagnostics,
+                    metadata=paragraph_attrs,
+                )
                 blocks.append(paragraph)
                 blocks.extend(footnotes)
             elif stripped.startswith("[FIGURE"):
@@ -279,6 +291,54 @@ class V2Parser(BaseParser):
             )
             return None
         return MetadataNode(key=key, value=attrs.get("value", ""), source=span)
+
+    def _parse_designation(
+        self,
+        stripped: str,
+        span: SourceSpan,
+        diagnostics: list[Diagnostic],
+    ) -> ProjectDesignationNode | None:
+        attrs = self._parse_attributes(stripped)
+        prefix = attrs.get("prefix", "").strip()
+        specialty = attrs.get("specialty", attrs.get("specialty_code", "")).strip()
+        document = attrs.get("document", attrs.get("document_code", "")).strip()
+        missing = [
+            name
+            for name, value in (
+                ("prefix", prefix),
+                ("specialty", specialty),
+                ("document", document),
+            )
+            if not value
+        ]
+        if missing:
+            diagnostics.append(
+                Diagnostic(
+                    code=DiagnosticCodes.TXT_MALFORMED_ATTRIBUTE,
+                    message=f"DESIGNATION marker missing required attributes: {', '.join(missing)}",
+                    severity=Severity.ERROR,
+                    source=span,
+                )
+            )
+            return None
+
+        schema_code = attrs.get("schema_code")
+        schema_type = attrs.get("schema_type")
+        schema = attrs.get("schema")
+        if schema and schema_code is None and schema_type is None:
+            schema_code = schema[:1] or None
+            schema_type = schema[1:] or None
+
+        return ProjectDesignationNode(
+            prefix=prefix,
+            specialty_code=specialty,
+            group_code=attrs.get("group", attrs.get("group_code")),
+            document_code=document,
+            year=attrs.get("year"),
+            schema_code=schema_code,
+            schema_type=schema_type,
+            source=span,
+        )
 
     def _parse_heading(
         self,
@@ -952,6 +1012,10 @@ def _parse_bool(value: str | None) -> bool:
     return (value or "").strip().casefold() in {"true", "1", "yes", "да"}
 
 
+def _is_paragraph_marker(stripped: str) -> bool:
+    return stripped.startswith("[P]") or stripped.startswith("[P ")
+
+
 _FOOTNOTE_INLINE_RE = re.compile(r"\[(FN|FN_ANCHOR)\b[^\]]*\]")
 
 
@@ -959,6 +1023,7 @@ def _parse_v2_paragraph(
     text: str,
     span: SourceSpan,
     diagnostics: list[Diagnostic] | None = None,
+    metadata: dict[str, str] | None = None,
 ) -> tuple[ParagraphNode, tuple[FootnoteNode, ...]]:
     runs = []
     footnotes: list[FootnoteNode] = []
@@ -981,7 +1046,7 @@ def _parse_v2_paragraph(
         cursor = match.end()
     if cursor < len(text):
         runs.extend(_parse_inline_formatting(text[cursor:], span, diagnostics))
-    return ParagraphNode(runs=tuple(runs), source=span), tuple(footnotes)
+    return ParagraphNode(runs=tuple(runs), source=span, metadata=metadata or {}), tuple(footnotes)
 
 
 def _parse_explanatory_data(value: str | None) -> tuple[str, ...] | None:

@@ -9,11 +9,14 @@ from enum import Enum
 from pathlib import Path
 
 from sfu_converter.application import composition
+from sfu_converter.application.style_check import validate_style
+from sfu_converter.application.units import validate_unit_consistency
 from sfu_converter.config import PathConfig, SIBFUConfig
 from sfu_converter.domain.ast_nodes import BlockType, SourceSpan
 from sfu_converter.domain.diagnostics import Diagnostic, DiagnosticCodes, Severity
 from sfu_converter.domain.formatting import FormattingProfile, RuleStatus, unsupported_rule_diagnostics
 from sfu_converter.infrastructure.docx_validator import diagnostic_to_json
+from sfu_converter.infrastructure.project_designation import validate_document_designations
 from sfu_converter.parser import get_parser
 from sfu_converter.parser.syntax_spec import get_syntax_spec
 from sfu_converter.registry import get_profile, iter_profiles
@@ -377,6 +380,9 @@ def cmd_lint(args) -> int:
     diagnostics.extend(unsupported_rule_diagnostics(profile, component="renderer"))
     diagnostics.extend(unsupported_rule_diagnostics(profile, component="validator"))
     diagnostics.extend(composition.validate(result.document, profile))
+    diagnostics.extend(validate_document_designations(result.document, profile))
+    diagnostics.extend(validate_style(result.document))
+    diagnostics.extend(validate_unit_consistency(result.document))
     exit_code = _exit_code_from_diagnostics(diagnostics, strict=args.strict)
     diagnostics_json = _diagnostics_to_json(diagnostics)
     duration_ms = int((time.time() - start) * 1000)

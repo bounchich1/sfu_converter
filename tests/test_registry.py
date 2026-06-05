@@ -381,3 +381,18 @@ def test_task_20_and_21_reference_rules_are_marked_implemented():
     for rule_id in implemented:
         assert get_rule(rule_id).renderer_status is RuleStatus.IMPLEMENTED
         assert get_rule(rule_id).validator_status is RuleStatus.IMPLEMENTED
+
+
+def test_task_25_and_26_rules_are_marked_implemented():
+    implemented = {
+        "project_designations.title_block.letter_numeric_designation",
+        "project_designations.code.dictionary",
+        "project_designations.code.format",
+        "common.style.abbreviation_introduction",
+        "common.style.no_abbreviations_in_headings",
+        "common.style.unit_consistency",
+    }
+
+    for rule_id in implemented:
+        assert get_rule(rule_id).renderer_status is RuleStatus.IMPLEMENTED
+        assert get_rule(rule_id).validator_status is RuleStatus.IMPLEMENTED

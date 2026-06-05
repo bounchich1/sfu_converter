@@ -22,6 +22,7 @@ from sfu_converter.domain.ast_nodes import (
     MetadataNode,
     PageBreakNode,
     ParagraphNode,
+    ProjectDesignationNode,
     RawBlockNode,
     ReferenceNode,
     SectionSetupNode,
@@ -184,6 +185,7 @@ def test_blocknode_union_contains_all_supported_block_classes():
         TitlePageNode,
         AbbreviationsListNode,
         SectionSetupNode,
+        ProjectDesignationNode,
     }
 
 

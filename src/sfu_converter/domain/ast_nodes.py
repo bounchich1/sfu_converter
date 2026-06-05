@@ -30,6 +30,7 @@ class BlockType(Enum):
     SOURCE_RECORD = auto()
     FOOTNOTE = auto()
     SECTION_SETUP = auto()
+    PROJECT_DESIGNATION = auto()
 
 
 class HeadingLevel(Enum):
@@ -156,9 +157,12 @@ class ParagraphNode:
 
     runs: tuple[InlineNode, ...]
     source: SourceSpan | None = None
+    metadata: Mapping[str, str] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "runs", tuple(self.runs))
+        if not isinstance(self.metadata, MappingProxyType):
+            object.__setattr__(self, "metadata", MappingProxyType(dict(self.metadata)))
 
 
 @dataclass(frozen=True)
@@ -327,6 +331,18 @@ class SectionSetupNode:
 
 
 @dataclass(frozen=True)
+class ProjectDesignationNode:
+    prefix: str
+    specialty_code: str
+    group_code: str | None = None
+    document_code: str = ""
+    year: str | None = None
+    schema_code: str | None = None
+    schema_type: str | None = None
+    source: SourceSpan | None = None
+
+
+@dataclass(frozen=True)
 class PageBreakNode:
     source: SourceSpan | None = None
 
@@ -444,6 +460,7 @@ BlockNode = (
     | TitlePageNode
     | AbbreviationsListNode
     | SectionSetupNode
+    | ProjectDesignationNode
 )
 
 

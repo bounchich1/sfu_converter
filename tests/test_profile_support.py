@@ -46,9 +46,6 @@ COMMON_VALIDATOR_UNSUPPORTED_IDS: tuple[str, ...] = (
     "common.appendix.sheet_format",
     "common.referat.template",
     "common.referat.keywords_uppercase",
-    "common.style.abbreviation_introduction",
-    "common.style.no_abbreviations_in_headings",
-    "common.style.unit_consistency",
 )
 
 

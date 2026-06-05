@@ -1110,8 +1110,8 @@ COMMON_RULES: tuple[FormattingRule, ...] = (
             "pattern": "{full term} ({abbreviation})",
             "example": "информационно-аналитический комплекс (ИАК)",
         },
-        renderer_status=RuleStatus.NOT_SUPPORTED,
-        validator_status=RuleStatus.NOT_SUPPORTED,
+        renderer_status=RuleStatus.IMPLEMENTED,
+        validator_status=RuleStatus.IMPLEMENTED,
         description="Custom abbreviations are introduced at first mention as 'full term (ABBR)'",
     ),
     FormattingRule(
@@ -1120,8 +1120,8 @@ COMMON_RULES: tuple[FormattingRule, ...] = (
         source_section="List of Abbreviations",
         severity=RuleSeverity.REQUIRED,
         parameters={"forbid_in": ("section_heading", "subsection_heading", "point_heading")},
-        renderer_status=RuleStatus.NOT_SUPPORTED,
-        validator_status=RuleStatus.NOT_SUPPORTED,
+        renderer_status=RuleStatus.IMPLEMENTED,
+        validator_status=RuleStatus.IMPLEMENTED,
         description="Headings of sections/subsections/points must not contain abbreviations",
     ),
     FormattingRule(
@@ -1130,8 +1130,8 @@ COMMON_RULES: tuple[FormattingRule, ...] = (
         source_section="Text Style and Terminology",
         severity=RuleSeverity.REQUIRED,
         parameters={"standard": "GOST 8.417", "one_unit_per_quantity": True},
-        renderer_status=RuleStatus.NOT_SUPPORTED,
-        validator_status=RuleStatus.NOT_SUPPORTED,
+        renderer_status=RuleStatus.IMPLEMENTED,
+        validator_status=RuleStatus.IMPLEMENTED,
         description="The same parameter must use the same unit throughout the document (ГОСТ 8.417)",
     ),
 )
@@ -1944,8 +1944,8 @@ PROJECT_DESIGNATION_RULES: tuple[FormattingRule, ...] = (
         source_section="Letter-Numeric Designation",
         severity=RuleSeverity.REQUIRED,
         parameters={"title_block_field": 2, "may_include_year": True},
-        renderer_status=RuleStatus.NOT_SUPPORTED,
-        validator_status=RuleStatus.NOT_SUPPORTED,
+        renderer_status=RuleStatus.IMPLEMENTED,
+        validator_status=RuleStatus.IMPLEMENTED,
         description="Diploma/course project materials receive a letter-numeric designation in title-block field 2",
     ),
     FormattingRule(
@@ -2002,8 +2002,8 @@ PROJECT_DESIGNATION_RULES: tuple[FormattingRule, ...] = (
             "scheme_type_codes": ("Э", "Г", "П", "К", "В", "Л", "Р", "Е", "С"),
             "scheme_subtype_numbers": ("1", "2", "3", "4", "5", "6", "7", "0"),
         },
-        renderer_status=RuleStatus.NOT_SUPPORTED,
-        validator_status=RuleStatus.NOT_SUPPORTED,
+        renderer_status=RuleStatus.IMPLEMENTED,
+        validator_status=RuleStatus.IMPLEMENTED,
         description="Full enum of document codes from Приложение Х plus scheme type/subtype codes",
     ),
     FormattingRule(
@@ -2014,8 +2014,8 @@ PROJECT_DESIGNATION_RULES: tuple[FormattingRule, ...] = (
         parameters={
             "pattern": r"^[А-Я]{2,3}[-–—] ?\d{2}\.\d{2}\.\d{2}( ?\w+){0,3}( [А-Я]{1,3})?$",
         },
-        renderer_status=RuleStatus.NOT_SUPPORTED,
-        validator_status=RuleStatus.NOT_SUPPORTED,
+        renderer_status=RuleStatus.IMPLEMENTED,
+        validator_status=RuleStatus.IMPLEMENTED,
         description="Project designation regex covering work code, specialty, optional fields, and document code",
     ),
     FormattingRule(

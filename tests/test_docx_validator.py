@@ -28,6 +28,7 @@ from sfu_converter.infrastructure.docx_validator import (
     _spacing_value,
     diagnostic_to_json,
 )
+from sfu_converter.infrastructure.main_inscription import render as render_main_inscription
 from sfu_converter.parser import V2Parser
 from sfu_converter.registry import get_profile
 
@@ -88,7 +89,7 @@ def test_docx_validator_reports_common_unsupported_validator_rules(tmp_path):
         if diagnostic.code == DiagnosticCodes.FORMAT_RULE_NOT_SUPPORTED
     ]
 
-    assert len(unsupported) == 21
+    assert len(unsupported) == 18
     assert all(diagnostic.severity is Severity.WARNING for diagnostic in unsupported)
     assert all("not supported by the validator" in diagnostic.message for diagnostic in unsupported)
     unsupported_ids = {diagnostic.rule_id for diagnostic in unsupported}
@@ -123,6 +124,9 @@ def test_docx_validator_reports_common_unsupported_validator_rules(tmp_path):
     assert "common.reference.cross_check" not in unsupported_ids
     assert "common.reference.figure_table_formula" not in unsupported_ids
     assert "common.appendix.in_text_reference" not in unsupported_ids
+    assert "common.style.abbreviation_introduction" not in unsupported_ids
+    assert "common.style.no_abbreviations_in_headings" not in unsupported_ids
+    assert "common.style.unit_consistency" not in unsupported_ids
 
     payload = diagnostic_to_json(unsupported[0])
     assert payload["ruleId"] == unsupported[0].rule_id
@@ -635,6 +639,21 @@ def test_docx_validator_reports_missing_coursework_frame(tmp_path):
     assert any(
         diagnostic.code == "FRAME_MISSING"
         and diagnostic.rule_id == "coursework.frame.course_project_explanatory_note"
+        for diagnostic in diagnostics
+    )
+
+
+def test_docx_validator_warns_when_project_title_block_graph_two_is_empty(tmp_path):
+    doc = Document()
+    render_main_inscription(doc, "form_1", fields={"1": "Пояснительная записка"})
+    path = _save_doc(tmp_path, doc, "empty_designation.docx")
+
+    diagnostics = DocxValidator(get_profile("coursework")).validate_file(str(path))
+
+    assert any(
+        diagnostic.code == DiagnosticCodes.PROJECT_DESIGNATION_MISSING
+        and diagnostic.severity is Severity.WARNING
+        and diagnostic.rule_id == "project_designations.title_block.letter_numeric_designation"
         for diagnostic in diagnostics
     )
 

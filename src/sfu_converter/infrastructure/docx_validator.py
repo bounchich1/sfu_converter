@@ -19,6 +19,7 @@ from sfu_converter.infrastructure.frames import has_frame
 from sfu_converter.infrastructure.formula_layout import OPERATOR_SIGNS
 from sfu_converter.infrastructure.list_layout import RUSSIAN_LIST_LETTER_INDEX
 from sfu_converter.infrastructure.paragraph_roles import ParagraphRole, classify
+from sfu_converter.infrastructure.project_designation import validate_designation_text
 from sfu_converter.infrastructure import docx_styles
 from sfu_converter.registry import get_profile, get_rule
 
@@ -585,6 +586,18 @@ class DocxValidator:
                     message="Graphic sheet must include a frame and form 5/6 title block",
                     rule_id="graphic_and_demonstration_materials.sheet.frame",
                 )
+
+        if "project_designations.title_block.letter_numeric_designation" in rule_ids:
+            self._validate_project_designation_graphs(doc)
+
+    def _validate_project_designation_graphs(self, doc) -> None:
+        title_blocks = _main_inscription_tables(doc)
+        if not title_blocks:
+            self.diagnostics.extend(validate_designation_text(""))
+            return
+        for table in title_blocks:
+            graph_2 = _main_inscription_graph_text(table, 2)
+            self.diagnostics.extend(validate_designation_text(graph_2))
 
     def _validate_table(self, table, table_index: int) -> None:
         if _style_name(table) == docx_styles.ABBREVIATIONS_TABLE:
@@ -1169,14 +1182,30 @@ def _list_marker(text: str) -> str | None:
 
 def _main_inscription_forms(doc) -> set[str]:
     forms: set[str] = set()
-    for table in doc.tables:
-        if not table.rows or not table.rows[0].cells:
-            continue
+    for table in _main_inscription_tables(doc):
         text = table.rows[0].cells[0].text.casefold()
         match = re.search(r"форма\s+(form_[1-6])", text)
         if match is not None:
             forms.add(match.group(1))
     return forms
+
+
+def _main_inscription_tables(doc) -> list[object]:
+    tables = []
+    for table in doc.tables:
+        if not table.rows or not table.rows[0].cells:
+            continue
+        text = table.rows[0].cells[0].text.casefold()
+        if re.search(r"форма\s+form_[1-6]", text):
+            tables.append(table)
+    return tables
+
+
+def _main_inscription_graph_text(table, graph_number: int) -> str:
+    index = graph_number - 1
+    if len(table.rows) <= index or len(table.rows[index].cells) < 2:
+        return ""
+    return table.rows[index].cells[1].text.strip()
 
 
 def _formula_body_text(text: str) -> str:
