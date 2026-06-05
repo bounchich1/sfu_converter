@@ -34,13 +34,9 @@ COMMON_VALIDATOR_UNSUPPORTED_IDS: tuple[str, ...] = (
     "common.figure.spacing_after",
     "common.formula.spacing_before",
     "common.formula.spacing_after",
-    "common.page.margins.landscape",
     "common.heading.no_hyphenation",
     "common.heading.two_sentence_separator",
     "common.heading.point_requires_subpoints",
-    "common.list.lettered",
-    "common.list.nested_numeric",
-    "common.list.marker_alphabetical",
     "common.formula.cross_reference",
     "common.table.section_numbering",
     "common.table.appendix_numbering",
@@ -136,7 +132,8 @@ def test_support_diagnostics_for_coursework_includes_known_unsupported_rules():
     diagnostics = support_diagnostics(get_profile("coursework"), target="renderer")
     rule_ids = {diag.rule_id for diag in diagnostics}
 
-    assert "coursework.frame.course_project_explanatory_note" in rule_ids
+    assert "coursework.frame.course_project_explanatory_note" not in rule_ids
+    assert "coursework.title_block.field_2_designation" in rule_ids
 
 
 def test_diagnostic_round_trips_target_and_source_data():

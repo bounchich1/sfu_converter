@@ -93,7 +93,7 @@ def register_styles(document) -> None:
     _register(document, APPENDIX_HEADING, base="Normal", bold=True,
               alignment=WD_ALIGN_PARAGRAPH.CENTER, first_line_indent=Cm(0),
               outline_level=0)
-    _register(document, FRAME_MAIN_INSCRIPTION, base="Normal")
+    _register_table(document, FRAME_MAIN_INSCRIPTION)
 
 
 def apply_word_heading_style(document, paragraph, style_name: str) -> None:

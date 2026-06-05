@@ -1,4 +1,5 @@
 from docx import Document
+from docx.enum.section import WD_ORIENT
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
@@ -87,7 +88,7 @@ def test_docx_validator_reports_common_unsupported_validator_rules(tmp_path):
         if diagnostic.code == DiagnosticCodes.FORMAT_RULE_NOT_SUPPORTED
     ]
 
-    assert len(unsupported) == 25
+    assert len(unsupported) == 21
     assert all(diagnostic.severity is Severity.WARNING for diagnostic in unsupported)
     assert all("not supported by the validator" in diagnostic.message for diagnostic in unsupported)
     unsupported_ids = {diagnostic.rule_id for diagnostic in unsupported}
@@ -105,6 +106,10 @@ def test_docx_validator_reports_common_unsupported_validator_rules(tmp_path):
     assert "common.formula.consecutive_comma" not in unsupported_ids
     assert "common.heading.h4" not in unsupported_ids
     assert "common.list.item" not in unsupported_ids
+    assert "common.list.lettered" not in unsupported_ids
+    assert "common.list.nested_numeric" not in unsupported_ids
+    assert "common.list.marker_alphabetical" not in unsupported_ids
+    assert "common.page.margins.landscape" not in unsupported_ids
     assert "common.bibliography.entry" not in unsupported_ids
     assert "common.bibliography.gost_record" not in unsupported_ids
     assert "common.bibliography.gost_abbreviations" not in unsupported_ids
@@ -556,6 +561,84 @@ def test_docx_validator_accepts_generated_table_unit_label_at_12pt(tmp_path):
     )
 
 
+def test_docx_validator_reports_list_marker_errors(tmp_path):
+    doc = Document()
+    docx_styles.register_styles(doc)
+    good = _list_paragraph(doc, "а) первый", left_indent_cm=1.25)
+    skipped = _list_paragraph(doc, "в) третий", left_indent_cm=1.25)
+    disallowed = _list_paragraph(doc, "й) запрещенная буква", left_indent_cm=1.25)
+    for paragraph in (good, skipped, disallowed):
+        paragraph.style = doc.styles[docx_styles.LIST_ITEM]
+    path = _save_doc(tmp_path, doc, "bad_list_markers.docx")
+
+    diagnostics = DocxValidator(get_profile("common")).validate_file(str(path))
+
+    assert any(
+        diagnostic.code == "LIST_MARKER_OUT_OF_ORDER"
+        and diagnostic.rule_id == "common.list.marker_alphabetical"
+        for diagnostic in diagnostics
+    )
+    assert any(
+        diagnostic.code == "LIST_MARKER_DISALLOWED_LETTER"
+        and diagnostic.rule_id == "common.list.lettered"
+        for diagnostic in diagnostics
+    )
+
+
+def test_docx_validator_reports_bad_nested_numeric_indent(tmp_path):
+    doc = Document()
+    docx_styles.register_styles(doc)
+    parent = _list_paragraph(doc, "а) основной пункт", left_indent_cm=1.25)
+    nested = _list_paragraph(doc, "1) вложенный пункт", left_indent_cm=1.40)
+    parent.style = doc.styles[docx_styles.LIST_ITEM]
+    nested.style = doc.styles[docx_styles.LIST_ITEM]
+    path = _save_doc(tmp_path, doc, "bad_nested_indent.docx")
+
+    diagnostics = DocxValidator(get_profile("common")).validate_file(str(path))
+
+    assert any(
+        diagnostic.code == "LIST_NESTED_NUMERIC_INDENT"
+        and diagnostic.rule_id == "common.list.nested_numeric"
+        for diagnostic in diagnostics
+    )
+
+
+def test_docx_validator_uses_landscape_margin_rule_for_landscape_sections(tmp_path):
+    doc = Document()
+    section = doc.sections[0]
+    section.orientation = WD_ORIENT.LANDSCAPE
+    section.page_width = Cm(29.7)
+    section.page_height = Cm(21)
+    section.left_margin = Cm(2)
+    section.right_margin = Cm(2)
+    section.top_margin = Cm(2)
+    section.bottom_margin = Cm(1)
+    _body_paragraph(doc)
+    path = _save_doc(tmp_path, doc, "bad_landscape.docx")
+
+    diagnostics = DocxValidator(get_profile("common")).validate_file(str(path))
+
+    assert any(
+        diagnostic.code == DiagnosticCodes.FORMAT_MARGIN_TOP
+        and diagnostic.rule_id == "common.page.margins.landscape"
+        for diagnostic in diagnostics
+    )
+
+
+def test_docx_validator_reports_missing_coursework_frame(tmp_path):
+    doc = Document()
+    _body_paragraph(doc)
+    path = _save_doc(tmp_path, doc, "unframed_coursework.docx")
+
+    diagnostics = DocxValidator(get_profile("coursework")).validate_file(str(path))
+
+    assert any(
+        diagnostic.code == "FRAME_MISSING"
+        and diagnostic.rule_id == "coursework.frame.course_project_explanatory_note"
+        for diagnostic in diagnostics
+    )
+
+
 def _special_paragraph(doc, text, alignment, *, indent_cm: float):
     paragraph = doc.add_paragraph(text)
     paragraph.paragraph_format.alignment = alignment
@@ -567,4 +650,10 @@ def _special_paragraph(doc, text, alignment, *, indent_cm: float):
     run.font.name = "Times New Roman"
     run.font.size = Pt(14)
     run.font.color.rgb = RGBColor(0, 0, 0)
+    return paragraph
+
+
+def _list_paragraph(doc, text, *, left_indent_cm: float):
+    paragraph = _special_paragraph(doc, text, WD_ALIGN_PARAGRAPH.JUSTIFY, indent_cm=-0.5)
+    paragraph.paragraph_format.left_indent = Cm(left_indent_cm)
     return paragraph

@@ -29,6 +29,7 @@ class BlockType(Enum):
     ABBREVIATIONS_LIST = auto()
     SOURCE_RECORD = auto()
     FOOTNOTE = auto()
+    SECTION_SETUP = auto()
 
 
 class HeadingLevel(Enum):
@@ -53,6 +54,36 @@ class ListType(Enum):
     BULLET = auto()
     NUMBERED = auto()
     LETTERED = auto()
+
+
+class SectionOrientation(str, Enum):
+    PORTRAIT = "portrait"
+    LANDSCAPE = "landscape"
+
+
+class SheetFormat(str, Enum):
+    A4 = "A4"
+    A3 = "A3"
+    A3X4 = "A3x4"
+    A4X4 = "A4x4"
+    A2 = "A2"
+    A1 = "A1"
+
+
+class FrameType(str, Enum):
+    NONE = "none"
+    TEXT_FIRST = "text_first"
+    TEXT_FOLLOWING = "text_following"
+    GRAPHIC = "graphic"
+
+
+class TitleBlockForm(str, Enum):
+    FORM_1 = "form_1"
+    FORM_2 = "form_2"
+    FORM_3 = "form_3"
+    FORM_4 = "form_4"
+    FORM_5 = "form_5"
+    FORM_6 = "form_6"
 
 
 class ContinuationLabel(Enum):
@@ -265,17 +296,34 @@ class FormulaNode:
 @dataclass(frozen=True)
 class ListItemNode:
     text: str
+    children: tuple["ListNode", ...] = ()
     source: SourceSpan | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "children", tuple(self.children))
 
 
 @dataclass(frozen=True)
 class ListNode:
     list_type: ListType
-    items: tuple[ListItemNode, ...]
+    items: tuple[ListItemNode | "ListNode", ...]
     source: SourceSpan | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "items", tuple(self.items))
+
+
+@dataclass(frozen=True)
+class SectionSetupNode:
+    orientation: SectionOrientation = SectionOrientation.PORTRAIT
+    sheet_format: SheetFormat = SheetFormat.A4
+    frame: FrameType = FrameType.NONE
+    title_block_form: TitleBlockForm | None = None
+    blocks: tuple["BlockNode", ...] = ()
+    source: SourceSpan | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "blocks", tuple(self.blocks))
 
 
 @dataclass(frozen=True)
@@ -395,6 +443,7 @@ BlockNode = (
     | TableOfContentsNode
     | TitlePageNode
     | AbbreviationsListNode
+    | SectionSetupNode
 )
 
 

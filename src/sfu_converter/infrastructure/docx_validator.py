@@ -6,6 +6,7 @@ from pathlib import Path
 from zipfile import ZipFile
 
 from docx import Document
+from docx.enum.section import WD_ORIENT
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Cm
 from docx.oxml.ns import qn
@@ -14,7 +15,9 @@ from sfu_converter.config import SIBFUConfig
 from sfu_converter.domain.ast_nodes import SourceSpan
 from sfu_converter.domain.diagnostics import Diagnostic, DiagnosticCodes, Severity
 from sfu_converter.domain.formatting import FormattingProfile, FormattingRule, unsupported_rule_diagnostics
+from sfu_converter.infrastructure.frames import has_frame
 from sfu_converter.infrastructure.formula_layout import OPERATOR_SIGNS
+from sfu_converter.infrastructure.list_layout import RUSSIAN_LIST_LETTER_INDEX
 from sfu_converter.infrastructure.paragraph_roles import ParagraphRole, classify
 from sfu_converter.infrastructure import docx_styles
 from sfu_converter.registry import get_profile, get_rule
@@ -87,6 +90,8 @@ class DocxValidator:
         self._seen_formula_symbols: set[str] = set()
         self._previous_non_empty_role: ParagraphRole | None = None
         self._previous_non_empty_paragraph = None
+        self._list_expected_letter_by_indent: dict[float, int] = {}
+        self._last_letter_indent_cm: float | None = None
 
         paragraphs = list(doc.paragraphs)
         for index, paragraph in enumerate(paragraphs, start=1):
@@ -99,6 +104,7 @@ class DocxValidator:
                 self._previous_non_empty_paragraph = paragraph
 
         self._validate_toc(paragraphs)
+        self._validate_frame_requirements(doc)
 
         for table_index, table in enumerate(doc.tables, start=1):
             self._validate_table(table, table_index)
@@ -190,8 +196,6 @@ class DocxValidator:
                         )
 
     def _validate_margins(self, doc) -> None:
-        rule_id = "common.page.margins.portrait"
-        params = self._rule(rule_id).parameters
         checks = (
             ("top_margin", "top_mm", DiagnosticCodes.FORMAT_MARGIN_TOP, "Top"),
             ("bottom_margin", "bottom_mm", DiagnosticCodes.FORMAT_MARGIN_BOTTOM, "Bottom"),
@@ -200,6 +204,8 @@ class DocxValidator:
         )
 
         for section_index, section in enumerate(doc.sections, start=1):
+            rule_id = _margin_rule_id(section)
+            params = self._rule(rule_id).parameters
             for attr_name, param_name, code, label in checks:
                 actual = getattr(section, attr_name)
                 expected = Cm(params[param_name] / 10)
@@ -268,7 +274,7 @@ class DocxValidator:
             self._validate_figure_caption_semantics(paragraph, index)
             return
         if role is ParagraphRole.LIST_ITEM:
-            self._validate_styled_paragraph(paragraph, index, "common.list.item")
+            self._validate_list_paragraph(paragraph, index)
             return
         if role is ParagraphRole.FORMULA_BODY:
             self._validate_styled_paragraph(paragraph, index, "common.formula.body")
@@ -330,6 +336,99 @@ class DocxValidator:
             expected=self._rule("common.text.alignment").parameters["alignment"],
         )
         self._validate_paragraph_spacing(paragraph, index, "common.text.line_spacing")
+
+    def _validate_list_paragraph(self, paragraph, index: int) -> None:
+        rule_id = "common.list.item"
+        params = self._rule(rule_id).parameters
+        if "line_spacing" in params:
+            self._validate_line_spacing(paragraph, index, rule_id=rule_id, expected=params["line_spacing"])
+        if "alignment" in params:
+            self._validate_alignment(paragraph, index, rule_id=rule_id, expected=params["alignment"])
+        self._validate_paragraph_spacing(paragraph, index, rule_id)
+        self._validate_list_indent(paragraph, index)
+        self._validate_list_marker_semantics(paragraph, index)
+
+    def _validate_list_indent(self, paragraph, index: int) -> None:
+        left_indent = paragraph.paragraph_format.left_indent
+        first_line_indent = paragraph.paragraph_format.first_line_indent
+        if left_indent is None:
+            return
+        marker = _list_marker(paragraph.text)
+        expected_left = Cm(1.75) if marker and marker[:-1].isdigit() else Cm(1.25)
+        if abs(left_indent - expected_left) > _LENGTH_TOLERANCE_EMU:
+            self._add(
+                code=DiagnosticCodes.FORMAT_INDENT,
+                message=(
+                    f"Paragraph {index}: list left indent {left_indent.cm:.2f} cm, "
+                    f"expected {expected_left.cm:.2f} cm"
+                ),
+                rule_id="common.list.item",
+                source=SourceSpan(index, index),
+            )
+        if first_line_indent is not None and abs(first_line_indent - Cm(-0.5)) > _LENGTH_TOLERANCE_EMU:
+            self._add(
+                code=DiagnosticCodes.FORMAT_INDENT,
+                message=(
+                    f"Paragraph {index}: list hanging indent {first_line_indent.cm:.2f} cm, "
+                    "expected -0.50 cm"
+                ),
+                rule_id="common.list.item",
+                source=SourceSpan(index, index),
+            )
+
+    def _validate_list_marker_semantics(self, paragraph, index: int) -> None:
+        marker = _list_marker(paragraph.text)
+        if marker is None:
+            return
+
+        if marker == "-":
+            self._last_letter_indent_cm = None
+            return
+
+        marker_value = marker[:-1].casefold()
+        left_indent = paragraph.paragraph_format.left_indent
+        indent_cm = round(left_indent.cm if left_indent is not None else 0, 2)
+
+        if marker_value.isdigit():
+            self._validate_nested_numeric_indent(paragraph, index, indent_cm)
+            return
+
+        if marker_value not in RUSSIAN_LIST_LETTER_INDEX:
+            self._add(
+                code="LIST_MARKER_DISALLOWED_LETTER",
+                message=f"Paragraph {index}: lettered list marker '{marker}' is not allowed",
+                rule_id="common.list.lettered",
+                source=SourceSpan(index, index),
+            )
+            return
+
+        expected_index = self._list_expected_letter_by_indent.get(indent_cm, 0)
+        actual_index = RUSSIAN_LIST_LETTER_INDEX[marker_value]
+        if actual_index != expected_index:
+            self._add(
+                code="LIST_MARKER_OUT_OF_ORDER",
+                message=f"Paragraph {index}: lettered list marker '{marker}' is out of order",
+                rule_id="common.list.marker_alphabetical",
+                source=SourceSpan(index, index),
+            )
+        self._list_expected_letter_by_indent[indent_cm] = actual_index + 1
+        self._last_letter_indent_cm = indent_cm
+
+    def _validate_nested_numeric_indent(self, paragraph, index: int, indent_cm: float) -> None:
+        if self._last_letter_indent_cm is None:
+            return
+        expected = self._last_letter_indent_cm + 0.5
+        if abs(indent_cm - expected) <= 0.05:
+            return
+        self._add(
+            code="LIST_NESTED_NUMERIC_INDENT",
+            message=(
+                f"Paragraph {index}: nested numeric list indent {indent_cm:.2f} cm, "
+                f"expected {expected:.2f} cm"
+            ),
+            rule_id="common.list.nested_numeric",
+            source=SourceSpan(index, index),
+        )
 
     def _validate_heading(self, paragraph, index: int, role: ParagraphRole | None = None) -> None:
         if role is None or role not in _HEADING_RULE_BY_ROLE:
@@ -455,6 +554,37 @@ class DocxValidator:
             message=f"TOC must include grouped appendix entry '{expected}'",
             rule_id="common.toc.appendix_grouping",
         )
+
+    def _validate_frame_requirements(self, doc) -> None:
+        rule_ids = {rule.id for rule in self.profile.rules}
+        framed = has_frame(doc)
+        forms = _main_inscription_forms(doc)
+
+        if "coursework.frame.course_project_explanatory_note" in rule_ids:
+            if not framed or not forms.intersection({"form_1", "form_2", "form_3", "form_4"}):
+                self._add(
+                    code="FRAME_MISSING",
+                    message="Coursework explanatory note must include a frame and form 1/3 title block",
+                    rule_id="coursework.frame.course_project_explanatory_note",
+                )
+
+        if "project_designations.explanatory_note.frame" in rule_ids and not framed:
+            self._add(
+                code="FRAME_MISSING",
+                message="Project explanatory note must include a framed sheet",
+                rule_id="project_designations.explanatory_note.frame",
+            )
+
+        if (
+            "graphic_and_demonstration_materials.sheet.frame" in rule_ids
+            and self.profile.name == "graphic_and_demonstration_materials"
+        ):
+            if not framed or not forms.intersection({"form_5", "form_6"}):
+                self._add(
+                    code="FRAME_MISSING",
+                    message="Graphic sheet must include a frame and form 5/6 title block",
+                    rule_id="graphic_and_demonstration_materials.sheet.frame",
+                )
 
     def _validate_table(self, table, table_index: int) -> None:
         if _style_name(table) == docx_styles.ABBREVIATIONS_TABLE:
@@ -1016,6 +1146,37 @@ def _diagnostic_source(diagnostic: Diagnostic) -> dict[str, object]:
 
 def _source_for_index(index) -> SourceSpan | None:
     return SourceSpan(index, index) if isinstance(index, int) else None
+
+
+def _margin_rule_id(section) -> str:
+    if section.orientation == WD_ORIENT.LANDSCAPE or section.page_width > section.page_height:
+        return "common.page.margins.landscape"
+    return "common.page.margins.portrait"
+
+
+_LIST_MARKER_RE = re.compile(r"^\s*(?P<marker>(?:[а-яА-Я]|\d+)\)|[-—–])\s+")
+
+
+def _list_marker(text: str) -> str | None:
+    match = _LIST_MARKER_RE.match(text or "")
+    if match is None:
+        return None
+    marker = match.group("marker").replace("—", "-").replace("–", "-")
+    if marker == "-":
+        return marker
+    return marker.casefold()
+
+
+def _main_inscription_forms(doc) -> set[str]:
+    forms: set[str] = set()
+    for table in doc.tables:
+        if not table.rows or not table.rows[0].cells:
+            continue
+        text = table.rows[0].cells[0].text.casefold()
+        match = re.search(r"форма\s+(form_[1-6])", text)
+        if match is not None:
+            forms.add(match.group(1))
+    return forms
 
 
 def _formula_body_text(text: str) -> str:

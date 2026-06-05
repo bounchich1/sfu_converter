@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from dataclasses import replace
 
 from sfu_converter.domain.ast_nodes import (
     AbbreviationEntryNode,
@@ -14,6 +15,7 @@ from sfu_converter.domain.ast_nodes import (
     FootnoteNode,
     FormulaNode,
     FormulaSymbol,
+    FrameType,
     HeadingLevel,
     HeadingNode,
     ListItemNode,
@@ -24,11 +26,15 @@ from sfu_converter.domain.ast_nodes import (
     ParagraphNode,
     RawBlockNode,
     ReferenceNode,
+    SectionOrientation,
+    SectionSetupNode,
+    SheetFormat,
     SourceSpan,
     SourceRecordNode,
     SourceRecordType,
     TableNote,
     TableNode,
+    TitleBlockForm,
 )
 from sfu_converter.domain.diagnostics import Diagnostic, DiagnosticCodes, Severity
 from sfu_converter.parser.attributes import parse_attributes
@@ -68,6 +74,8 @@ _KNOWN_V2_MARKERS = (
     "[REF",
     "[SOURCE",
     "[/SOURCE]",
+    "[SECTION",
+    "[/SECTION]",
     "[TABLE",
     "[TABLE_END]",
     "[TABLE_NOTE",
@@ -184,6 +192,15 @@ class V2Parser(BaseParser):
                 diagnostics.extend(footnote_diagnostics)
                 if footnote is not None:
                     blocks.append(footnote)
+                i = end_index
+            elif stripped.startswith("[SECTION"):
+                section, section_diagnostics, end_index = self._parse_section_setup(
+                    lines,
+                    i,
+                    filename,
+                )
+                diagnostics.extend(section_diagnostics)
+                blocks.append(section)
                 i = end_index
             elif stripped == "[PAGE_BREAK]":
                 blocks.append(PageBreakNode(source=span))
@@ -501,6 +518,23 @@ class V2Parser(BaseParser):
             if stripped.startswith("[LIST_END]"):
                 found_end = True
                 break
+            if stripped.startswith("[LIST"):
+                nested, nested_diagnostics, nested_end = self._parse_list(lines, i, filename)
+                diagnostics.extend(nested_diagnostics)
+                if nested is not None and items:
+                    last_item = items[-1]
+                    items[-1] = replace(last_item, children=(*last_item.children, nested))
+                elif nested is not None:
+                    diagnostics.append(
+                        Diagnostic(
+                            code=DiagnosticCodes.TXT_MALFORMED_ATTRIBUTE,
+                            message="Nested LIST must follow a list item",
+                            severity=Severity.ERROR,
+                            source=span,
+                        )
+                    )
+                i = nested_end + 1
+                continue
             match = _EXPLICIT_LIST_ITEM_RE.fullmatch(stripped)
             if match is not None:
                 items.append(ListItemNode(text=match.group(1).strip(), source=span))
@@ -699,6 +733,57 @@ class V2Parser(BaseParser):
             ),
             diagnostics,
             i,
+        )
+
+    def _parse_section_setup(
+        self,
+        lines: list[str],
+        start_index: int,
+        filename: str | None,
+    ) -> tuple[SectionSetupNode, list[Diagnostic], int]:
+        diagnostics: list[Diagnostic] = []
+        stripped = lines[start_index].strip()
+        start_span = _span_for_line(lines[start_index], start_index, filename)
+        attrs = self._parse_attributes(stripped)
+
+        body_lines: list[str] = []
+        i = start_index + 1
+        found_end = False
+        while i < len(lines):
+            if lines[i].strip() == "[/SECTION]":
+                found_end = True
+                break
+            body_lines.append(lines[i])
+            i += 1
+
+        if not found_end:
+            diagnostics.append(
+                Diagnostic(
+                    code=DiagnosticCodes.TXT_MISSING_BLOCK_END,
+                    message="SECTION without matching /SECTION",
+                    severity=Severity.ERROR,
+                    source=start_span,
+                )
+            )
+
+        nested_result = V2Parser(strict=self.strict).parse("\n".join(body_lines), filename=filename)
+        diagnostics.extend(nested_result.diagnostics)
+        end_index = i if found_end else len(lines) - 1
+        return (
+            SectionSetupNode(
+                orientation=_parse_section_orientation(attrs.get("orientation")),
+                sheet_format=_parse_sheet_format(attrs.get("sheet")),
+                frame=_parse_frame_type(attrs.get("frame")),
+                title_block_form=_parse_title_block_form(attrs.get("form")),
+                blocks=nested_result.document.blocks,
+                source=SourceSpan(
+                    line_start=start_span.line_start,
+                    line_end=end_index + 1,
+                    filename=filename,
+                ),
+            ),
+            diagnostics,
+            end_index,
         )
 
     def _parse_footnote_body(
@@ -954,3 +1039,37 @@ def _parse_column_units(value: str | None) -> tuple[str | None, ...]:
         unit = item.strip()
         units.append(None if unit in {"", "-"} else unit)
     return tuple(units)
+
+
+def _parse_section_orientation(value: str | None) -> SectionOrientation:
+    normalized = (value or SectionOrientation.PORTRAIT.value).strip().casefold()
+    for orientation in SectionOrientation:
+        if normalized == orientation.value:
+            return orientation
+    return SectionOrientation.PORTRAIT
+
+
+def _parse_sheet_format(value: str | None) -> SheetFormat:
+    normalized = (value or SheetFormat.A4.value).strip().replace("×", "x").casefold()
+    for sheet_format in SheetFormat:
+        if normalized == sheet_format.value.casefold():
+            return sheet_format
+    return SheetFormat.A4
+
+
+def _parse_frame_type(value: str | None) -> FrameType:
+    normalized = (value or FrameType.NONE.value).strip().casefold()
+    for frame_type in FrameType:
+        if normalized == frame_type.value:
+            return frame_type
+    return FrameType.NONE
+
+
+def _parse_title_block_form(value: str | None) -> TitleBlockForm | None:
+    if value is None:
+        return None
+    normalized = value.strip().casefold()
+    for form in TitleBlockForm:
+        if normalized == form.value:
+            return form
+    return None

@@ -12,6 +12,7 @@ from sfu_converter.domain.ast_nodes import (
     Document,
     FormulaNode,
     FigureNode,
+    FrameType,
     HeadingLevel,
     HeadingNode,
     ListItemNode,
@@ -22,6 +23,9 @@ from sfu_converter.domain.ast_nodes import (
     ParagraphNode,
     RawBlockNode,
     ReferenceNode,
+    SectionOrientation,
+    SectionSetupNode,
+    SheetFormat,
     StructuralSectionNode,
     StructuralSectionType,
     TableCaptionNode,
@@ -31,6 +35,7 @@ from sfu_converter.domain.ast_nodes import (
     TableRow,
     TextRun,
     TitlePageNode,
+    TitleBlockForm,
 )
 from sfu_converter.domain.diagnostics import DiagnosticCodes
 from sfu_converter.domain.formatting import FormattingProfile, FormattingRule, RuleSeverity, RuleStatus
@@ -294,8 +299,75 @@ def test_docx_renderer_renders_list_items_with_sfu_markers_and_formatting(tmp_pa
     ]
     for paragraph in paragraphs:
         assert paragraph.paragraph_format.alignment == WD_ALIGN_PARAGRAPH.JUSTIFY
-        assert_close(paragraph.paragraph_format.first_line_indent, Cm(1.25))
+        assert_close(paragraph.paragraph_format.left_indent, Cm(1.25))
+        assert_close(paragraph.paragraph_format.first_line_indent, Cm(-0.5))
         assert paragraph.paragraph_format.line_spacing == 1.5
+
+
+def test_docx_renderer_renders_nested_numeric_list_with_extra_indent(tmp_path):
+    renderer = DocxRenderer(config_class=SIBFUConfig, base_dir=tmp_path)
+    ast = Document(
+        blocks=(
+            ListNode(
+                list_type=ListType.LETTERED,
+                items=(
+                    ListItemNode(
+                        "основной пункт",
+                        children=(
+                            ListNode(
+                                list_type=ListType.NUMBERED,
+                                items=(ListItemNode("вложенный пункт"),),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
+    )
+    output_path = tmp_path / "nested-list.docx"
+
+    renderer.render_to_file(ast, _common_profile(), str(output_path))
+
+    doc = DocxDocument(str(output_path))
+    paragraphs = [paragraph for paragraph in doc.paragraphs if paragraph.text]
+    assert [paragraph.text for paragraph in paragraphs] == [
+        "а) основной пункт.",
+        "1) вложенный пункт.",
+    ]
+    assert_close(paragraphs[0].paragraph_format.left_indent, Cm(1.25))
+    assert_close(paragraphs[1].paragraph_format.left_indent, Cm(1.75))
+    assert_close(paragraphs[1].paragraph_format.first_line_indent, Cm(-0.5))
+
+
+def test_docx_renderer_renders_section_setup_frame_and_main_inscription(tmp_path):
+    renderer = DocxRenderer(config_class=SIBFUConfig, base_dir=tmp_path)
+    ast = Document(
+        metadata={"title_block_1": "Пояснительная записка", "title_block_2": "КП-01.02.03 ПЗ"},
+        blocks=(
+            SectionSetupNode(
+                orientation=SectionOrientation.LANDSCAPE,
+                sheet_format=SheetFormat.A3,
+                frame=FrameType.TEXT_FIRST,
+                title_block_form=TitleBlockForm.FORM_1,
+                blocks=(ParagraphNode(runs=(TextRun("Framed body"),)),),
+            ),
+        ),
+    )
+    output_path = tmp_path / "framed-section.docx"
+
+    renderer.render_to_file(ast, _common_profile(), str(output_path))
+
+    doc = DocxDocument(str(output_path))
+    section = doc.sections[0]
+    assert section.orientation.name == "LANDSCAPE"
+    assert_close(section.left_margin, Cm(2))
+    assert_close(section.right_margin, Cm(2))
+    assert_close(section.top_margin, Cm(3))
+    assert_close(section.bottom_margin, Cm(1))
+    assert "Framed body" in [paragraph.text for paragraph in doc.paragraphs]
+    assert "w:pgBorders" in section._sectPr.xml
+    assert any("Форма form_1" in table.cell(0, 0).text for table in doc.tables)
+    assert any(" PAGE " in table._tbl.xml for table in doc.tables)
 
 
 def test_docx_renderer_adds_page_numbering_to_default_footer(tmp_path):

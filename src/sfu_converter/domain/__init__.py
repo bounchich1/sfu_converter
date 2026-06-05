@@ -9,6 +9,7 @@ from .ast_nodes import (
     FigureNode,
     FormulaNode,
     FormulaSymbol,
+    FrameType,
     HeadingLevel,
     HeadingNode,
     ListItemNode,
@@ -19,6 +20,9 @@ from .ast_nodes import (
     ParagraphNode,
     RawBlockNode,
     ReferenceNode,
+    SectionOrientation,
+    SectionSetupNode,
+    SheetFormat,
     SourceSpan,
     StructuralSectionNode,
     StructuralSectionType,
@@ -29,6 +33,7 @@ from .ast_nodes import (
     TableRow,
     TextRun,
     TitlePageNode,
+    TitleBlockForm,
 )
 from .diagnostics import Diagnostic, DiagnosticCodes, Severity
 from .formatting import FormattingProfile, FormattingRule, RuleSeverity, RuleStatus
@@ -46,6 +51,7 @@ __all__ = [
     "FormattingRule",
     "FormulaNode",
     "FormulaSymbol",
+    "FrameType",
     "HeadingLevel",
     "HeadingNode",
     "ListItemNode",
@@ -56,6 +62,9 @@ __all__ = [
     "ParagraphNode",
     "RawBlockNode",
     "ReferenceNode",
+    "SectionOrientation",
+    "SectionSetupNode",
+    "SheetFormat",
     "RuleSeverity",
     "RuleStatus",
     "Severity",
@@ -69,4 +78,5 @@ __all__ = [
     "TableRow",
     "TextRun",
     "TitlePageNode",
+    "TitleBlockForm",
 ]

@@ -24,6 +24,7 @@ from sfu_converter.domain.ast_nodes import (
     ParagraphNode,
     RawBlockNode,
     ReferenceNode,
+    SectionSetupNode,
     SourceRecordNode,
     SourceRecordType,
     SourceSpan,
@@ -182,6 +183,7 @@ def test_blocknode_union_contains_all_supported_block_classes():
         TableOfContentsNode,
         TitlePageNode,
         AbbreviationsListNode,
+        SectionSetupNode,
     }
 
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from dataclasses import replace
 
 from sfu_converter.config import SyntaxConfig
 from sfu_converter.domain.ast_nodes import (
@@ -106,6 +107,7 @@ _LIST_TYPE_ALIASES = {
 }
 _EXPLICIT_LIST_ITEM_RE = re.compile(r"^\[(?:-|[^\]]+\))\]\s*(.*)$")
 _HEADING_MARKER_RE = re.compile(r"^\[H(\d+)\]")
+_INDENTED_NUMERIC_ITEM_RE = re.compile(r"^(\s+)(\d+)\)\s+(.+)$")
 
 
 def _heading_marker_level(stripped: str) -> int | None:
@@ -848,12 +850,66 @@ def _parse_dash_list(
 ) -> tuple[ListNode, int]:
     items: list[ListItemNode] = []
     i = start_index
+    line_end = start_index
 
-    while i < len(lines) and lines[i].strip().startswith("- "):
+    while i < len(lines):
         stripped = lines[i].strip()
+        if stripped.startswith("- "):
+            items.append(
+                ListItemNode(
+                    text=stripped[2:].strip(),
+                    source=_span_for_line(lines[i], i, filename),
+                )
+            )
+            line_end = i
+            i += 1
+            continue
+
+        nested_match = _INDENTED_NUMERIC_ITEM_RE.match(lines[i])
+        if nested_match is not None and items:
+            nested, nested_end = _parse_indented_numeric_list(lines, i, filename)
+            last_item = items[-1]
+            items[-1] = replace(last_item, children=(*last_item.children, nested))
+            line_end = nested_end
+            i = nested_end + 1
+            continue
+
+        break
+
+    return (
+        ListNode(
+            list_type=ListType.BULLET,
+            items=tuple(items),
+            source=SourceSpan(
+                line_start=start_index + 1,
+                line_end=line_end + 1,
+                filename=filename,
+            ),
+        ),
+        line_end,
+    )
+
+
+def _parse_indented_numeric_list(
+    lines: list[str],
+    start_index: int,
+    filename: str | None,
+) -> tuple[ListNode, int]:
+    items: list[ListItemNode] = []
+    i = start_index
+    base_indent: int | None = None
+    while i < len(lines):
+        match = _INDENTED_NUMERIC_ITEM_RE.match(lines[i])
+        if match is None:
+            break
+        indent = len(match.group(1).replace("\t", "    "))
+        if base_indent is None:
+            base_indent = indent
+        if indent != base_indent:
+            break
         items.append(
             ListItemNode(
-                text=stripped[2:].strip(),
+                text=match.group(3).strip(),
                 source=_span_for_line(lines[i], i, filename),
             )
         )
@@ -861,7 +917,7 @@ def _parse_dash_list(
 
     return (
         ListNode(
-            list_type=ListType.BULLET,
+            list_type=ListType.NUMBERED,
             items=tuple(items),
             source=SourceSpan(
                 line_start=start_index + 1,

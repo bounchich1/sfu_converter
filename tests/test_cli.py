@@ -474,7 +474,8 @@ def test_list_profiles_outputs_registered_profile_keys(capsys):
     assert "unsupportedValidatorRuleIds" in common
 
     coursework = next(profile for profile in payload["profiles"] if profile["name"] == "coursework")
-    assert "coursework.frame.course_project_explanatory_note" in coursework["unsupportedRendererRuleIds"]
+    assert "coursework.frame.course_project_explanatory_note" not in coursework["unsupportedRendererRuleIds"]
+    assert "coursework.title_block.field_2_designation" in coursework["unsupportedRendererRuleIds"]
     assert "student" in coursework["requiredMetadata"]
     assert coursework["titlePageForm"] == "appendix_i"
 

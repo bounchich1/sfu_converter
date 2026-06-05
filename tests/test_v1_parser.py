@@ -204,6 +204,35 @@ def test_parser_groups_consecutive_dash_lines_into_bullet_list():
     assert list_block.source.line_end == 4
 
 
+def test_parser_preserves_indented_nested_numeric_children_in_dash_list():
+    result = V1Parser().parse(
+        "\n".join(
+            [
+                "- первый пункт",
+                "- второй пункт",
+                "  1) подпункт один",
+                "  2) подпункт два",
+            ]
+        ),
+        filename="nested-list.txt",
+    )
+
+    assert result.diagnostics == []
+    (list_block,) = result.document.blocks
+    assert isinstance(list_block, ListNode)
+    second_item = list_block.items[1]
+    assert second_item.text == "второй пункт"
+    assert len(second_item.children) == 1
+    nested = second_item.children[0]
+    assert nested.list_type is ListType.NUMBERED
+    assert [item.text for item in nested.items] == [
+        "подпункт один",
+        "подпункт два",
+    ]
+    assert nested.source.line_start == 3
+    assert nested.source.line_end == 4
+
+
 def test_parser_parses_explicit_lettered_and_numbered_lists():
     result = V1Parser().parse(
         "\n".join(

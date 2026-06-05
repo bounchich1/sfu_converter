@@ -6,6 +6,7 @@ from sfu_converter.domain.ast_nodes import (
     FigureNode,
     FormulaNode,
     FormulaSymbol,
+    FrameType,
     HeadingLevel,
     HeadingNode,
     ListNode,
@@ -15,7 +16,11 @@ from sfu_converter.domain.ast_nodes import (
     ParagraphNode,
     RawBlockNode,
     ReferenceNode,
+    SectionOrientation,
+    SectionSetupNode,
+    SheetFormat,
     TableNode,
+    TitleBlockForm,
 )
 from sfu_converter.domain.diagnostics import DiagnosticCodes, Severity
 from sfu_converter.parser import V1Parser, V2Parser, get_parser
@@ -319,3 +324,50 @@ def test_v2_parser_parses_extended_table_compliance_attributes():
     assert [(note.marker, note.text) for note in table.notes] == [
         ("*", "Измерено при нормальных условиях"),
     ]
+
+
+def test_v2_parser_preserves_nested_lists_by_level():
+    result = V2Parser().parse(
+        "\n".join(
+            [
+                "[LIST type=lettered level=1]",
+                "[а)] основной пункт",
+                "[LIST type=numbered level=2]",
+                "[1)] вложенный пункт",
+                "[LIST_END]",
+                "[LIST_END]",
+            ]
+        )
+    )
+
+    assert result.diagnostics == []
+    (list_block,) = result.document.blocks
+    assert list_block.list_type is ListType.LETTERED
+    first_item = list_block.items[0]
+    assert first_item.text == "основной пункт"
+    assert len(first_item.children) == 1
+    nested = first_item.children[0]
+    assert nested.list_type is ListType.NUMBERED
+    assert [item.text for item in nested.items] == ["вложенный пункт"]
+
+
+def test_v2_parser_parses_section_setup_with_nested_blocks():
+    result = V2Parser().parse(
+        "\n".join(
+            [
+                "[SECTION orientation=landscape sheet=A3 frame=text_following form=form_3]",
+                "[P] Section body",
+                "[/SECTION]",
+            ]
+        )
+    )
+
+    assert result.diagnostics == []
+    (section,) = result.document.blocks
+    assert isinstance(section, SectionSetupNode)
+    assert section.orientation is SectionOrientation.LANDSCAPE
+    assert section.sheet_format is SheetFormat.A3
+    assert section.frame is FrameType.TEXT_FOLLOWING
+    assert section.title_block_form is TitleBlockForm.FORM_3
+    assert isinstance(section.blocks[0], ParagraphNode)
+    assert section.blocks[0].runs[0].text == "Section body"

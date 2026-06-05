@@ -6,6 +6,7 @@ from io import BytesIO
 from pathlib import Path
 
 from docx import Document as DocxDocument
+from docx.enum.section import WD_SECTION
 from docx.enum.style import WD_STYLE_TYPE
 from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_TAB_ALIGNMENT
 from docx.oxml import OxmlElement
@@ -20,6 +21,7 @@ from sfu_converter.domain.ast_nodes import (
     ContinuationLabel,
     Document,
     FigureNode,
+    FrameType,
     FootnoteAnchor,
     FootnoteNode,
     FormulaNode,
@@ -32,6 +34,7 @@ from sfu_converter.domain.ast_nodes import (
     ParagraphNode,
     RawBlockNode,
     ReferenceNode,
+    SectionSetupNode,
     SourceRecordNode,
     StructuralSectionNode,
     StructuralSectionType,
@@ -57,6 +60,8 @@ from sfu_converter.infrastructure.formula_layout import (
     split_formula_lines,
 )
 from sfu_converter.infrastructure.footnotes import add_footnote_reference, patch_docx_bytes, patch_docx_file
+from sfu_converter.infrastructure import frames, main_inscription, section_setup
+from sfu_converter.infrastructure.list_layout import apply_list_item_layout, list_marker
 from sfu_converter.infrastructure.numbering import NumberingContext, build_numbering_context
 from sfu_converter.infrastructure.page_numbering import (
     Location,
@@ -940,6 +945,8 @@ class DocxRenderer(RendererPort):
                 self._render_text_block(f"[{block.target}]")
             elif isinstance(block, TitlePageNode):
                 self._render_title_page(document.metadata, block.profile)
+            elif isinstance(block, SectionSetupNode):
+                self._render_section_setup(block, document.metadata)
 
     def _render_heading(self, block):
         if block.level is HeadingLevel.H1 and self._rendered_body_blocks:
@@ -1325,8 +1332,30 @@ class DocxRenderer(RendererPort):
         self._set_paragraph_format(para, "bibliography_entry")
         self._rendered_body_blocks = True
 
-    def _render_list(self, block):
+    def _render_section_setup(self, block: SectionSetupNode, metadata) -> None:
+        if self._rendered_body_blocks:
+            self.doc.add_section(WD_SECTION.NEW_PAGE)
+        section = self.doc.sections[-1]
+        section_setup.configure(self.doc, section, block)
+        if block.frame is not FrameType.NONE:
+            frames.draw(self.doc, section)
+
+        self._render_from_ast(Document(blocks=block.blocks, metadata=metadata), allow_auto_toc=False)
+
+        if block.title_block_form is not None:
+            main_inscription.render(
+                self.doc,
+                block.title_block_form.value,
+                fields=_title_block_fields(metadata),
+                page_number_in_graph_7=block.frame in {FrameType.TEXT_FIRST, FrameType.TEXT_FOLLOWING},
+            )
+        self._rendered_body_blocks = True
+
+    def _render_list(self, block, *, level: int = 0):
         for index, item in enumerate(block.items):
+            if isinstance(item, ListNode):
+                self._render_list(item, level=level + 1)
+                continue
             text = self._list_item_text(
                 list_type=block.list_type,
                 index=index,
@@ -1335,6 +1364,9 @@ class DocxRenderer(RendererPort):
             )
             p = self.doc.add_paragraph(text)
             self._set_paragraph_format(p, "list_item")
+            apply_list_item_layout(p, block.list_type, level=level)
+            for child in item.children:
+                self._render_list(child, level=level + 1)
         if block.items:
             self._rendered_body_blocks = True
 
@@ -1347,9 +1379,9 @@ class DocxRenderer(RendererPort):
         if list_type is ListType.BULLET:
             return f"- {text}"
         if list_type is ListType.LETTERED:
-            return f"{_russian_list_letter(index)}) {text}"
+            return f"{list_marker(list_type, index)} {text}"
         if list_type is ListType.NUMBERED:
-            return f"{index + 1}) {text}"
+            return f"{list_marker(list_type, index)} {text}"
         raise ValueError(f"Unsupported list type: {list_type}")
 
     def _resolve_image_path(self, image_path):
@@ -1404,6 +1436,15 @@ def _document_total_pages(document: Document) -> int | None:
         if total > 0:
             return total
     return None
+
+
+def _title_block_fields(metadata) -> dict[str, str]:
+    fields: dict[str, str] = {}
+    for graph_number in range(1, 18):
+        value = metadata.get(f"title_block_{graph_number}") if metadata else None
+        if value is not None:
+            fields[str(graph_number)] = str(value)
+    return fields
 
 
 def _is_toc_insertion_point(block) -> bool:
