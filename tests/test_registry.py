@@ -251,8 +251,9 @@ def test_legacy_config_image_block_preserves_keys():
 
 def test_heading_blocks_round_trip_through_config():
     legacy = build_legacy_config()
-    assert legacy["H1"]["align"] == WD_ALIGN_PARAGRAPH.CENTER
+    assert legacy["H1"]["align"] == WD_ALIGN_PARAGRAPH.LEFT
     assert legacy["H1"]["bold"] is True
+    assert_close(legacy["H1"]["indent"], Cm(1.25))
     assert legacy["H2"]["align"] == WD_ALIGN_PARAGRAPH.LEFT
     assert legacy["H2"]["bold"] is True
     assert legacy["H3"]["bold"] is False

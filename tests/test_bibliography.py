@@ -148,8 +148,33 @@ def test_renderer_emits_russian_first_warning_for_foreign_entry_before_russian(t
         for diagnostic in diagnostics
     )
     doc = DocxDocument(str(output_path))
-    entries = [paragraph.text for paragraph in doc.paragraphs if paragraph.text.startswith(("1 ", "2 "))]
+    entries = [paragraph.text for paragraph in doc.paragraphs if paragraph.text.startswith(("1. ", "2. "))]
     assert entries == [
-        "1 Smith, J. Data Analysis / J. Smith, A. Brown. — Красноярск: СФУ, 2023. — 320 с.",
-        "2 Иванов, И. И. Анализ данных / И. И. Иванов, П. П. Петров. — Красноярск: СФУ, 2023. — 320 с.",
+        "1. Smith, J. Data Analysis / J. Smith, A. Brown. — Красноярск: СФУ, 2023. — 320 с.",
+        "2. Иванов, И. И. Анализ данных / И. И. Иванов, П. П. Петров. — Красноярск: СФУ, 2023. — 320 с.",
     ]
+
+
+def test_renderer_warns_when_freeform_url_source_missing_access_date(tmp_path):
+    renderer = DocxRenderer(base_dir=tmp_path)
+    output_path = tmp_path / "sources_missing_access_date.docx"
+    ast = Document(
+        blocks=(
+            ast_nodes.BibliographyEntryNode(
+                number=1,
+                text=(
+                    "Документация проекта SFU Converter [Электронный ресурс]. — "
+                    "URL: https://github.com/Nikita2005qwe/sfu_converter."
+                ),
+            ),
+        )
+    )
+
+    diagnostics = renderer.render_to_file(ast, get_profile("common"), str(output_path))
+
+    assert any(
+        diagnostic.code == DiagnosticCodes.BIBLIOGRAPHY_ACCESS_DATE
+        and diagnostic.rule_id == "common.bibliography.gost_record"
+        and "дата обращения" in diagnostic.message
+        for diagnostic in diagnostics
+    )

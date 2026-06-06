@@ -1,4 +1,5 @@
 from docx import Document as DocxDocument
+from docx.oxml.ns import qn
 from docx.shared import Pt
 
 from sfu_converter.infrastructure.docx_renderer import DocxRenderer
@@ -10,6 +11,18 @@ def _parse_v2(source: str):
     result = V2Parser().parse(source)
     assert result.diagnostics == []
     return result.document
+
+
+def _table_border_values(table):
+    borders = table._tbl.tblPr.find(qn("w:tblBorders"))
+    assert borders is not None
+    return {element.tag.rsplit("}", 1)[-1]: element.get(qn("w:val")) for element in borders}
+
+
+def _cell_border_values(cell):
+    borders = cell._tc.get_or_add_tcPr().find(qn("w:tcBorders"))
+    assert borders is not None
+    return {element.tag.rsplit("}", 1)[-1]: element.get(qn("w:val")) for element in borders}
 
 
 def test_renderer_outputs_compliant_table_unit_header_borders_and_notes(tmp_path):
@@ -39,7 +52,14 @@ def test_renderer_outputs_compliant_table_unit_header_borders_and_notes(tmp_path
     table = doc.tables[0]
     assert table.style.name == "SFUTable"
     assert "Table Grid" not in table.style.name
-    assert 'w:val="nil"' in table._tbl.xml
+    assert _table_border_values(table) == {
+        "top": "single",
+        "left": "single",
+        "bottom": "single",
+        "right": "single",
+        "insideH": "single",
+        "insideV": "single",
+    }
     assert 'w:val="double"' in table.rows[1]._tr.xml
     assert "tblHeader" in table.rows[0]._tr.xml
     assert "tblHeader" in table.rows[1]._tr.xml
@@ -49,6 +69,37 @@ def test_renderer_outputs_compliant_table_unit_header_borders_and_notes(tmp_path
     note_cell = table.rows[-1].cells[0]
     assert "Значение приведено при нормальных условиях" in note_cell.text
     assert note_cell.paragraphs[0].runs[0].font.superscript is True
+
+
+def test_renderer_outputs_cell_borders_on_every_side(tmp_path):
+    document = _parse_v2(
+        "\n".join(
+            [
+                '[TABLE caption="Параметры" header_rows=1]',
+                "| Название | Значение |",
+                "|----------|----------|",
+                "| Давление | 10 |",
+                "[TABLE_END]",
+            ]
+        )
+    )
+    output = tmp_path / "table_cell_borders.docx"
+
+    DocxRenderer(base_dir=tmp_path).render_to_file(document, get_profile("common"), str(output))
+
+    table = DocxDocument(str(output)).tables[0]
+    header = _cell_border_values(table.rows[0].cells[0])
+    body = _cell_border_values(table.rows[1].cells[0])
+    assert header["top"] == "single"
+    assert header["left"] == "single"
+    assert header["right"] == "single"
+    assert header["bottom"] == "double"
+    assert body == {
+        "top": "single",
+        "left": "single",
+        "bottom": "single",
+        "right": "single",
+    }
 
 
 def test_renderer_outputs_continuation_label_and_numbering_row(tmp_path):

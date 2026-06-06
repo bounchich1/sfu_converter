@@ -572,6 +572,41 @@ def test_docx_validator_reports_diagonal_split_and_nonitalic_letter_cells(tmp_pa
     assert "common.table.italic_letters" in rule_ids
 
 
+def test_docx_validator_accepts_full_grid_table_borders(tmp_path):
+    doc = Document()
+    table = doc.add_table(rows=2, cols=2)
+    table.rows[0].cells[0].text = "Параметр"
+    table.rows[0].cells[1].text = "Значение"
+    table.rows[1].cells[0].text = "A"
+    table.rows[1].cells[1].text = "10"
+
+    borders = OxmlElement("w:tblBorders")
+    for edge in ("top", "left", "bottom", "right", "insideH", "insideV"):
+        element = OxmlElement(f"w:{edge}")
+        element.set(qn("w:val"), "single")
+        element.set(qn("w:sz"), "4")
+        element.set(qn("w:space"), "0")
+        element.set(qn("w:color"), "000000")
+        borders.append(element)
+    table._tbl.tblPr.append(borders)
+
+    for cell in table.rows[0].cells:
+        tc_pr = cell._tc.get_or_add_tcPr()
+        cell_borders = OxmlElement("w:tcBorders")
+        bottom = OxmlElement("w:bottom")
+        bottom.set(qn("w:val"), "double")
+        bottom.set(qn("w:sz"), "6")
+        bottom.set(qn("w:color"), "000000")
+        cell_borders.append(bottom)
+        tc_pr.append(cell_borders)
+
+    path = _save_doc(tmp_path, doc, "full_grid_table.docx")
+
+    diagnostics = DocxValidator(get_profile("common")).validate_file(str(path))
+
+    assert not any(diagnostic.rule_id == "common.table.borders" for diagnostic in diagnostics)
+
+
 def test_docx_validator_accepts_generated_table_unit_label_at_12pt(tmp_path):
     ast = V2Parser().parse(
         "\n".join(

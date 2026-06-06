@@ -19,6 +19,8 @@ from sfu_converter.domain.ast_nodes import (
     SectionOrientation,
     SectionSetupNode,
     SheetFormat,
+    StructuralSectionNode,
+    StructuralSectionType,
     TableNode,
     TitleBlockForm,
 )
@@ -183,6 +185,27 @@ def test_v2_parser_produces_equivalent_ast_to_v1_for_equivalent_content():
     assert _block_summary(v2_result.document) == _block_summary(v1_result.document)
 
 
+def test_v2_parser_accepts_structural_section_marker_for_special_titles():
+    source = "\n".join(
+        [
+            '[STRUCTURAL title="ВВЕДЕНИЕ"]',
+            '[STRUCTURAL title="СПИСОК ИСТОЧНИКОВ"]',
+        ]
+    )
+
+    result = V2Parser(strict=True).parse(source)
+
+    assert result.diagnostics == []
+    blocks = result.document.blocks
+    assert len(blocks) == 2
+    assert isinstance(blocks[0], StructuralSectionNode)
+    assert isinstance(blocks[1], StructuralSectionNode)
+    assert blocks[0].section_type is StructuralSectionType.INTRODUCTION
+    assert blocks[0].title == "ВВЕДЕНИЕ"
+    assert blocks[1].section_type is StructuralSectionType.SOURCES
+    assert blocks[1].title == "СПИСОК ИСТОЧНИКОВ"
+
+
 def test_v2_parser_parses_figure_explanatory_and_sheet_attributes():
     result = V2Parser().parse(
         '[FIGURE id=f1 src="diagram.png" caption="Архитектура" '
@@ -249,6 +272,7 @@ def test_v2_attribute_parser_supports_quoted_values_with_spaces():
 
 
 def test_get_parser_selects_supported_versions_and_rejects_unknown_versions():
+    assert isinstance(get_parser(), V2Parser)
     assert isinstance(get_parser(1), V1Parser)
     assert isinstance(get_parser(2), V2Parser)
 

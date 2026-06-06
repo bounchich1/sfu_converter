@@ -75,17 +75,18 @@ def test_normal_style_applies_justified_alignment_and_indent(tmp_path):
     assert pf.space_after == Pt(0)
 
 
-def test_h1_style_centered_bold_no_indent(tmp_path):
+def test_heading_styles_are_left_aligned_with_body_indent(tmp_path):
     renderer = _make_renderer(tmp_path)
-    para = _new_para(renderer)
 
-    renderer._set_paragraph_format(para, "h1")
-    pf = para.paragraph_format
+    for style_type in ("h1", "h2", "h3", "h4"):
+        para = _new_para(renderer, style_type)
+        renderer._set_paragraph_format(para, style_type)
+        pf = para.paragraph_format
 
-    assert pf.alignment == WD_ALIGN_PARAGRAPH.CENTER
-    assert pf.line_spacing == 1.0
-    assert abs(pf.first_line_indent - Cm(0)) < 1000
-    assert para.runs[0].bold is True
+        assert pf.alignment == WD_ALIGN_PARAGRAPH.LEFT
+        assert pf.line_spacing == 1.0
+        assert abs(pf.first_line_indent - Cm(1.25)) < 1000
+    assert renderer.doc.paragraphs[-4].runs[0].bold is True
 
 
 def test_h2_style_is_bold(tmp_path):

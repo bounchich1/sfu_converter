@@ -13,6 +13,7 @@ def test_v2_syntax_spec_lists_supported_blocks_from_metadata():
         "document",
         "metadata",
         "heading",
+        "structural_section",
         "paragraph",
         "figure",
         "drawing",

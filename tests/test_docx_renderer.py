@@ -84,7 +84,8 @@ def test_docx_renderer_renders_ast_to_file(tmp_path):
         "Body",
         "Таблица 1 — Table 1",
     ]
-    assert doc.paragraphs[0].paragraph_format.alignment == WD_ALIGN_PARAGRAPH.CENTER
+    assert doc.paragraphs[0].paragraph_format.alignment == WD_ALIGN_PARAGRAPH.LEFT
+    assert_close(doc.paragraphs[0].paragraph_format.first_line_indent, Cm(1.25))
     assert len(doc.tables) == 1
     assert doc.tables[0].rows[1].cells[1].text == "2"
 
@@ -832,15 +833,55 @@ def test_docx_renderer_renders_bibliography_entries_with_paragraph_indent(tmp_pa
     renderer.render_to_file(ast, _common_profile(), str(output_path))
 
     doc = DocxDocument(str(output_path))
-    entries = [p for p in doc.paragraphs if p.text.startswith(("1 ", "2 "))]
+    entries = [p for p in doc.paragraphs if p.text.startswith(("1. ", "2. "))]
     assert [p.text for p in entries] == [
-        "1 Иванов И.И. Основы программирования. — М.: Наука, 2023.",
-        "2 Петров П.П. Алгоритмы и структуры данных. — СПб.: БХВ, 2022.",
+        "1. Иванов И.И. Основы программирования. — М.: Наука, 2023.",
+        "2. Петров П.П. Алгоритмы и структуры данных. — СПб.: БХВ, 2022.",
     ]
     for entry in entries:
         assert entry.paragraph_format.alignment == WD_ALIGN_PARAGRAPH.JUSTIFY
         assert_close(entry.paragraph_format.first_line_indent, Cm(1.25))
         assert entry.paragraph_format.line_spacing == 1.5
+
+
+def test_docx_renderer_resets_conclusion_and_sources_to_a4_after_a3_section(tmp_path):
+    renderer = DocxRenderer(config_class=SIBFUConfig, base_dir=tmp_path)
+    ast = Document(
+        blocks=(
+            SectionSetupNode(
+                orientation=SectionOrientation.LANDSCAPE,
+                sheet_format=SheetFormat.A3,
+                frame=FrameType.TEXT_FOLLOWING,
+                title_block_form=TitleBlockForm.FORM_3,
+                blocks=(ParagraphNode(runs=(TextRun("A3 body"),)),),
+            ),
+            StructuralSectionNode(
+                section_type=StructuralSectionType.CONCLUSION,
+                title="ЗАКЛЮЧЕНИЕ",
+            ),
+            ParagraphNode(runs=(TextRun("Conclusion body"),)),
+            StructuralSectionNode(
+                section_type=StructuralSectionType.SOURCES,
+                title="СПИСОК ИСПОЛЬЗОВАННЫХ ИСТОЧНИКОВ",
+            ),
+            BibliographyEntryNode(
+                number=1,
+                text="СТУ 7.5-07-2024 Работы выпускные квалификационные. — Красноярск: СФУ, 2024.",
+            ),
+        )
+    )
+    output_path = tmp_path / "a3_then_sources.docx"
+
+    renderer.render_to_file(ast, _common_profile(), str(output_path))
+
+    doc = DocxDocument(str(output_path))
+    text_section = doc.sections[-1]
+    assert text_section.orientation.name == "PORTRAIT"
+    assert_close(text_section.page_width, Cm(21))
+    assert_close(text_section.page_height, Cm(29.7))
+    assert "w:pgBorders" not in text_section._sectPr.xml
+    assert any(paragraph.text == "ЗАКЛЮЧЕНИЕ" for paragraph in doc.paragraphs)
+    assert any(paragraph.text.startswith("1. СТУ") for paragraph in doc.paragraphs)
 
 
 def test_docx_renderer_renders_appendix_on_new_page_with_centered_heading(tmp_path):

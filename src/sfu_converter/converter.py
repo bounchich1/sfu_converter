@@ -10,7 +10,7 @@ from sfu_converter.domain.ast_nodes import Document as AstDocument
 from sfu_converter.domain.diagnostics import Severity
 from sfu_converter.domain.formatting import FormattingProfile
 from sfu_converter.infrastructure.docx_renderer import DocxRenderer
-from sfu_converter.parser import V1Parser, get_parser
+from sfu_converter.parser import DEFAULT_SYNTAX_VERSION, get_parser
 from sfu_converter.registry import get_profile
 
 
@@ -70,7 +70,7 @@ class TextToDocxConverter:
             return
 
         source = self._lines_to_source(lines)
-        result = V1Parser().parse(source)
+        result = get_parser().parse(source)
         self._log_parser_diagnostics(result.diagnostics)
         self._renderer._render_from_ast(result.document)
 
@@ -100,7 +100,7 @@ class TextToDocxConverter:
         template_mode: str = "append",
         insert_after_page: int | None = None,
         insert_at_bookmark: str | None = None,
-        syntax_version: int = 1,
+        syntax_version: int = DEFAULT_SYNTAX_VERSION,
         strict: bool = False,
         *,
         profile: FormattingProfile,

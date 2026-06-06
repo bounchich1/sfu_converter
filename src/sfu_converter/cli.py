@@ -20,7 +20,7 @@ from sfu_converter.infrastructure.appendix import assign_appendix_letters
 from sfu_converter.infrastructure.docx_validator import diagnostic_to_json
 from sfu_converter.infrastructure.graphics import validate as validate_graphics
 from sfu_converter.infrastructure.project_designation import validate_document_designations
-from sfu_converter.parser import get_parser
+from sfu_converter.parser import DEFAULT_SYNTAX_VERSION, get_parser
 from sfu_converter.parser.syntax_spec import get_syntax_spec
 from sfu_converter.registry import get_profile, iter_profiles
 from sfu_converter.registry.coverage import build_rows, parser_support_for_rule, render_json, render_markdown
@@ -74,7 +74,7 @@ def create_parser() -> argparse.ArgumentParser:
     )
     convert_p.add_argument("--insert-after-page", type=int, default=None)
     convert_p.add_argument("--insert-at-bookmark", default=None)
-    convert_p.add_argument("--syntax-version", type=int, choices=[1, 2], default=1)
+    convert_p.add_argument("--syntax-version", type=int, choices=[1, 2], default=DEFAULT_SYNTAX_VERSION)
     convert_p.add_argument("--strict", action="store_true")
     convert_p.add_argument("--validate-output", action="store_true")
     convert_p.add_argument("--diagnostics", type=Path, default=None)
@@ -89,14 +89,14 @@ def create_parser() -> argparse.ArgumentParser:
     _add_common_options(parse_p, include_defaults=False)
     parse_p.add_argument("--input", required=True, type=Path)
     parse_p.add_argument("--profile", default=DEFAULT_PROFILE_NAME)
-    parse_p.add_argument("--syntax-version", type=int, default=1)
+    parse_p.add_argument("--syntax-version", type=int, default=DEFAULT_SYNTAX_VERSION)
     parse_p.add_argument("--strict", action="store_true")
 
     lint_p = subparsers.add_parser("lint", help="Lint TXT syntax")
     _add_common_options(lint_p, include_defaults=False)
     lint_p.add_argument("--input", required=True, type=Path)
     lint_p.add_argument("--profile", default=DEFAULT_PROFILE_NAME)
-    lint_p.add_argument("--syntax-version", type=int, default=1)
+    lint_p.add_argument("--syntax-version", type=int, default=DEFAULT_SYNTAX_VERSION)
     lint_p.add_argument("--strict", action="store_true")
 
     list_profiles_p = subparsers.add_parser("list-profiles", help="List formatting profiles")
@@ -105,7 +105,7 @@ def create_parser() -> argparse.ArgumentParser:
 
     explain_p = subparsers.add_parser("explain-syntax", help="Show TXT syntax")
     _add_common_options(explain_p, include_defaults=False)
-    explain_p.add_argument("--syntax-version", type=int, choices=[1, 2], default=1)
+    explain_p.add_argument("--syntax-version", type=int, choices=[1, 2], default=DEFAULT_SYNTAX_VERSION)
 
     schema_p = subparsers.add_parser("export-schema", help="Export JSON schemas")
     _add_common_options(schema_p, include_defaults=False)

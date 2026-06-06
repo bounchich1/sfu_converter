@@ -257,13 +257,16 @@ class TestStyleValidator:
         doc = Document()
         _set_standard_margins(doc)
         
-        # Заголовок (по центру, без отступа первой строки)
-        para1 = doc.add_paragraph("Заголовок")
+        # Заголовок (слева, с отступом первой строки)
+        para1 = doc.add_paragraph("1 Заголовок")
         para1.runs[0].font.name = 'Times New Roman'
         para1.runs[0].font.size = Pt(14)
         para1.runs[0].bold = True
-        para1.paragraph_format.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        para1.paragraph_format.first_line_indent = Cm(0)
+        para1.paragraph_format.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        para1.paragraph_format.first_line_indent = Cm(1.25)
+        para1.paragraph_format.line_spacing = 1.0
+        para1.paragraph_format.space_before = Pt(0)
+        para1.paragraph_format.space_after = Pt(0)
 
         doc.add_paragraph()
         

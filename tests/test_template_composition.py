@@ -43,7 +43,10 @@ def _build_template(workdir: Path, *, pages: int = 1) -> Path:
     return template_path
 
 
-def _input_file(workdir: Path, source: str = "[H1] Раздел\n\nТело документа.") -> Path:
+def _input_file(
+    workdir: Path,
+    source: str = '[H level=1 title="Раздел" number=auto]\n[P] Тело документа.',
+) -> Path:
     input_path = workdir / "examples" / "input.txt"
     input_path.write_text(source, encoding="utf-8")
     return input_path

@@ -118,7 +118,7 @@ def test_cli_convert_write_failure_reports_json(tmp_path, monkeypatch, capsys):
 
 def test_cli_convert_validation_failure_and_quiet_text_branches(tmp_path, monkeypatch, capsys):
     input_file = tmp_path / "report.txt"
-    input_file.write_text("Body", encoding="utf-8")
+    input_file.write_text("[P] Body", encoding="utf-8")
 
     class InvalidValidator:
         def __init__(self, *_args, **_kwargs):

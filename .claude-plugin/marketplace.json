@@ -1,0 +1,21 @@
+{
+  "name": "sfu-converter",
+  "owner": {
+    "name": "Nikita2005qwe",
+    "url": "https://github.com/Nikita2005qwe/sfu_converter"
+  },
+  "metadata": {
+    "description": "Marketplace for the SFU TXT-to-DOCX converter skill. Installs an agent skill that generates Siberian Federal University (СФУ) academic reports in V2 TXT syntax, lints them, and converts to DOCX.",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "sfu-converter",
+      "source": "./plugins/sfu-converter",
+      "description": "Agent skill for generating SFU-compliant academic documents (lab/coursework/VKR/research/practice reports) in V2 TXT syntax and converting them to DOCX via the sfu-converter CLI.",
+      "version": "0.1.0",
+      "category": "documentation",
+      "tags": ["sfu", "сфу", "docx", "academic", "russian", "report", "txt-to-docx"]
+    }
+  ]
+}

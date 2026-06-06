@@ -1011,13 +1011,16 @@ class DocxValidator:
 
     def _validate_table_borders(self, table, table_index: int) -> None:
         rule_id = "common.table.borders"
-        xml = table._tbl.xml
-        if 'w:val="nil"' not in xml or 'w:val="double"' not in xml:
+        values = _table_border_values(table)
+        required_edges = ("top", "left", "bottom", "right", "insideH", "insideV")
+        has_full_grid = all(values.get(edge) == "single" for edge in required_edges)
+        has_header_separator = 'w:val="double"' in table._tbl.xml
+        if not has_full_grid or not has_header_separator:
             self._add(
                 code=DiagnosticCodes.FORMAT_TABLE_BORDERS,
                 message=(
-                    f"Table {table_index}: expected no top border and double line "
-                    "below the header"
+                    f"Table {table_index}: expected full grid borders and double line "
+                    "below the header row"
                 ),
                 severity=Severity.WARNING,
                 rule_id=rule_id,
@@ -1555,6 +1558,13 @@ def _letters_are_contiguous(letters: list[str]) -> bool:
         return False
     positions = [_APPENDIX_LETTER_BY_VALUE[letter] for letter in letters]
     return positions == list(range(positions[0], positions[0] + len(positions)))
+
+
+def _table_border_values(table) -> dict[str, str | None]:
+    borders = table._tbl.tblPr.find(qn("w:tblBorders"))
+    if borders is None:
+        return {}
+    return {element.tag.rsplit("}", 1)[-1]: element.get(qn("w:val")) for element in borders}
 
 
 def _cell_margin_twips(cell, edge: str) -> int | None:

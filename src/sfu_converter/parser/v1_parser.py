@@ -83,7 +83,10 @@ _KNOWN_MARKERS = (
     "[ABBREVIATIONS_END]",
     "[ABBR",
 )
-_STRUCTURAL_SECTIONS_BY_TITLE = {section_type.value: section_type for section_type in StructuralSectionType}
+_STRUCTURAL_SECTIONS_BY_TITLE = {
+    **{section_type.value: section_type for section_type in StructuralSectionType},
+    "СПИСОК ИСТОЧНИКОВ": StructuralSectionType.SOURCES,
+}
 _STRUCTURAL_TYPE_ALIASES = {
     "abstract": StructuralSectionType.ABSTRACT,
     "referat": StructuralSectionType.ABSTRACT,

@@ -96,6 +96,13 @@ _SYNTAX_SPECS = {
                 "example": '[H level=1 title="Introduction" number=auto]',
             },
             {
+                "name": "structural_section",
+                "marker": '[STRUCTURAL title="..."]',
+                "node": "StructuralSectionNode",
+                "description": "Create a special structural section heading such as ВВЕДЕНИЕ or СПИСОК ИСТОЧНИКОВ.",
+                "example": '[STRUCTURAL title="ВВЕДЕНИЕ"]',
+            },
+            {
                 "name": "paragraph",
                 "marker": "[P]",
                 "node": "ParagraphNode",

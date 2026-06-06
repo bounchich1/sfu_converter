@@ -1,0 +1,13 @@
+{
+  "name": "sfu-converter",
+  "version": "0.1.0",
+  "description": "Generate Siberian Federal University (СФУ) academic reports in V2 TXT syntax and convert them to DOCX via the sfu-converter CLI.",
+  "author": {
+    "name": "Nikita2005qwe",
+    "url": "https://github.com/Nikita2005qwe/sfu_converter"
+  },
+  "homepage": "https://github.com/Nikita2005qwe/sfu_converter",
+  "repository": "https://github.com/Nikita2005qwe/sfu_converter",
+  "license": "MIT",
+  "keywords": ["sfu", "сфу", "docx", "academic", "russian", "txt-to-docx", "report"]
+}

@@ -62,7 +62,7 @@ from sfu_converter.domain.formatting import FormattingProfile, unsupported_rule_
 from sfu_converter.domain.reference_graph import build_reference_graph
 from sfu_converter.infrastructure.abbreviations import abbreviations_for_document, explicit_abbreviations
 from sfu_converter.infrastructure.appendix import assign_appendix_letters
-from sfu_converter.infrastructure.bibliography import format_record, validate_records
+from sfu_converter.infrastructure.bibliography import format_record, validate_entries, validate_records
 from sfu_converter.infrastructure import docx_styles
 from sfu_converter.infrastructure.figure_layout import (
     figure_caption_text,
@@ -518,6 +518,8 @@ class DocxRenderer(RendererPort):
                     cell = row.cells[col_idx]
                     cell.text = text
                     self._set_cell_margins(cell, top=120, bottom=120)
+                    if not borderless:
+                        self._set_cell_borders(cell)
                     for para in cell.paragraphs:
                         pf = para.paragraph_format
                         pf.alignment = WD_ALIGN_PARAGRAPH.CENTER if is_header else WD_ALIGN_PARAGRAPH.LEFT
@@ -641,6 +643,7 @@ class DocxRenderer(RendererPort):
         text = paragraph.add_run(f" {note.text}")
         self._set_run_style(text, bold=False)
         text.font.size = self.config.TABLE["font_size"]
+        self._set_cell_borders(cell)
 
     def _set_table_borders(self, table, *, borderless: bool) -> None:
         tbl_pr = table._tbl.tblPr
@@ -660,11 +663,11 @@ class DocxRenderer(RendererPort):
             }
         else:
             values = {
-                "top": "nil",
+                "top": "single",
                 "left": "single",
                 "bottom": "single",
                 "right": "single",
-                "insideH": "nil",
+                "insideH": "single",
                 "insideV": "single",
             }
         for edge, value in values.items():
@@ -675,6 +678,28 @@ class DocxRenderer(RendererPort):
             element.set(qn("w:color"), "000000")
             borders.append(element)
         tbl_pr.append(borders)
+
+    def _set_cell_borders(self, cell, values: dict[str, str] | None = None) -> None:
+        values = values or {
+            "top": "single",
+            "left": "single",
+            "bottom": "single",
+            "right": "single",
+        }
+        tc_pr = cell._tc.get_or_add_tcPr()
+        borders = tc_pr.find(qn("w:tcBorders"))
+        if borders is None:
+            borders = OxmlElement("w:tcBorders")
+            tc_pr.append(borders)
+        for edge, value in values.items():
+            element = borders.find(qn(f"w:{edge}"))
+            if element is None:
+                element = OxmlElement(f"w:{edge}")
+                borders.append(element)
+            element.set(qn("w:val"), value)
+            element.set(qn("w:sz"), "6" if value == "double" else "4")
+            element.set(qn("w:space"), "0")
+            element.set(qn("w:color"), "000000")
 
     def _set_row_bottom_border(self, row, value: str) -> None:
         for cell in row.cells:
@@ -760,7 +785,13 @@ class DocxRenderer(RendererPort):
             self._setup_document_margins()
             self.logger.info("Создан новый документ")
 
-    def _initialize_document(self, template=None, *, template_mode: str = "append", profile: FormattingProfile | None = None):
+    def _initialize_document(
+        self,
+        template=None,
+        *,
+        template_mode: str = "append",
+        profile: FormattingProfile | None = None,
+    ):
         if template:
             self._load_template(template)
         else:
@@ -804,7 +835,14 @@ class DocxRenderer(RendererPort):
             )
             self._toc_diagnostics = list(self._toc_field.diagnostics)
         source_records = tuple(block for block in document.blocks if isinstance(block, SourceRecordNode))
-        self._bibliography_diagnostics = validate_records(source_records) if source_records else []
+        bibliography_entries = tuple(
+            block for block in document.blocks if isinstance(block, BibliographyEntryNode)
+        )
+        self._bibliography_diagnostics = []
+        if source_records:
+            self._bibliography_diagnostics.extend(validate_records(source_records))
+        if bibliography_entries:
+            self._bibliography_diagnostics.extend(validate_entries(bibliography_entries))
         self._prepare_footnotes(document)
 
     def _embed_core_metadata(self, metadata) -> None:
@@ -1025,7 +1063,7 @@ class DocxRenderer(RendererPort):
             return
 
         if self.config.STRUCTURAL_SECTION["page_break_before"]:
-            self.doc.add_page_break()
+            self._start_text_section_or_page_break()
 
         title = block.title.upper() if self.config.STRUCTURAL_SECTION["uppercase"] else block.title
         p = self.doc.add_paragraph()
@@ -1037,7 +1075,7 @@ class DocxRenderer(RendererPort):
 
     def _render_abbreviations_section(self, block):
         if self.config.STRUCTURAL_SECTION["page_break_before"]:
-            self.doc.add_page_break()
+            self._start_text_section_or_page_break()
 
         title = block.title.upper() if self.config.STRUCTURAL_SECTION["uppercase"] else block.title
         p = self.doc.add_paragraph()
@@ -1270,6 +1308,26 @@ class DocxRenderer(RendererPort):
             return
         docx_styles.apply_word_heading_style(self.doc, paragraph, style_name)
 
+    def _start_text_section_or_page_break(self) -> None:
+        if self._current_section_requires_text_reset():
+            self.doc.add_section(WD_SECTION.NEW_PAGE)
+            self._configure_default_text_section(self.doc.sections[-1])
+            return
+        self.doc.add_page_break()
+
+    def _current_section_requires_text_reset(self) -> bool:
+        section = self.doc.sections[-1]
+        return (
+            section_setup.requires_text_section_reset(section)
+            or section._sectPr.find(qn("w:pgBorders")) is not None
+        )
+
+    def _configure_default_text_section(self, section) -> None:
+        section_setup.configure(self.doc, section, SectionSetupNode())
+        borders = section._sectPr.find(qn("w:pgBorders"))
+        if borders is not None:
+            section._sectPr.remove(borders)
+
     def _render_paragraph(self, block):
         para = self.doc.add_paragraph()
         for text_run in block.runs:
@@ -1389,7 +1447,8 @@ class DocxRenderer(RendererPort):
     def _render_bibliography_entry(self, block):
         """Render a single source list entry with hanging-paragraph layout."""
 
-        text = f"{block.number} {block.text}"
+        self._ensure_default_text_section_for_bibliography()
+        text = f"{block.number}. {block.text}"
         para = self.doc.add_paragraph(text)
         self._set_paragraph_format(para, "bibliography_entry")
         self._rendered_body_blocks = True
@@ -1397,10 +1456,17 @@ class DocxRenderer(RendererPort):
     def _render_source_record(self, block: SourceRecordNode):
         """Render a structured source record using the GOST formatter."""
 
-        text = f"{block.number} {format_record(block)}"
+        self._ensure_default_text_section_for_bibliography()
+        text = f"{block.number}. {format_record(block)}"
         para = self.doc.add_paragraph(text)
         self._set_paragraph_format(para, "bibliography_entry")
         self._rendered_body_blocks = True
+
+    def _ensure_default_text_section_for_bibliography(self) -> None:
+        if not self._current_section_requires_text_reset():
+            return
+        self.doc.add_section(WD_SECTION.NEW_PAGE)
+        self._configure_default_text_section(self.doc.sections[-1])
 
     def _render_section_setup(
         self,

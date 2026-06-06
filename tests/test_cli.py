@@ -28,12 +28,22 @@ def test_create_parser_parses_convert_command(tmp_path):
     assert args.format == "json"
     assert args.input.name == "input.txt"
     assert args.output.name == "output.docx"
+    assert args.syntax_version == 2
     assert args.strict is True
 
 
 def test_convert_command_writes_docx_and_json_result(tmp_path, capsys):
     input_file = tmp_path / "report.txt"
-    input_file.write_text("[H1] Report title\n\nBody text", encoding="utf-8")
+    input_file.write_text(
+        "\n".join(
+            [
+                "[DOC syntax=2]",
+                '[H level=1 title="Report title" number=auto]',
+                "[P] Body text",
+            ]
+        ),
+        encoding="utf-8",
+    )
 
     exit_code = cli.main(
         [
@@ -57,6 +67,7 @@ def test_convert_command_writes_docx_and_json_result(tmp_path, capsys):
     assert output_file.exists()
     assert payload["ok"] is True
     assert payload["command"] == "convert"
+    assert payload["syntaxVersion"] == 2
     assert payload["diagnostics"] == []
     assert payload["outputs"]["docx"] == str(output_file)
 
@@ -108,7 +119,7 @@ def test_convert_command_passes_selected_profile_to_converter(tmp_path, capsys, 
     assert payload["profile"] == "research_reports"
 
 
-def test_convert_command_uses_v2_parser_when_requested(tmp_path, capsys):
+def test_convert_command_uses_v2_parser_by_default(tmp_path, capsys):
     input_file = tmp_path / "report-v2.txt"
     input_file.write_text(
         "\n".join(
@@ -132,8 +143,6 @@ def test_convert_command_uses_v2_parser_when_requested(tmp_path, capsys):
             "report-v2.txt",
             "--output",
             "out/report-v2.docx",
-            "--syntax-version",
-            "2",
         ]
     )
 
@@ -202,7 +211,16 @@ def test_convert_command_missing_input_returns_missing_resource(tmp_path, capsys
 def test_validate_docx_command_reports_valid_document(tmp_path, capsys):
     input_file = tmp_path / "report.txt"
     output_file = tmp_path / "report.docx"
-    input_file.write_text("[H1] Report title\n\nBody text", encoding="utf-8")
+    input_file.write_text(
+        "\n".join(
+            [
+                "[DOC syntax=2]",
+                '[H level=1 title="Report title" number=auto]',
+                "[P] Body text",
+            ]
+        ),
+        encoding="utf-8",
+    )
     assert (
         cli.main(
             [
@@ -350,7 +368,16 @@ def test_interactive_command_launches_legacy_menu(monkeypatch):
 
 def test_parse_command_outputs_json_ast(tmp_path, capsys):
     input_file = tmp_path / "report.txt"
-    input_file.write_text("[H1] Title\n\nBody text", encoding="utf-8")
+    input_file.write_text(
+        "\n".join(
+            [
+                "[DOC syntax=2]",
+                '[H level=1 title="Title" number=auto]',
+                "[P] Body text",
+            ]
+        ),
+        encoding="utf-8",
+    )
 
     exit_code = cli.main(
         [
@@ -370,7 +397,7 @@ def test_parse_command_outputs_json_ast(tmp_path, capsys):
     assert exit_code == cli.ExitCodes.SUCCESS
     assert payload["ok"] is True
     assert payload["command"] == "parse"
-    assert payload["syntaxVersion"] == 1
+    assert payload["syntaxVersion"] == 2
     assert payload["profile"] == "common"
     assert payload["ast"]["type"] == "DOCUMENT"
     assert payload["ast"]["blocks"][0]["type"] == "HEADING"
@@ -431,7 +458,7 @@ def test_lint_reports_malformed_markers_without_writing_docx(tmp_path, capsys):
 
 def test_lint_strict_returns_warning_exit_for_unsupported_rules(tmp_path, capsys):
     input_file = tmp_path / "report.txt"
-    input_file.write_text("Body text", encoding="utf-8")
+    input_file.write_text("[P] Body text", encoding="utf-8")
 
     exit_code = cli.main(
         [

@@ -1,6 +1,4 @@
 import pytest
-import shutil
-import uuid
 from types import SimpleNamespace
 from pathlib import Path
 from docx import Document
@@ -12,20 +10,6 @@ from sfu_converter.domain.diagnostics import Diagnostic, Severity
 from sfu_converter.converter import TextToDocxConverter
 import sfu_converter.converter as converter_module
 from sfu_converter.registry import get_profile
-
-
-@pytest.fixture
-def tmp_path():
-    """Создает временную директорию внутри репозитория, обходя проблемы прав доступа pytest."""
-    root = Path(__file__).resolve().parent.parent / '.tmp' / 'test_converter'
-    root.mkdir(parents=True, exist_ok=True)
-    path = root / uuid.uuid4().hex
-    path.mkdir()
-    try:
-        yield path
-    finally:
-        shutil.rmtree(path, ignore_errors=True)
-
 
 class TestTextToDocxConverter:
     """Тесты для конвертера TXT в DOCX"""
@@ -41,7 +25,16 @@ class TestTextToDocxConverter:
         input_dir = tmp_path / 'inputs'
         input_dir.mkdir()
         txt_file = input_dir / 'test.txt'
-        txt_file.write_text("[H1] Тестовый заголовок\n\nОбычный текст", encoding='utf-8')
+        txt_file.write_text(
+            "\n".join(
+                [
+                    "[DOC syntax=2]",
+                    '[H level=1 title="Тестовый заголовок" number=auto]',
+                    "[P] Обычный текст",
+                ]
+            ),
+            encoding='utf-8',
+        )
         return txt_file
     
     def test_converter_initialization(self, tmp_path):
@@ -76,16 +69,16 @@ class TestTextToDocxConverter:
         assert abs(pf.first_line_indent - Cm(1.25)) < 1000
     
     def test_set_paragraph_format_h1_style(self, converter):
-        """Тест: Форматирование заголовка H1 (по центру, жирный)"""
+        """Тест: Форматирование заголовка H1 (слева, с отступом)"""
         converter.doc = Document()
         para = converter.doc.add_paragraph("Заголовок")
         
         converter._set_paragraph_format(para, 'h1')
         pf = para.paragraph_format
         
-        assert pf.alignment == WD_ALIGN_PARAGRAPH.CENTER
+        assert pf.alignment == WD_ALIGN_PARAGRAPH.LEFT
         assert pf.line_spacing == 1.0
-        assert abs(pf.first_line_indent - Cm(0)) < 1000
+        assert abs(pf.first_line_indent - Cm(1.25)) < 1000
     
     def test_add_empty_paragraph(self, converter):
         """Тест: Добавление пустого абзаца с правильными интервалами"""
@@ -158,7 +151,7 @@ class TestTextToDocxConverter:
         examples_dir = tmp_path / 'examples'
         examples_dir.mkdir()
         txt_file = examples_dir / 'heading.txt'
-        txt_file.write_text("[H1] Важный заголовок", encoding='utf-8')
+        txt_file.write_text('[H level=1 title="Важный заголовок" number=auto]', encoding='utf-8')
 
         output_path = converter.convert('heading.txt', 'heading.docx')
         doc = Document(output_path)
@@ -166,7 +159,8 @@ class TestTextToDocxConverter:
         found_h1 = False
         for para in doc.paragraphs:
             if para.text == "1 Важный заголовок":
-                assert para.paragraph_format.alignment == WD_ALIGN_PARAGRAPH.CENTER
+                assert para.paragraph_format.alignment == WD_ALIGN_PARAGRAPH.LEFT
+                assert abs(para.paragraph_format.first_line_indent - Cm(1.25)) < 1000
                 found_h1 = True
 
         assert found_h1, "Заголовок H1 не найден"
@@ -176,8 +170,7 @@ class TestTextToDocxConverter:
         input_dir = tmp_path / 'fixtures'
         input_dir.mkdir()
         txt_file = input_dir / 'table.txt'
-        txt_content = """[TABLE_START]
-[TABLE_CAPTION] Таблица 1
+        txt_content = """[TABLE caption="Таблица 1"]
 | Кол1 | Кол2 |
 | А | Б |
 [TABLE_END]"""
@@ -217,7 +210,7 @@ class TestTextToDocxConverter:
 
         ast = AstDocument(blocks=(ParagraphNode(runs=(TextRun("From AST"),)),))
         converter._render_lines(ast)
-        converter._render_lines(["Plain text"])
+        converter._render_lines(["[P] Plain text"])
         assert any(paragraph.text == "From AST" for paragraph in converter.doc.paragraphs)
         assert any(paragraph.text == "Plain text" for paragraph in converter.doc.paragraphs)
 

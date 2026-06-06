@@ -15,6 +15,9 @@ _SHEET_SIZES_CM = {
     SheetFormat.A1: (59.4, 84.1),
 }
 
+_TEXT_SECTION_WIDTH_LIMIT = Cm(22)
+_TEXT_SECTION_HEIGHT_LIMIT = Cm(31)
+
 
 def configure(document, section, node: SectionSetupNode) -> None:
     width_cm, height_cm = _SHEET_SIZES_CM[node.sheet_format]
@@ -35,3 +38,11 @@ def configure(document, section, node: SectionSetupNode) -> None:
     section.right_margin = Cm(1)
     section.top_margin = Cm(2)
     section.bottom_margin = Cm(2)
+
+
+def requires_text_section_reset(section) -> bool:
+    return (
+        section.orientation != WD_ORIENT.PORTRAIT
+        or section.page_width > _TEXT_SECTION_WIDTH_LIMIT
+        or section.page_height > _TEXT_SECTION_HEIGHT_LIMIT
+    )

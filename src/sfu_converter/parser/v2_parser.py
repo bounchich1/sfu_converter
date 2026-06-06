@@ -52,6 +52,7 @@ from sfu_converter.parser.v1_parser import (
     _parse_inline_formatting,
     _is_table_separator_row,
     _parse_table_row,
+    _parse_structural_marker,
     _span_for_line,
     _structural_section_from_title,
 )
@@ -91,6 +92,7 @@ _KNOWN_V2_MARKERS = (
     "[/SLIDE]",
     "[SLIDE_DECK",
     "[/SLIDE_DECK]",
+    "[STRUCTURAL",
     "[TABLE",
     "[TABLE_END]",
     "[TABLE_NOTE",
@@ -238,6 +240,10 @@ class V2Parser(BaseParser):
                 if source_node is not None:
                     blocks.append(source_node)
                 i = end_index
+            elif stripped.startswith("[STRUCTURAL"):
+                structural = _parse_structural_marker(stripped, span, diagnostics)
+                if structural is not None:
+                    blocks.append(structural)
             elif stripped.startswith("[FN_BODY"):
                 footnote, footnote_diagnostics, end_index = self._parse_footnote_body(
                     lines,

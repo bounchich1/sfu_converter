@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import re
 from enum import Enum
 from typing import Iterable
 
-from sfu_converter.domain.ast_nodes import SourceRecordNode, SourceRecordType, SourceSpan
+from sfu_converter.domain.ast_nodes import BibliographyEntryNode, SourceRecordNode, SourceRecordType, SourceSpan
 from sfu_converter.domain.diagnostics import Diagnostic, DiagnosticCodes, Severity
 
 
@@ -34,6 +35,9 @@ _REQUIRED_FIELDS: dict[SourceRecordType, tuple[str, ...]] = {
     SourceRecordType.ARTICLE: ("authors", "title", "journal", "year", "number", "pages"),
 }
 
+_ELECTRONIC_ENTRY_RE = re.compile(r"\b(?:URL\s*:|https?://|www\.|Электронный ресурс)", re.IGNORECASE)
+_ACCESS_DATE_RE = re.compile(r"\(дата\s+обращения\s*:\s*\d{2}\.\d{2}\.\d{4}\)", re.IGNORECASE)
+
 
 def format_record(record: SourceRecordNode) -> str:
     formatter = _FORMATTERS[record.record_type]
@@ -54,6 +58,31 @@ def validate_records(
     diagnostics.extend(_validate_grouping(records, grouping_method))
     diagnostics.extend(_validate_russian_first(records))
     return diagnostics
+
+
+def validate_entries(entries: Iterable[BibliographyEntryNode]) -> list[Diagnostic]:
+    diagnostics: list[Diagnostic] = []
+    for entry in entries:
+        if not _requires_access_date(entry.text):
+            continue
+        diagnostics.append(
+            Diagnostic(
+                code=DiagnosticCodes.BIBLIOGRAPHY_ACCESS_DATE,
+                message=(
+                    f"Bibliography entry {entry.number} with URL or electronic resource "
+                    "must include '(дата обращения: ДД.ММ.ГГГГ)' after the URL or source title"
+                ),
+                severity=Severity.WARNING,
+                source=entry.source,
+                rule_id="common.bibliography.gost_record",
+                data={"record_number": entry.number},
+            )
+        )
+    return diagnostics
+
+
+def _requires_access_date(text: str) -> bool:
+    return _ELECTRONIC_ENTRY_RE.search(text) is not None and _ACCESS_DATE_RE.search(text) is None
 
 
 def _validate_required_fields(record: SourceRecordNode) -> list[Diagnostic]:
