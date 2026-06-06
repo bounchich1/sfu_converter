@@ -21,6 +21,7 @@ def test_create_parser_parses_convert_command(tmp_path):
             "--output",
             "output.docx",
             "--strict",
+            "--skip-generated-front-matter",
         ]
     )
 
@@ -30,6 +31,7 @@ def test_create_parser_parses_convert_command(tmp_path):
     assert args.output.name == "output.docx"
     assert args.syntax_version == 2
     assert args.strict is True
+    assert args.skip_generated_front_matter is True
 
 
 def test_convert_command_writes_docx_and_json_result(tmp_path, capsys):
@@ -78,13 +80,65 @@ def test_convert_command_writes_docx_and_json_result(tmp_path, capsys):
     ]
 
 
+def test_convert_command_skips_generated_front_matter(tmp_path, capsys):
+    input_file = tmp_path / "report.txt"
+    input_file.write_text(
+        "\n".join(
+            [
+                "[DOC syntax=2]",
+                '[META key=title value="Generated title"]',
+                "[TITLE_PAGE]",
+                '[H level=1 title="СОДЕРЖАНИЕ"]',
+                '[H level=1 title="Report title" number=auto]',
+                "[P] Body text",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    exit_code = cli.main(
+        [
+            "--format",
+            "json",
+            "--workdir",
+            str(tmp_path),
+            "convert",
+            "--input",
+            "report.txt",
+            "--output",
+            "out/report.docx",
+            "--skip-generated-front-matter",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+    output_file = tmp_path / "out" / "report.docx"
+
+    assert exit_code == cli.ExitCodes.SUCCESS
+    assert payload["ok"] is True
+
+    doc = Document(str(output_file))
+    visible_texts = [
+        para.text
+        for para in doc.paragraphs
+        if para.text and not all(run.font.hidden for run in para.runs)
+    ]
+    assert visible_texts == [
+        "1 Report title",
+        "Body text",
+    ]
+
+
 def test_convert_command_passes_selected_profile_to_converter(tmp_path, capsys, monkeypatch):
     input_file = tmp_path / "report.txt"
     input_file.write_text("Body text", encoding="utf-8")
     calls = []
 
     def fake_convert_file(self, input_path, output_path, **kwargs):
-        calls.append(kwargs["profile"].name)
+        calls.append(
+            (kwargs["profile"].name, kwargs["skip_generated_front_matter"])
+        )
         self.diagnostics = []
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_bytes(b"fake")
@@ -108,6 +162,7 @@ def test_convert_command_passes_selected_profile_to_converter(tmp_path, capsys, 
             "out/report.docx",
             "--profile",
             "research_reports",
+            "--skip-generated-front-matter",
         ]
     )
 
@@ -115,7 +170,7 @@ def test_convert_command_passes_selected_profile_to_converter(tmp_path, capsys, 
     payload = json.loads(captured.out)
 
     assert exit_code == cli.ExitCodes.SUCCESS
-    assert calls == ["research_reports"]
+    assert calls == [("research_reports", True)]
     assert payload["profile"] == "research_reports"
 
 

@@ -76,6 +76,11 @@ def create_parser() -> argparse.ArgumentParser:
     convert_p.add_argument("--insert-at-bookmark", default=None)
     convert_p.add_argument("--syntax-version", type=int, choices=[1, 2], default=DEFAULT_SYNTAX_VERSION)
     convert_p.add_argument("--strict", action="store_true")
+    convert_p.add_argument(
+        "--skip-generated-front-matter",
+        action="store_true",
+        help="Skip generated title page and table of contents blocks",
+    )
     convert_p.add_argument("--validate-output", action="store_true")
     convert_p.add_argument("--diagnostics", type=Path, default=None)
     convert_p.add_argument("--output-format", choices=["docx", "pptx"], default="docx")
@@ -222,6 +227,7 @@ def cmd_convert(args) -> int:
             insert_at_bookmark=args.insert_at_bookmark,
             syntax_version=args.syntax_version,
             strict=args.strict,
+            skip_generated_front_matter=args.skip_generated_front_matter,
             profile=profile,
         )
     except OSError as exc:

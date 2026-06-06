@@ -152,9 +152,15 @@ class DocxRenderer(RendererPort):
         profile: FormattingProfile,
         template_path: str | None = None,
         template_mode: str = "append",
+        skip_generated_front_matter: bool = False,
     ) -> bytes:
         document, appendix_diagnostics = assign_appendix_letters(document)
-        self._initialize_document(template_path, template_mode=template_mode, profile=profile)
+        self._initialize_document(
+            template_path,
+            template_mode=template_mode,
+            profile=profile,
+            skip_generated_front_matter=skip_generated_front_matter,
+        )
         self._appendix_diagnostics = appendix_diagnostics
         self._prepare_document_level_state(document)
         self._render_from_ast(document)
@@ -169,10 +175,16 @@ class DocxRenderer(RendererPort):
         output_path: str,
         template_path: str | None = None,
         template_mode: str = "append",
+        skip_generated_front_matter: bool = False,
     ) -> list[Diagnostic]:
         document, appendix_diagnostics = assign_appendix_letters(document)
         diagnostics = unsupported_rule_diagnostics(profile, component="renderer")
-        self._initialize_document(template_path, template_mode=template_mode, profile=profile)
+        self._initialize_document(
+            template_path,
+            template_mode=template_mode,
+            profile=profile,
+            skip_generated_front_matter=skip_generated_front_matter,
+        )
         self._appendix_diagnostics = appendix_diagnostics
         self._prepare_document_level_state(document)
         reference_graph = build_reference_graph(document)
@@ -791,6 +803,7 @@ class DocxRenderer(RendererPort):
         *,
         template_mode: str = "append",
         profile: FormattingProfile | None = None,
+        skip_generated_front_matter: bool = False,
     ):
         if template:
             self._load_template(template)
@@ -802,6 +815,7 @@ class DocxRenderer(RendererPort):
         self._section_numberer.reset()
         self._rendered_body_blocks = False
         self._template_mode = template_mode
+        self._skip_generated_front_matter = skip_generated_front_matter
         self._title_page_emitted = False
         self._profile = profile
         self._title_page_diagnostics = []
@@ -827,7 +841,7 @@ class DocxRenderer(RendererPort):
         self._abbreviation_entries = abbreviations_for_document(document)
         self._abbreviation_explicit = explicit_abbreviations(document) is not None
         self._abbreviation_diagnostics = []
-        if self._profile is not None:
+        if self._profile is not None and not self._skip_generated_front_matter:
             self._toc_field = build_toc_field(
                 document,
                 profile=self._profile,
@@ -946,6 +960,8 @@ class DocxRenderer(RendererPort):
         for index, block in enumerate(blocks):
             previous_block = blocks[index - 1] if index else None
             next_block = blocks[index + 1] if index + 1 < len(blocks) else None
+            if self._skip_generated_front_matter and _is_generated_front_matter_block(block):
+                continue
             if auto_toc_pending and _is_toc_insertion_point(block):
                 self._render_table_of_contents(
                     TableOfContentsNode(title=self._toc_field.title, levels=self._toc_field.levels),
@@ -1731,6 +1747,15 @@ def _first_project_designation(blocks) -> ProjectDesignationNode | None:
 
 def _is_toc_insertion_point(block) -> bool:
     return not isinstance(block, (MetadataNode, TitlePageNode, FootnoteNode))
+
+
+def _is_generated_front_matter_block(block) -> bool:
+    if isinstance(block, (TitlePageNode, TableOfContentsNode)):
+        return True
+    return (
+        isinstance(block, StructuralSectionNode)
+        and block.section_type is StructuralSectionType.CONTENTS
+    )
 
 
 def _apply_toc_style(document, paragraph, level: int) -> None:

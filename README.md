@@ -1,8 +1,41 @@
-# SFU Converter — TXT to DOCX (SFU Standard)
+# SFU Converter — конвертер TXT в DOCX по стандарту СФУ
 
-Converts structured TXT files into DOCX formatted per Siberian Federal University (SFU / СФУ) standards. Supports multiple document profiles, automatic title pages, bibliography, formulas, and validation.
+SFU Converter превращает структурированный текстовый файл (`.txt`) в документ
+`.docx`, оформленный по стандарту Сибирского федерального университета
+(СФУ, СТУ 7.5-07). Вы пишете содержимое простыми текстовыми маркерами, а
+конвертер сам расставляет шрифты, поля, отступы, нумерацию, титульный лист,
+подписи к рисункам и таблицам, список источников и формулы.
 
-## Installation
+Что умеет конвертер:
+
+- Несколько профилей оформления (лабораторные, курсовые, ВКР, отчёты по практике и др.).
+- Автоматический титульный лист и нумерация страниц.
+- Заголовки четырёх уровней, таблицы, рисунки, формулы, списки, сноски.
+- Библиография по ГОСТ и перекрёстные ссылки между объектами.
+- Проверка готового документа и диагностика ошибок в исходнике.
+
+## ВАЖНО!
+> Для сквозной генерации отчётов нужен
+> DOCX-шаблон, в котором уже есть корректный титульный лист и содержание.
+> В этом режиме конвертер не создаёт титульный лист и ToC автоматически, а
+> добавляет только основное содержимое отчёта.
+
+> Пока генерация титульников и ToC не готова до конца и может не соответсовать СТУ
+
+> Используйте `--skip-generated-front-matter`
+
+
+## Содержание
+
+- [Краткий обзор](#sfu-converter--конвертер-txt-в-docx-по-стандарту-сфу)
+- [Установка](#установка)
+- [Быстрый старт](#быстрый-старт)
+- [Команды CLI](#команды-cli)
+- [Документация по стандарту и roadmap](#документация-по-стандарту-и-roadmap)
+- [Профили оформления](#профили-оформления)
+- [Разработка](#разработка)
+
+## Установка
 
 ```bash
 git clone https://github.com/Nikita2005qwe/sfu_converter.git
@@ -13,288 +46,133 @@ source .venv/bin/activate     # macOS / Linux
 pip install -e ".[dev]"
 ```
 
-## CLI
+После установки команда `sfu-converter` доступна в терминале.
+
+## Быстрый старт
+
+1. Создайте файл `report.txt` с разметкой версии 2:
+
+   ```text
+   [DOC syntax=2 profile=lab_practical_project_reports language=ru]
+   [META key=title value="Отчёт по лабораторной работе"]
+   [META key=student value="Иванов И. И."]
+   [META key=group value="КИ22-01"]
+
+   [H level=1 title="Введение"]
+   [P] Цель работы — разработать REST API для каталога товаров.
+
+   [H level=1 title="Заключение"]
+   [P] Поставленные цели достигнуты.
+   ```
+
+2. Проверьте исходник на ошибки:
+
+   ```bash
+   sfu-converter lint --input report.txt --syntax-version 2
+   ```
+
+3. Сгенерируйте документ:
+
+   ```bash
+   sfu-converter convert \
+     --input report.txt \
+     --output report.docx \
+     --profile lab_practical_project_reports \
+     --syntax-version 2
+   ```
+
+## Команды CLI
 
 ```bash
-sfu-converter <command> [options]
+sfu-converter <команда> [параметры]
 ```
 
-| Command           | Description                                |
-|-------------------|--------------------------------------------|
-| `convert`         | Convert TXT to DOCX                        |
-| `validate-docx`   | Validate existing DOCX against profile     |
-| `parse`           | Parse TXT to AST (JSON)                    |
-| `lint`            | Lint TXT syntax + profile rules            |
-| `list-profiles`   | Show available formatting profiles         |
-| `explain-syntax`  | Print syntax reference                     |
-| `export-schema`   | Export JSON schemas (ast, diagnostics, etc) |
-| `interactive`     | Legacy interactive menu                    |
+| Команда           | Назначение                                  |
+|-------------------|---------------------------------------------|
+| `convert`         | Преобразовать TXT в DOCX (или PPTX)         |
+| `validate-docx`   | Проверить готовый DOCX по профилю           |
+| `parse`           | Разобрать TXT в AST (JSON)                  |
+| `lint`            | Проверить синтаксис TXT и правила профиля   |
+| `list-profiles`   | Показать доступные профили оформления       |
+| `explain-syntax`  | Вывести справку по синтаксису               |
+| `export-schema`   | Экспортировать JSON-схемы                    |
+| `export-coverage` | Вывести матрицу покрытия стандарта          |
 
-### Convert example
+Частые флаги: `--syntax-version 2`, `--profile <имя>`, `--strict`
+(предупреждения как ошибки), `--output-format pptx`,
+`--template <путь>` (шаблон титульного листа),
+`--skip-generated-front-matter` (не создавать титульный лист и содержание).
 
-```bash
-sfu-converter convert \
-  --input report.txt \
-  --output report.docx \
-  --profile lab_practical_project_reports \
-  --syntax-version 2 \
-  --strict \
-  --format json
-```
+> [!CAUTION]
+> Для сквозной генерации отчётов с `--skip-generated-front-matter` нужен
+> DOCX-шаблон, в котором уже есть корректный титульный лист и содержание.
+> В этом режиме конвертер не создаёт титульный лист и ToC автоматически, а
+> добавляет только основное содержимое отчёта.
 
-### Common flags
+## Документация по стандарту и roadmap
 
-| Flag                 | Description                                    |
-|----------------------|------------------------------------------------|
-| `--syntax-version`   | `1` (legacy) or `2` (recommended)              |
-| `--profile`          | Formatting profile name                        |
-| `--strict`           | Treat warnings as errors                       |
-| `--format json`      | Machine-readable JSON output                   |
-| `--quiet`            | Suppress non-essential stderr                  |
-| `--template`         | Path to DOCX template for title pages          |
-| `--template-mode`    | `append`, `preserve-prefix`, `replace-body`    |
+Полное описание синтаксиса версии 2 разбито на тематические страницы в папке
+[`docs/`](docs/):
 
-## TXT Syntax (Version 2)
+Сводные материалы по стандарту и развитию проекта: `docs/sfu-standard-coverage-matrix.md`
+и `docs/technical requirements/08_migration_roadmap.md`.
 
-Version 2 is the recommended format. All markers use Latin uppercase, attributes use `key=value`, quoted values support spaces.
+- [Обзор и структура документа](docs/v2-overview.md) — `[DOC]`, `[META]`,
+  правила атрибутов, общий каркас файла.
+- [Текст и заголовки](docs/v2-text.md) — `[H]`, `[STRUCTURAL]`, `[P]`,
+  выделение текста, `[RAW]`.
+- [Объекты: рисунки, таблицы, списки, формулы](docs/v2-objects.md) —
+  `[FIGURE]`, `[TABLE]`, `[LIST]`, `[FORMULA]`.
+- [Ссылки, сноски и источники](docs/v2-references.md) — `[REF]`, `[FN]`,
+  `[SOURCE]`, библиография по ГОСТ.
+- [Расширенные блоки](docs/v2-extensions.md) — `[SECTION]`, `[APPENDIX]`,
+  `[ABBREVIATIONS]`, `[DESIGNATION]`, графические материалы и слайды.
+- [Диагностика и проверки](docs/v2-diagnostics.md) — коды ошибок, строгий
+  режим, предупреждение о кириллице в маркерах.
+- [Профили оформления](docs/v2-profiles.md) — список профилей и их выбор.
 
-### Document header
+Готовый демонстрационный файл со всеми возможностями:
+[`examples/converter_v2_showcase_report.txt`](examples/converter_v2_showcase_report.txt).
 
-```text
-[DOC syntax=2 profile=lab_practical_project_reports language=ru]
-[META key=title value="Отчёт по лабораторной работе"]
-[META key=student value="Иванов И.И."]
-[META key=group value="КИ22-01"]
-[META key=supervisor value="Петров А.В."]
-[META key=city value="Красноярск"]
-[META key=year value="2025"]
-```
-
-### Headings (H1–H4)
-
-```text
-[H level=1 title="Введение"]
-[H level=2 title="Обзор литературы" number=1]
-[H level=3 title="Этапы работы"]
-[H level=4 title="Подготовительный этап"]
-```
-
-Headings with well-known structural titles (`ВВЕДЕНИЕ`, `ЗАКЛЮЧЕНИЕ`, `СОДЕРЖАНИЕ`, `СПИСОК ИСПОЛЬЗОВАННЫХ ИСТОЧНИКОВ`, etc.) are auto-detected as structural sections — they render with special formatting per profile rules.
-
-### Paragraphs
-
-```text
-[P] Обычный абзац текста. Поддерживается **жирный** и *курсив*.
-```
-
-All body text must be wrapped in `[P]`. Plain text without a marker produces a diagnostic warning (error in strict mode).
-
-### Figures
-
-```text
-[FIGURE src="diagram.png" caption="Общая схема" id=fig:overview]
-```
-
-| Attribute  | Required | Description               |
-|------------|----------|---------------------------|
-| `src`      | no       | Image filename            |
-| `caption`  | no       | Caption text              |
-| `id`       | no       | Referenceable identifier  |
-
-### Tables
-
-```text
-[TABLE caption="Метрики" id=tbl:metrics header=true]
-| Метрика   | Значение |
-| Accuracy  | 0.94     |
-| Recall    | 0.91     |
-[TABLE_END]
-```
-
-First row is treated as header unless `header=false`. All rows must have equal cell count.
-
-### Lists
-
-```text
-[LIST type=bullet]
-[-] Первый пункт
-[-] Второй пункт
-[LIST_END]
-```
-
-| `type` value                     | Result          |
-|----------------------------------|-----------------|
-| `bullet`, `unordered`, `ul`      | Bullet list     |
-| `numbered`, `ordered`, `ol`      | Numbered list   |
-| `lettered`, `alpha`              | Lettered list   |
-
-### Formulas
-
-```text
-[FORMULA id=eq:energy number=1]
-E = mc^2
-[FORMULA_END]
-[FORMULA_EXPLANATION] где E — энергия, m — масса, c — скорость света
-```
-
-Multi-line formula content between `[FORMULA ...]` and `[FORMULA_END]`. Optional `[FORMULA_EXPLANATION]` on next line.
-
-### References
-
-```text
-[REF target=fig:overview]
-```
-
-References a figure, table, formula, or appendix by its `id`. Parser checks for duplicate IDs.
-
-### Bibliography sources
-
-```text
-[SOURCE number=1] Петров А.В. Машинное обучение. — М.: Наука, 2023.
-[SOURCE number=2] Сидорова Е.К. Анализ данных. — СПб.: Питер, 2024.
-```
-
-### Page breaks
-
-```text
-[PAGE_BREAK]
-```
-
-### Appendices
-
-```text
-[APPENDIX id=app:a title="Исходные данные"]
-```
-
-### Raw / escaped text
-
-```text
-[RAW]
-[This line is literal, not parsed as a marker]
-[RAW_END]
-```
-
-## Formatting profiles
+## Профили оформления
 
 ```bash
 sfu-converter list-profiles --format json
 ```
 
-| Profile                              | Description                               |
-|--------------------------------------|-------------------------------------------|
-| `common`                             | Shared baseline rules                     |
-| `lab_practical_project_reports`       | Lab / Practical / Project reports         |
-| `practice_reports`                    | Practice reports                          |
-| `research_reports`                    | Research-work reports                     |
-| `coursework`                         | Course project / Course work              |
-| `graduation_qualification_work`       | VKR (graduation qualification work)       |
-| `small_written_works`                 | Referat / Control / Calc-graphic / Essay  |
-| `graphic_and_demonstration_materials` | Graphic and demonstration materials       |
-| `project_designations`               | Project designations                      |
+| Профиль                               | Назначение                                |
+|---------------------------------------|-------------------------------------------|
+| `common`                              | Общие базовые правила                      |
+| `lab_practical_project_reports`       | Лабораторные, практические, проектные      |
+| `practice_reports`                    | Отчёты по практике                         |
+| `research_reports`                    | Отчёты о НИР                               |
+| `coursework`                          | Курсовые проекты и работы                  |
+| `graduation_qualification_work`       | ВКР (выпускная квалификационная работа)    |
+| `small_written_works`                 | Рефераты, контрольные, РГЗ, эссе           |
+| `graphic_and_demonstration_materials` | Графические и демонстрационные материалы   |
+| `project_designations`                | Обозначения проектов                       |
 
-## Full V2 example
+Подробнее — в [docs/v2-profiles.md](docs/v2-profiles.md).
 
-```text
-[DOC syntax=2 profile=lab_practical_project_reports language=ru]
-[META key=title value="Разработка REST API"]
-[META key=student value="Иванов И.И."]
-[META key=group value="КИ22-01"]
-
-[H level=1 title="Введение"]
-[P] Целью работы является разработка REST API для управления каталогом товаров.
-
-[H level=2 title="Теоретическая часть" number=1]
-[P] REST — архитектурный стиль взаимодействия компонентов распределённой системы.
-
-[TABLE caption="Методы HTTP" id=tbl:http]
-| Метод  | Описание                |
-| GET    | Получение ресурса       |
-| POST   | Создание ресурса        |
-| PUT    | Обновление ресурса      |
-| DELETE | Удаление ресурса        |
-[TABLE_END]
-
-[P] Как показано в [REF target=tbl:http], протокол HTTP определяет четыре основных метода.
-
-[H level=2 title="Практическая часть" number=2]
-
-[FIGURE src="architecture.png" caption="Архитектура системы" id=fig:arch]
-
-[FORMULA id=eq:complexity number=1]
-O(n log n)
-[FORMULA_END]
-[FORMULA_EXPLANATION] где n — количество элементов
-
-[H level=1 title="Заключение"]
-[P] Поставленные цели достигнуты. Разработан REST API с полным CRUD.
-
-[H level=1 title="Список использованных источников"]
-[SOURCE number=1] Филдинг Р. REST: принципы. — 2000.
-[SOURCE number=2] Ричардсон Л. RESTful Web APIs. — O'Reilly, 2013.
-
-[PAGE_BREAK]
-[APPENDIX id=app:a title="Листинг кода"]
-[P] Исходный код серверной части приложения.
-```
-
-## Diagnostics
-
-Parser reports structured diagnostics with codes, severity, and source location.
-
-Key diagnostic codes:
-
-| Code                          | Meaning                                  |
-|-------------------------------|------------------------------------------|
-| `TXT_UNKNOWN_MARKER`          | Unrecognized `[...]` marker              |
-| `TXT_DUPLICATE_ID`            | Same `id` used on multiple blocks        |
-| `TXT_MISSING_BLOCK_END`       | Missing `[TABLE_END]`, `[LIST_END]`, etc |
-| `TXT_MALFORMED_ATTRIBUTE`     | Bad attribute in marker                  |
-| `TXT_INVALID_TABLE_SHAPE`     | Row cell count mismatch                  |
-| `TXT_UNSUPPORTED_SYNTAX`      | Unknown syntax version in `[DOC]`        |
-| `TXT_CYRILLIC_IN_MARKER`      | Cyrillic lookalikes in marker name       |
-| `INVALID_HEADING_LEVEL`       | Heading level outside 1–4                |
-
-Use `--format json` to get machine-readable diagnostics.
-
-## Cyrillic marker warning
-
-Markers must use **Latin** characters. Cyrillic lookalikes (`Н` instead of `H`, `Т` instead of `T`) break parsing silently.
-
-Check: `python -m sfu_converter.tools.check_cyrillic_markers`
-Fix:   `python -m sfu_converter.tools.fix_cyrillic_markers`
-
-## Formatting standards
-
-Body text: Times New Roman 14pt, justified, 1.25cm first-line indent, 1.5 line spacing.
-
-| Element        | Alignment | Bold | Line spacing | First indent |
-|----------------|-----------|------|--------------|--------------|
-| H1             | Center    | Yes  | 1.0          | 0            |
-| H2             | Left      | Yes  | 1.0          | 0            |
-| H3             | Left      | No   | 1.0          | 0            |
-| Body text      | Justified | No   | 1.5          | 1.25 cm      |
-| Figure caption | Center    | No   | 1.5          | 0            |
-| Table caption  | Left      | No   | 1.5          | 0            |
-
-## Development
+## Разработка
 
 ```bash
-python -m pytest                                                        # run tests
-python -m pytest --cov=sfu_converter --cov-branch --cov-report=term-missing  # coverage
+python -m pytest                                                              # тесты
+python -m pytest --cov=sfu_converter --cov-branch --cov-report=term-missing   # покрытие
 ```
 
-## Project structure
+Структура проекта:
 
 ```
 src/sfu_converter/
-  cli.py              # CLI entry point
-  parser/             # V1 + V2 TXT parsers
-  domain/             # AST nodes, formatting rules, diagnostics
-  application/        # Composition, conversion use cases
-  infrastructure/     # DOCX renderer, validator, title pages
-  registry/           # Profiles + rules registry
-  tools/              # Cyrillic marker checker/fixer
-docs/                 # Formatting & technical requirements
-examples/             # Example TXT files
-templates/            # DOCX templates
+  cli.py              # точка входа CLI
+  parser/             # парсер TXT версии 2
+  domain/             # узлы AST, правила оформления, диагностика
+  application/        # сценарии композиции и конвертации
+  infrastructure/     # рендерер DOCX, валидатор, титульные листы
+  registry/           # реестр профилей и правил
+  tools/              # проверка кириллицы в маркерах
+docs/                 # вики и требования к оформлению
+examples/             # примеры TXT-файлов
+templates/            # шаблоны DOCX
 ```

@@ -102,6 +102,7 @@ class TextToDocxConverter:
         insert_at_bookmark: str | None = None,
         syntax_version: int = DEFAULT_SYNTAX_VERSION,
         strict: bool = False,
+        skip_generated_front_matter: bool = False,
         *,
         profile: FormattingProfile,
     ):
@@ -131,6 +132,7 @@ class TextToDocxConverter:
             template_path=renderer_template,
             template_mode=template_mode,
             filename=str(input_file),
+            skip_generated_front_matter=skip_generated_front_matter,
         )
         self.diagnostics = diagnostics
         self._log_parser_diagnostics(diagnostics)

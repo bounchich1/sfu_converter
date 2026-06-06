@@ -26,6 +26,7 @@ class ConvertTextToDocx:
         template_path: str | None = None,
         template_mode: str = "append",
         filename: str | None = None,
+        skip_generated_front_matter: bool = False,
     ) -> list[Diagnostic]:
         result = self._parser.parse(source, filename)
         document, appendix_diagnostics = assign_appendix_letters(result.document)
@@ -46,6 +47,7 @@ class ConvertTextToDocx:
             output_path,
             template_path,
             template_mode,
+            skip_generated_front_matter=skip_generated_front_matter,
         )
         diagnostics.extend(_without_existing_support_diagnostics(diagnostics, render_diagnostics))
         return diagnostics

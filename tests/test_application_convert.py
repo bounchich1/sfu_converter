@@ -38,8 +38,18 @@ class FakeRenderer:
         output_path,
         template_path=None,
         template_mode="append",
+        skip_generated_front_matter=False,
     ):
-        self.calls.append((document, profile, output_path, template_path, template_mode))
+        self.calls.append(
+            (
+                document,
+                profile,
+                output_path,
+                template_path,
+                template_mode,
+                skip_generated_front_matter,
+            )
+        )
         return self.diagnostics
 
 
@@ -65,7 +75,7 @@ def test_convert_text_to_docx_parses_source_and_renders_document():
     )
 
     assert parser.calls == [("source text", "input.txt")]
-    assert renderer.calls == [(document, profile, "out.docx", "template.docx", "append")]
+    assert renderer.calls == [(document, profile, "out.docx", "template.docx", "append", False)]
     assert diagnostics == [parse_diagnostic, render_diagnostic]
 
 
@@ -82,6 +92,26 @@ def test_convert_text_to_docx_preserves_profile_object_for_renderer():
     ConvertTextToDocx(parser, renderer).execute("source text", profile, "out.docx")
 
     assert renderer.calls[0][1] is profile
+
+
+def test_convert_text_to_docx_passes_front_matter_skip_to_renderer():
+    document = Document(blocks=(ParagraphNode(runs=(TextRun("Body"),)),))
+    parser = FakeParser(ParserResult(document, []))
+    renderer = FakeRenderer()
+    profile = FormattingProfile(
+        name="common",
+        display_name="Common",
+        source_docs=("standard",),
+    )
+
+    ConvertTextToDocx(parser, renderer).execute(
+        "source text",
+        profile,
+        "out.docx",
+        skip_generated_front_matter=True,
+    )
+
+    assert renderer.calls[0][5] is True
 
 
 def test_convert_text_to_docx_reports_unsupported_renderer_rules():
