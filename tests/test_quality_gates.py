@@ -49,6 +49,16 @@ def test_ci_runs_coverage_gate_on_windows_python_312_only():
         assert flag in pytest_command
 
 
+def test_release_workflow_fetches_tags_and_checks_built_version():
+    workflow_path = Path(".github/workflows/release.yml")
+    workflow = workflow_path.read_text(encoding="utf-8")
+
+    assert "fetch-depth: 0" in workflow
+    assert "ref: ${{ github.event.release.tag_name }}" in workflow
+    assert "Verify built version matches release tag" in workflow
+    assert "github.event.release.tag_name" in workflow
+
+
 def test_implemented_rules_have_traceability_markers():
     missing = [
         row.rule_id

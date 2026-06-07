@@ -3,6 +3,8 @@ from importlib import resources
 from importlib.metadata import version as dist_version
 from pathlib import Path
 
+import tomllib
+
 from sfu_converter.cli import _template_exists
 
 
@@ -25,6 +27,14 @@ def test_runtime_package_data_is_declared():
     assert "[tool.setuptools.package-data]" in pyproject
     assert '"cli_schemas/*.json"' in pyproject
     assert '"templates/*.docx"' in pyproject
+
+
+def test_release_build_uses_git_tag_versioning():
+    pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+
+    assert any(requirement.startswith("setuptools-scm") for requirement in pyproject["build-system"]["requires"])
+    assert "setuptools_scm" in pyproject["tool"]
+    assert "version" not in pyproject["tool"].get("setuptools", {}).get("dynamic", {})
 
 
 def test_license_metadata_uses_spdx_expression():

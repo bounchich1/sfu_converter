@@ -1,3 +1,8 @@
 """SFU TXT-to-DOCX converter."""
 
-__version__ = "0.1.0"
+from importlib.metadata import PackageNotFoundError, version
+
+try:
+    __version__ = version("sfu-converter")
+except PackageNotFoundError:
+    __version__ = "0+unknown"
