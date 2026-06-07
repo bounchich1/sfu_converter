@@ -11,9 +11,12 @@ import shutil
 import subprocess
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
+from pathlib import Path
+from typing import NamedTuple
 
 REPO = "bounchich1/sfu_converter"
 PLUGIN_ID = "sfu-converter"
+CODEX_COMMANDS = ("codex", "codex.cmd", "codex.exe")
 
 
 @dataclass(frozen=True)
@@ -22,14 +25,34 @@ class Provider:
     label: str
     command: str
     mechanism: str
+    detection_commands: tuple[str, ...] = ()
 
 
 PROVIDERS: tuple[Provider, ...] = (
-    Provider("claude", "Claude Code", "claude", "claude plugin install"),
-    Provider("codex", "Codex CLI", "codex", "npx skills add -a codex"),
+    Provider(
+        "claude",
+        "Claude Code",
+        "claude",
+        "claude plugin install",
+        ("claude", "claude.cmd", "claude.exe"),
+    ),
+    Provider(
+        "codex",
+        "Codex CLI",
+        "codex",
+        "codex plugin install",
+        CODEX_COMMANDS,
+    ),
 )
 
-Runner = Callable[[str, list[str]], int]
+
+class CommandResult(NamedTuple):
+    returncode: int
+    stdout: str = ""
+    stderr: str = ""
+
+
+Runner = Callable[[str, list[str]], int | CommandResult]
 Emitter = Callable[[str], None]
 Which = Callable[[str], str | None]
 Prompt = Callable[[str], str]
@@ -42,43 +65,155 @@ def _provider(provider_id: str) -> Provider | None:
     return None
 
 
-def _install_commands(provider: Provider) -> list[tuple[str, list[str]]]:
+def _first_available_command(which: Which, commands: tuple[str, ...]) -> str | None:
+    for command in commands:
+        resolved = which(command)
+        if resolved:
+            return resolved
+    return None
+
+
+def _configured_codex_cli_path(home: str | Path | None = None) -> str | None:
+    config_path = (
+        Path(home).expanduser() / ".codex" / "config.toml" if home else Path.home() / ".codex" / "config.toml"
+    )
+    try:
+        lines = config_path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return None
+
+    for line in lines:
+        key, separator, value = line.partition("=")
+        if separator and key.strip() == "CODEX_CLI_PATH":
+            candidate = value.strip().strip("\"'").replace("\\\\", "\\")
+            if candidate and Path(candidate).is_file():
+                return candidate
+    return None
+
+
+def _codex_command(*, which: Which, home: str | Path | None = None) -> str | None:
+    return _configured_codex_cli_path(home) or _first_available_command(which, CODEX_COMMANDS)
+
+
+def _install_commands(
+    provider: Provider,
+    *,
+    which: Which = shutil.which,
+    home: str | Path | None = None,
+) -> list[tuple[str, list[str]]]:
     if provider.id == "claude":
         return [
             ("claude", ["plugin", "marketplace", "add", REPO]),
             ("claude", ["plugin", "install", f"{PLUGIN_ID}@{PLUGIN_ID}"]),
         ]
-    return [("npx", ["-y", "skills", "add", REPO, "-a", "codex", "--yes", "--all"])]
+    codex = _codex_command(which=which, home=home)
+    if codex is not None:
+        return [
+            (codex, ["plugin", "marketplace", "add", REPO]),
+            (codex, ["plugin", "add", f"{PLUGIN_ID}@{PLUGIN_ID}"]),
+        ]
+    return []
 
 
-def _default_run(command: str, args: list[str]) -> int:
+def _default_run(command: str, args: list[str]) -> CommandResult:
     try:
-        return subprocess.run([command, *args], check=False).returncode
+        completed = subprocess.run([command, *args], check=False, text=True, capture_output=True)
+        return CommandResult(completed.returncode, completed.stdout, completed.stderr)
     except FileNotFoundError:
-        return 127
+        return CommandResult(127, stderr=f"Command not found: {command}")
 
 
-def detect_available(which: Which = shutil.which) -> list[Provider]:
-    return [provider for provider in PROVIDERS if which(provider.command)]
+def detect_available(which: Which = shutil.which, home: str | Path | None = None) -> list[Provider]:
+    available: list[Provider] = []
+    for provider in PROVIDERS:
+        if provider.id == "codex":
+            if _codex_command(which=which, home=home) is not None:
+                available.append(provider)
+            continue
+        if any(which(command) for command in (provider.detection_commands or (provider.command,))):
+            available.append(provider)
+    return available
+
+
+def _as_command_result(result: int | CommandResult) -> CommandResult:
+    if isinstance(result, CommandResult):
+        return result
+    return CommandResult(int(result))
+
+
+def _is_idempotent_claude_result(provider: Provider, args: list[str], result: CommandResult) -> bool:
+    if provider.id != "claude" or result.returncode == 0:
+        return False
+
+    output = f"{result.stdout}\n{result.stderr}".lower()
+    if args[:3] == ["plugin", "marketplace", "add"]:
+        return "already" in output and any(token in output for token in ("marketplace", "exists", "configured"))
+    if args[:2] == ["plugin", "install"]:
+        return "already" in output and any(token in output for token in ("plugin", "installed", "enabled"))
+    return False
+
+
+def _is_idempotent_codex_result(provider: Provider, args: list[str], result: CommandResult) -> bool:
+    if provider.id != "codex" or result.returncode == 0:
+        return False
+
+    output = f"{result.stdout}\n{result.stderr}".lower()
+    if args[:3] == ["plugin", "marketplace", "add"]:
+        return "already" in output and any(token in output for token in ("marketplace", "exists", "configured"))
+    if args[:2] == ["plugin", "add"]:
+        return "already" in output and any(token in output for token in ("plugin", "installed", "enabled"))
+    return False
+
+
+def _emit_failure_detail(result: CommandResult, emit: Emitter) -> None:
+    emit(f"  код {result.returncode}")
+    detail = (result.stderr or result.stdout).strip()
+    if detail:
+        for line in detail.splitlines():
+            if line.strip():
+                emit(f"  {line.strip()}")
 
 
 def install_provider(
     provider: Provider,
     *,
     dry_run: bool,
+    which: Which = shutil.which,
+    home: str | Path | None = None,
     run: Runner = _default_run,
     emit: Emitter = print,
 ) -> bool:
     emit(f">> {provider.label} ({provider.mechanism})")
-    for command, args in _install_commands(provider):
+    commands = _install_commands(provider, which=which, home=home)
+    if not commands:
+        emit("  [x] Не найден Codex CLI: нужна команда `codex` в PATH или CODEX_CLI_PATH в ~/.codex/config.toml.")
+        return False
+    for command, args in commands:
         printable = f"{command} {' '.join(args)}"
         if dry_run:
             emit(f"  демо-запуск: {printable}")
             continue
         emit(f"  $ {printable}")
-        if run(command, args) != 0:
-            emit(f"  [x] Не удалось установить {provider.label}")
-            return False
+        result = _as_command_result(run(command, args))
+        if result.returncode == 0:
+            continue
+        if _is_idempotent_claude_result(provider, args, result) or _is_idempotent_codex_result(provider, args, result):
+            if args[:3] == ["plugin", "marketplace", "add"]:
+                emit(f"  [ok] Marketplace уже настроено: {provider.label}")
+            else:
+                emit(f"  [ok] Plugin уже установлен: {provider.label}")
+            continue
+        _emit_failure_detail(result, emit)
+        if args[:3] == ["plugin", "marketplace", "add"]:
+            command_name = "codex" if provider.id == "codex" else "claude"
+            emit(f"  Подсказка: если marketplace уже добавлен, проверьте `{command_name} plugin marketplace list`.")
+        elif args[:2] in (["plugin", "install"], ["plugin", "add"]):
+            command_name = "codex" if provider.id == "codex" else "claude"
+            emit(f"  Подсказка: если plugin уже установлен, проверьте `{command_name} plugin list`.")
+        if provider.id == "codex":
+            emit("  Подсказка: для Codex требуется доступная команда `codex`.")
+        emit(f"  [x] Не удалось установить {provider.label}")
+        return False
     if not dry_run:
         emit(f"  [ok] Готово: {provider.label}")
     return True
@@ -126,6 +261,7 @@ def run_agents(
     only: Iterable[str] = (),
     install_all: bool = False,
     dry_run: bool = False,
+    home: str | Path | None = None,
     which: Which = shutil.which,
     run: Runner = _default_run,
     prompt: Prompt = input,
@@ -145,7 +281,7 @@ def run_agents(
                 return 2
             selected.append(provider)
     else:
-        available = detect_available(which=which)
+        available = detect_available(which=which, home=home)
         if not available:
             emit("Поддерживаемые агенты не найдены. Установите Claude Code или Codex CLI.")
             return 1
@@ -160,7 +296,7 @@ def run_agents(
     installed: list[str] = []
     failed: list[str] = []
     for provider in selected:
-        if install_provider(provider, dry_run=dry_run, run=run, emit=emit):
+        if install_provider(provider, dry_run=dry_run, which=which, home=home, run=run, emit=emit):
             installed.append(provider.id)
         else:
             failed.append(provider.id)

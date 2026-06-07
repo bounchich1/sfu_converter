@@ -96,13 +96,7 @@ install` для Claude Code и Codex, `AGENTS.md`/`GEMINI.md` для остал�
 3. Сгенерируйте документ:
 
    ```bash
-   sfu-converter convert \
-     --input report.txt \
-     --output report.docx \
-     --profile lab_practical_project_reports \
-     --syntax-version 2 \
-     --template template1.docx \
-     --skip-generated-front-matter
+    sfu-converter convert --input report.txt --output report.docx --profile lab_practical_project_reports --syntax-version 2 --template template1.docx --skip-generated-front-matter
    ```
 
 ## Команды CLI

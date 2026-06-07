@@ -1,7 +1,7 @@
 # sfu-converter plugin
 
-Claude Code plugin: a **multi-skill pack** for generating Siberian Federal University (СФУ)
-academic documents in V2 TXT syntax and converting them to DOCX via the `sfu-converter` CLI.
+Claude Code and Codex plugin for generating Siberian Federal University (СФУ) academic documents in
+V2 TXT syntax and converting them to DOCX via the `sfu-converter` CLI.
 
 ## What it does
 
@@ -32,12 +32,28 @@ sfu-converter agents install --only claude
 sfu-converter agents install --only codex
 ```
 
+Without `--only`, `sfu-converter agents install` lists agents detected from commands in `PATH`.
+Claude detection checks `claude`; Codex detection checks `codex` and can use `CODEX_CLI_PATH` from
+`~/.codex/config.toml` on Windows when the PATH shim cannot be executed from the shell. Use
+`--only <agent>` when the agent is installed but not auto-detected in the current shell.
+
 Claude Code users can also install manually:
 
 ```text
 /plugin marketplace add bounchich1/sfu_converter
 /plugin install sfu-converter@sfu-converter
 ```
+
+Codex users can also install manually:
+
+```bash
+codex plugin marketplace add bounchich1/sfu_converter
+codex plugin add sfu-converter@sfu-converter
+```
+
+Re-running the installer is safe: existing Claude marketplaces or installed plugins are treated as
+already complete, and the remaining steps continue. Codex installs a single router skill named
+`sfu-converter`; the profile skills remain packaged as internal references.
 
 ## Prerequisite: install the CLI
 
@@ -48,7 +64,7 @@ pipx install sfu-converter
 # до выхода на PyPI: pipx install git+https://github.com/bounchich1/sfu_converter.git
 ```
 
-After install, `sfu-converter --help` must work in the shell Claude Code uses. Full per-agent
+After install, `sfu-converter --help` must work in the shell your agent uses. Full per-agent
 matrix: [`docs/installation.md`](../../docs/installation.md).
 
 ## Usage

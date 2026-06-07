@@ -56,6 +56,10 @@ worktrees/
 temp/
 *.tmp
 
+# === Agent install artifacts ===
+.agents/skills/
+skills-lock.json
+
 # === Тестовые изображения (если большие) ===
 # images/*.png
 # images/*.jpg
