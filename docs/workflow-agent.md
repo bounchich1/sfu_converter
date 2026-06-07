@@ -42,8 +42,8 @@ Gemini CLI). Агент сам пишет `.txt`, прогоняет lint, ис�
 - **Claude Code** — набор скиллов: общий `sfu-common` (синтаксис, цикл lint/convert, диагностика)
   плюс по одному скиллу на тип документа (`sfu-report-lab`, `sfu-coursework`, `sfu-vkr`,
   `sfu-research`, `sfu-practice`, `sfu-small-works`). Нужный скилл срабатывает по формулировке.
-- **Codex** — тот же набор скиллов устанавливается через `npx -y github:bounchich1/sfu_converter
-  -- --only codex`; `AGENTS.md` остаётся ручным запасным вариантом.
+- **Codex** — тот же набор скиллов устанавливается через `sfu-converter agents install --only codex`;
+  `AGENTS.md` остаётся ручным запасным вариантом.
 - **OpenCode / Gemini / Antigravity** — те же правила в одном файле [`AGENTS.md`](../AGENTS.md)
   (для Gemini — [`GEMINI.md`](../GEMINI.md)).
 

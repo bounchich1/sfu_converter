@@ -28,8 +28,8 @@ Shared, profile-independent material lives in [`references/`](references/): `v2-
 ## Install
 
 ```bash
-npx -y github:bounchich1/sfu_converter -- --only claude
-npx -y github:bounchich1/sfu_converter -- --only codex
+sfu-converter agents install --only claude
+sfu-converter agents install --only codex
 ```
 
 Claude Code users can also install manually:

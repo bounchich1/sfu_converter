@@ -599,3 +599,71 @@ def test_export_schema_diagnostics_contains_required_fields(capsys):
     required = set(schema["required"])
     assert {"code", "severity", "message", "ruleId", "source"} <= required
     assert schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"
+
+
+def test_agents_list_command_invokes_run_agents(monkeypatch, capsys):
+    captured_kwargs = {}
+
+    def fake_run_agents(action, **kwargs):
+        captured_kwargs["action"] = action
+        captured_kwargs.update(kwargs)
+        kwargs["emit"]("agents-listed")
+        return cli.ExitCodes.SUCCESS
+
+    monkeypatch.setattr("sfu_converter.agents.run_agents", fake_run_agents)
+
+    exit_code = cli.main(["agents", "list"])
+
+    assert exit_code == cli.ExitCodes.SUCCESS
+    assert captured_kwargs["action"] == "list"
+    assert "agents-listed" in capsys.readouterr().out
+
+
+def test_agents_install_passes_only_and_flags(monkeypatch):
+    captured_kwargs = {}
+
+    def fake_run_agents(action, **kwargs):
+        captured_kwargs["action"] = action
+        captured_kwargs.update(kwargs)
+        return cli.ExitCodes.SUCCESS
+
+    monkeypatch.setattr("sfu_converter.agents.run_agents", fake_run_agents)
+
+    exit_code = cli.main(["agents", "install", "--only", "claude", "--dry-run"])
+
+    assert exit_code == cli.ExitCodes.SUCCESS
+    assert captured_kwargs["action"] == "install"
+    assert captured_kwargs["only"] == ("claude",)
+    assert captured_kwargs["dry_run"] is True
+    assert captured_kwargs["install_all"] is False
+
+
+def test_agents_install_all_flag_sets_install_all(monkeypatch):
+    captured_kwargs = {}
+
+    def fake_run_agents(action, **kwargs):
+        captured_kwargs.update(kwargs)
+        return cli.ExitCodes.SUCCESS
+
+    monkeypatch.setattr("sfu_converter.agents.run_agents", fake_run_agents)
+
+    exit_code = cli.main(["agents", "install", "--all"])
+
+    assert exit_code == cli.ExitCodes.SUCCESS
+    assert captured_kwargs["install_all"] is True
+    assert captured_kwargs["only"] == ()
+
+
+def test_agents_defaults_to_install_action(monkeypatch):
+    captured = {}
+
+    def fake_run_agents(action, **kwargs):
+        captured["action"] = action
+        return cli.ExitCodes.SUCCESS
+
+    monkeypatch.setattr("sfu_converter.agents.run_agents", fake_run_agents)
+
+    exit_code = cli.main(["agents"])
+
+    assert exit_code == cli.ExitCodes.SUCCESS
+    assert captured["action"] == "install"

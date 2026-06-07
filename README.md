@@ -65,10 +65,10 @@ pipx install sfu-converter
 sfu-converter --help
 ```
 
-Это всё, что нужно для конвертации `.txt → .docx`. Интеграция с ИИ-агентами (installer для Claude
-Code и Codex, `AGENTS.md`/`GEMINI.md` для остальных) и полная матрица установки по инструментам —
-в [docs/installation.md](docs/installation.md). Установка для разработки конвертера — в разделе
-[Разработка](#разработка).
+Это всё, что нужно для конвертации `.txt → .docx`. Интеграция с ИИ-агентами (`sfu-converter agents
+install` для Claude Code и Codex, `AGENTS.md`/`GEMINI.md` для остальных) и полная матрица установки по
+инструментам — в [docs/installation.md](docs/installation.md). Установка для разработки конвертера — в
+разделе [Разработка](#разработка).
 
 ## Быстрый старт
 
@@ -100,7 +100,9 @@ Code и Codex, `AGENTS.md`/`GEMINI.md` для остальных) и полна�
      --input report.txt \
      --output report.docx \
      --profile lab_practical_project_reports \
-     --syntax-version 2
+     --syntax-version 2 \
+     --template template1.docx \
+     --skip-generated-front-matter
    ```
 
 ## Команды CLI
@@ -119,17 +121,13 @@ sfu-converter <команда> [параметры]
 | `explain-syntax`  | Вывести справку по синтаксису               |
 | `export-schema`   | Экспортировать JSON-схемы                    |
 | `export-coverage` | Вывести матрицу покрытия стандарта          |
+| `agents`          | Установить скиллы в AI-агенты (Claude, Codex)|
 
 Частые флаги: `--syntax-version 2`, `--profile <имя>`, `--strict`
 (предупреждения как ошибки), `--output-format pptx`,
 `--template <путь>` (шаблон титульного листа),
 `--skip-generated-front-matter` (не создавать титульный лист и содержание).
 
-> [!CAUTION]
-> Для сквозной генерации отчётов с `--skip-generated-front-matter` нужен
-> DOCX-шаблон, в котором уже есть корректный титульный лист и содержание.
-> В этом режиме конвертер не создаёт титульный лист и ToC автоматически, а
-> добавляет только основное содержимое отчёта.
 
 ## Документация по стандарту и roadmap
 

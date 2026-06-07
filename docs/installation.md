@@ -45,7 +45,7 @@ pipx install git+https://github.com/bounchich1/sfu_converter.git
 сами срабатывают по запросу.
 
 ```bash
-npx -y github:bounchich1/sfu_converter -- --only claude
+sfu-converter agents install --only claude
 ```
 
 Ручной вариант:
@@ -60,10 +60,10 @@ npx -y github:bounchich1/sfu_converter -- --only claude
 
 ### Codex (OpenAI)
 
-Установите тот же набор скиллов через общий installer:
+Установите тот же набор скиллов через встроенную команду конвертера:
 
 ```bash
-npx -y github:bounchich1/sfu_converter -- --only codex
+sfu-converter agents install --only codex
 ```
 
 Ручной запасной вариант: Codex автоматически читает файл `AGENTS.md` в корне рабочего репозитория.

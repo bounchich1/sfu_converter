@@ -128,6 +128,12 @@ def create_parser() -> argparse.ArgumentParser:
     coverage_p = subparsers.add_parser("export-coverage", help="Export standard coverage matrix")
     coverage_p.add_argument("--format", choices=["md", "json"], default="md")
 
+    agents_p = subparsers.add_parser("agents", help="Install skills into AI agents")
+    agents_p.add_argument("action", nargs="?", choices=["install", "list"], default="install")
+    agents_p.add_argument("--only", action="append", default=[], help="Install only for claude or codex")
+    agents_p.add_argument("--all", dest="install_all", action="store_true", help="Install into all detected agents")
+    agents_p.add_argument("--dry-run", action="store_true", help="Print commands without running them")
+
     return parser
 
 
@@ -181,6 +187,7 @@ def main(argv: list[str] | None = None) -> int:
         "explain-syntax": cmd_explain_syntax,
         "export-schema": cmd_export_schema,
         "export-coverage": cmd_export_coverage,
+        "agents": cmd_agents,
     }
     handler = handlers.get(args.command)
     if handler is None:
@@ -530,6 +537,18 @@ def cmd_export_coverage(args) -> int:
     else:
         print(render_markdown(rows), end="")
     return ExitCodes.SUCCESS
+
+
+def cmd_agents(args) -> int:
+    from sfu_converter import agents
+
+    return agents.run_agents(
+        args.action,
+        only=tuple(args.only),
+        install_all=args.install_all,
+        dry_run=args.dry_run,
+        emit=print,
+    )
 
 
 def cmd_export_schema(args) -> int:

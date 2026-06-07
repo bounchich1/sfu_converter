@@ -1,9 +1,4 @@
-import json
-import shutil
-import subprocess
 from pathlib import Path
-
-import pytest
 
 
 REPO = "bounchich1/sfu_converter"
@@ -17,41 +12,6 @@ EXPECTED_SKILLS = [
     "sfu-small-works",
     "sfu-vkr",
 ]
-
-
-def run_installer(*args: str) -> subprocess.CompletedProcess[str]:
-    if shutil.which("node") is None:
-        pytest.skip("Node.js is required to run the agent installer")
-
-    return subprocess.run(
-        ["node", "bin/install.js", *args],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-
-
-def test_package_json_declares_single_node_installer_bin():
-    package_path = Path("package.json")
-
-    assert package_path.is_file()
-
-    package = json.loads(package_path.read_text(encoding="utf-8"))
-
-    assert package["name"] == "sfu-converter-agent-installer"
-    assert package["bin"] == {"sfu-converter-agent-install": "bin/install.js"}
-    assert "bin/install.js" in package["files"]
-    assert "plugins/sfu-converter" in package["files"]
-    assert ".claude-plugin/marketplace.json" in package["files"]
-    assert "install.sh" in package["files"]
-    assert "install.ps1" in package["files"]
-
-
-def test_installer_shims_exist():
-    assert Path("install.sh").is_file()
-    assert Path("install.ps1").is_file()
-    assert Path("bin/install.js").is_file()
-    assert Path("bin/install.js").read_text(encoding="utf-8").startswith("#!/usr/bin/env node")
 
 
 def test_codex_skills_are_present_with_frontmatter():
@@ -68,21 +28,6 @@ def test_codex_skills_are_present_with_frontmatter():
         frontmatter = body.split("---", 2)[1]
         assert f"name: {skill_name}" in frontmatter
         assert "description:" in frontmatter
-
-
-def test_codex_dry_run_installs_all_plugin_skills():
-    result = run_installer("--dry-run", "--only", "codex", "--no-color")
-
-    assert result.returncode == 0, result.stderr
-    assert f"npx -y skills add {REPO} -a codex --yes --all" in result.stdout
-
-
-def test_claude_dry_run_installs_plugin_from_canonical_repo():
-    result = run_installer("--dry-run", "--only", "claude", "--no-color")
-
-    assert result.returncode == 0, result.stderr
-    assert f"claude plugin marketplace add {REPO}" in result.stdout
-    assert "claude plugin install sfu-converter@sfu-converter" in result.stdout
 
 
 def test_public_installation_files_use_canonical_repo_slug():
