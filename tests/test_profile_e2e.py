@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -12,6 +13,8 @@ from sfu_converter.infrastructure.docx_inspector import dump
 
 
 FIXTURE_ROOT = Path(__file__).parent / "fixtures" / "profiles"
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+FIGURE_SRC_RE = re.compile(r'\[FIGURE[^\]]*\bsrc="([^"]+)"')
 PROFILE_NAMES = (
     "coursework",
     "graduation_qualification_work",
@@ -24,6 +27,20 @@ PROFILE_NAMES = (
     "common",
 )
 BASELINE_VALIDATOR_WARNING_CODES = {DiagnosticCodes.FORMAT_RULE_NOT_SUPPORTED}
+
+
+def test_profile_fixture_figure_assets_exist():
+    missing = []
+    for input_path in FIXTURE_ROOT.glob("*/input.txt"):
+        source = input_path.read_text(encoding="utf-8")
+        for image_name in FIGURE_SRC_RE.findall(source):
+            if Path(image_name).is_absolute():
+                continue
+            image_path = PROJECT_ROOT / "images" / image_name
+            if not image_path.is_file():
+                missing.append(f"{input_path.parent.name}: {image_name}")
+
+    assert missing == []
 
 
 @pytest.mark.e2e

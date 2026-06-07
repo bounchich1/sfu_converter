@@ -53,7 +53,7 @@
 | Время | 12 |
 [TABLE_NOTE marker="*" text="Измерение приведено для тестового стенда."]
 [TABLE_END]
-[FIGURE src="implementation_overview.png" caption="Архитектура решения" id=fig:architecture explanatory="1 — CLI\n2 — DOCX" sheet=1 total_sheets=2]
+[FIGURE src="test_image.jpg" caption="Архитектура решения" id=fig:architecture explanatory="1 — CLI\n2 — DOCX" sheet=1 total_sheets=2]
 [FORMULA id=eq:score number=auto]
 Q = a + b
 [FORMULA_SYMBOL name=Q text="итоговая оценка"]

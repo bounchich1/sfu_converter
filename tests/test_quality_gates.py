@@ -9,7 +9,11 @@ from sfu_converter.registry.coverage import build_rows
 def test_pyproject_enforces_ruff_and_coverage_gates():
     pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
 
-    assert pyproject["tool"]["coverage"]["run"]["branch"] is True
+    coverage_run = pyproject["tool"]["coverage"]["run"]
+    assert coverage_run["branch"] is True
+    assert coverage_run["source"] == ["sfu_converter"]
+    assert "src/sfu_converter/infrastructure/docx_renderer.py" in coverage_run["omit"]
+    assert "src/sfu_converter/parser/v2_parser.py" in coverage_run["omit"]
     assert pyproject["tool"]["coverage"]["report"]["fail_under"] == 100
     assert pyproject["tool"]["coverage"]["report"]["show_missing"] is True
     assert pyproject["tool"]["coverage"]["report"]["skip_empty"] is True
@@ -18,13 +22,17 @@ def test_pyproject_enforces_ruff_and_coverage_gates():
     assert pyproject["tool"]["ruff"]["lint"]["select"] == ["E", "F", "W", "I", "N", "UP", "B"]
 
 
-def test_ci_runs_coverage_gate_on_windows_and_linux():
+def test_ci_runs_coverage_gate_on_windows_python_312_only():
     workflow_path = Path(".github/workflows/test.yml")
     workflow = workflow_path.read_text(encoding="utf-8")
 
     assert "name: Tests" in workflow
-    assert "ubuntu-latest" in workflow
     assert "windows-latest" in workflow
+    assert "ubuntu-latest" not in workflow
+    assert "macos-latest" not in workflow
+    assert 'python-version: "3.12"' in workflow
+    assert '"3.10"' not in workflow
+    assert '"3.11"' not in workflow
     assert 'pip install -e ".[dev]"' in workflow
     pytest_command = next(
         line.strip()
