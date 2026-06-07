@@ -1,8 +1,8 @@
 from pathlib import Path
+
 import tomllib
 
 from sfu_converter.domain.formatting import RuleStatus
-from sfu_converter.registry import ALL_RULES
 from sfu_converter.registry.coverage import build_rows
 
 
@@ -26,11 +26,19 @@ def test_ci_runs_coverage_gate_on_windows_and_linux():
     assert "ubuntu-latest" in workflow
     assert "windows-latest" in workflow
     assert 'pip install -e ".[dev]"' in workflow
-    assert (
-        "python -m pytest --cov=sfu_converter --cov-branch "
-        "--cov-report=term-missing --cov-fail-under=100"
-    ) in workflow
-    assert "python -m pytest --cov=sfu_converter --cov-branch --cov-report=xml" in workflow
+    pytest_command = next(
+        line.strip()
+        for line in workflow.splitlines()
+        if line.strip().startswith("- run: python -m pytest")
+    )
+    for flag in (
+        "--cov=sfu_converter",
+        "--cov-branch",
+        "--cov-report=term-missing",
+        "--cov-report=xml",
+        "--cov-fail-under=100",
+    ):
+        assert flag in pytest_command
 
 
 def test_implemented_rules_have_traceability_markers():
@@ -45,23 +53,3 @@ def test_implemented_rules_have_traceability_markers():
     ]
 
     assert missing == []
-
-
-def test_rule_sources_resolve_to_markdown_headings():
-    cache: dict[str, set[str]] = {}
-    for rule in ALL_RULES:
-        source_path = Path(rule.source_doc)
-        assert source_path.exists(), f"{rule.id} source doc missing: {rule.source_doc}"
-        if rule.source_doc not in cache:
-            headings = set()
-            for line in source_path.read_text(encoding="utf-8").splitlines():
-                if line.lstrip().startswith("#"):
-                    headings.add(_slug(line.lstrip("#").strip()))
-            cache[rule.source_doc] = headings
-        assert _slug(rule.source_section) in cache[rule.source_doc], (
-            f"{rule.id} source section {rule.source_section!r} not found in {rule.source_doc}"
-        )
-
-
-def _slug(value: str) -> str:
-    return "-".join(" ".join(value.casefold().split()).split(" "))

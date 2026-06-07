@@ -25,10 +25,17 @@ generated), writes V2 TXT, lints with `sfu-converter lint`, fixes error-level di
 Shared, profile-independent material lives in [`references/`](references/): `v2-syntax.md`,
 `diagnostics.md`, `cli.md`, `metadata.md`. Profile skills stay short and link to these.
 
-## Install (Claude Code)
+## Install
+
+```bash
+npx -y github:bounchich1/sfu_converter -- --only claude
+npx -y github:bounchich1/sfu_converter -- --only codex
+```
+
+Claude Code users can also install manually:
 
 ```text
-/plugin marketplace add Nikita2005qwe/sfu_converter
+/plugin marketplace add bounchich1/sfu_converter
 /plugin install sfu-converter@sfu-converter
 ```
 
@@ -38,7 +45,7 @@ The plugin ships only the skills. Install the converter separately (one line):
 
 ```bash
 pipx install sfu-converter
-# до выхода на PyPI: pipx install git+https://github.com/Nikita2005qwe/sfu_converter.git
+# до выхода на PyPI: pipx install git+https://github.com/bounchich1/sfu_converter.git
 ```
 
 After install, `sfu-converter --help` must work in the shell Claude Code uses. Full per-agent

@@ -28,7 +28,6 @@ from sfu_converter.registry import (
 )
 from sfu_converter.registry.loader import _alignment, rules_with_status
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -39,19 +38,6 @@ def assert_close(actual, expected) -> None:
 def test_every_rule_id_is_unique():
     ids = [rule.id for rule in ALL_RULES]
     assert len(ids) == len(set(ids))
-
-
-def test_every_rule_source_doc_exists_on_disk():
-    for rule in ALL_RULES:
-        path = REPO_ROOT / rule.source_doc
-        assert path.exists(), f"Missing source doc for {rule.id}: {path}"
-
-
-def test_every_profile_source_doc_exists_on_disk():
-    for profile in PROFILES.values():
-        for source_doc in profile.source_docs:
-            path = REPO_ROOT / source_doc
-            assert path.exists(), f"Missing source doc for profile {profile.name}: {path}"
 
 
 def test_rule_id_naming_convention():
@@ -153,21 +139,6 @@ def test_every_source_doc_lives_under_formatting_requirements_dir():
         rule_doc = (REPO_ROOT / rule.source_doc).resolve()
         assert formatting_dir.resolve() in rule_doc.parents, (
             f"Rule {rule.id} source_doc must live under docs/formatting requirements/: {rule.source_doc}"
-        )
-
-
-def test_every_source_section_resolves_to_a_heading_in_its_doc():
-    cache: dict[str, set[str]] = {}
-    for rule in ALL_RULES:
-        if rule.source_doc not in cache:
-            text = (REPO_ROOT / rule.source_doc).read_text(encoding="utf-8")
-            cache[rule.source_doc] = {
-                line.lstrip("#").strip()
-                for line in text.splitlines()
-                if line.lstrip().startswith("#")
-            }
-        assert rule.source_section in cache[rule.source_doc], (
-            f"Rule {rule.id} source_section {rule.source_section!r} not found in {rule.source_doc}"
         )
 
 

@@ -44,6 +44,12 @@ pipx install git+https://github.com/bounchich1/sfu_converter.git
 Самый богатый режим: набор скиллов (по одному на тип документа + общий `sfu-common`), которые
 сами срабатывают по запросу.
 
+```bash
+npx -y github:bounchich1/sfu_converter -- --only claude
+```
+
+Ручной вариант:
+
 ```text
 /plugin marketplace add bounchich1/sfu_converter
 /plugin install sfu-converter@sfu-converter
@@ -54,9 +60,15 @@ pipx install git+https://github.com/bounchich1/sfu_converter.git
 
 ### Codex (OpenAI)
 
-Codex автоматически читает файл `AGENTS.md` в корне рабочего репозитория. Скопируйте
-[`AGENTS.md`](../AGENTS.md) из этого проекта в корень вашего рабочего каталога (или работайте прямо
-в клоне `sfu_converter`). Codex подхватит правила синтаксиса и цикл lint → convert.
+Установите тот же набор скиллов через общий installer:
+
+```bash
+npx -y github:bounchich1/sfu_converter -- --only codex
+```
+
+Ручной запасной вариант: Codex автоматически читает файл `AGENTS.md` в корне рабочего репозитория.
+Скопируйте [`AGENTS.md`](../AGENTS.md) из этого проекта в корень вашего рабочего каталога (или
+работайте прямо в клоне `sfu_converter`). Codex подхватит правила синтаксиса и цикл lint → convert.
 
 ```bash
 cp /path/to/sfu_converter/AGENTS.md ./AGENTS.md
@@ -87,4 +99,3 @@ cp /path/to/sfu_converter/GEMINI.md ./GEMINI.md
 Если у вас нет агента с доступом к терминалу — используйте Flow 1: один промпт
 [`prompts/SFU_WEB_PROMPT.md`](../prompts/SFU_WEB_PROMPT.md). Подробности —
 [workflow-web.md](workflow-web.md).
-

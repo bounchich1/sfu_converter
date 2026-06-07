@@ -12,8 +12,8 @@ from sfu_converter.application import composition, heading_checks, metadata_chec
 from sfu_converter.application.style_check import validate_style
 from sfu_converter.application.units import validate_unit_consistency
 from sfu_converter.config import PathConfig, SIBFUConfig
-from sfu_converter.domain.constants import DEFAULT_PROFILE_NAME
 from sfu_converter.domain.ast_nodes import BlockType, SourceSpan
+from sfu_converter.domain.constants import DEFAULT_PROFILE_NAME
 from sfu_converter.domain.diagnostics import Diagnostic, DiagnosticCodes, Severity
 from sfu_converter.domain.formatting import FormattingProfile, RuleStatus, unsupported_rule_diagnostics
 from sfu_converter.infrastructure.appendix import assign_appendix_letters
@@ -24,6 +24,7 @@ from sfu_converter.parser import DEFAULT_SYNTAX_VERSION, get_parser
 from sfu_converter.parser.syntax_spec import get_syntax_spec
 from sfu_converter.registry import get_profile, iter_profiles
 from sfu_converter.registry.coverage import build_rows, parser_support_for_rule, render_json, render_markdown
+from sfu_converter.runtime_resources import packaged_template_exists
 
 
 class ExitCodes:
@@ -817,7 +818,7 @@ def _template_exists(workdir: Path, template: Path) -> bool:
         workdir / template,
         template,
     )
-    return any(candidate.exists() for candidate in candidates)
+    return any(candidate.exists() for candidate in candidates) or packaged_template_exists(template)
 
 
 def _emit_missing_resource(args, command: str, code: str, message: str) -> None:

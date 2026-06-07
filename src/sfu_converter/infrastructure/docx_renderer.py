@@ -14,12 +14,6 @@ from docx.oxml.ns import qn
 from docx.shared import Cm, Pt, RGBColor
 
 from sfu_converter.config import PathConfig, SIBFUConfig
-from sfu_converter.domain.constants import (
-    APPENDIX_TITLE,
-    DASH_SEPARATOR,
-    EM_DASH,
-    EN_DASH,
-)
 from sfu_converter.domain.ast_nodes import (
     AppendixNode,
     BibliographyEntryNode,
@@ -28,10 +22,10 @@ from sfu_converter.domain.ast_nodes import (
     Document,
     DrawingSheetNode,
     FigureNode,
-    FrameType,
     FootnoteAnchor,
     FootnoteNode,
     FormulaNode,
+    FrameType,
     HeadingLevel,
     HeadingNode,
     ListNode,
@@ -43,44 +37,51 @@ from sfu_converter.domain.ast_nodes import (
     ProjectDesignationNode,
     RawBlockNode,
     ReferenceNode,
-    SectionSetupNode,
     SectionOrientation,
+    SectionSetupNode,
     SheetFormat,
-    SourceRecordNode,
     SlideDeckNode,
+    SourceRecordNode,
     StructuralSectionNode,
     StructuralSectionType,
     TableCaptionNode,
-    TableNote,
     TableNode,
+    TableNote,
     TableOfContentsNode,
     TitleBlockForm,
     TitlePageNode,
 )
+from sfu_converter.domain.constants import (
+    APPENDIX_TITLE,
+    DASH_SEPARATOR,
+    EM_DASH,
+    EN_DASH,
+)
 from sfu_converter.domain.diagnostics import Diagnostic, DiagnosticCodes, Severity
 from sfu_converter.domain.formatting import FormattingProfile, unsupported_rule_diagnostics
 from sfu_converter.domain.reference_graph import build_reference_graph
+from sfu_converter.infrastructure import docx_styles, frames, main_inscription, section_setup
 from sfu_converter.infrastructure.abbreviations import abbreviations_for_document, explicit_abbreviations
 from sfu_converter.infrastructure.appendix import assign_appendix_letters
 from sfu_converter.infrastructure.bibliography import format_record, validate_entries, validate_records
-from sfu_converter.infrastructure import docx_styles
+from sfu_converter.infrastructure.docx_measurements import ABBREVIATIONS_COLUMN_WIDTHS, NO_INDENT_CM
 from sfu_converter.infrastructure.figure_layout import (
     figure_caption_text,
     figure_reference_diagnostics,
     normalize_caption_dashes,
 )
+from sfu_converter.infrastructure.footnotes import add_footnote_reference, patch_docx_bytes, patch_docx_file
 from sfu_converter.infrastructure.formula_layout import (
     explanation_lines,
     split_formula_lines,
 )
-from sfu_converter.infrastructure.footnotes import add_footnote_reference, patch_docx_bytes, patch_docx_file
-from sfu_converter.infrastructure import frames, main_inscription, section_setup
-from sfu_converter.infrastructure.docx_measurements import ABBREVIATIONS_COLUMN_WIDTHS, NO_INDENT_CM
 from sfu_converter.infrastructure.list_layout import apply_list_item_layout, list_marker
 from sfu_converter.infrastructure.numbering import NumberingContext, build_numbering_context
 from sfu_converter.infrastructure.page_numbering import (
     Location,
     PageNumberingSection,
+)
+from sfu_converter.infrastructure.page_numbering import (
     configure as configure_page_numbering,
 )
 from sfu_converter.infrastructure.project_designation import format_designation
@@ -88,8 +89,8 @@ from sfu_converter.infrastructure.toc import TocEntry, TocField, build_toc_field
 from sfu_converter.parser.citations import format_citation_node
 from sfu_converter.ports.renderer import RendererPort
 from sfu_converter.registry import get_profile
+from sfu_converter.runtime_resources import packaged_template_bytes, packaged_template_label
 from sfu_converter.utils_image_insert import insert_image
-
 
 _SFU_STYLE_BY_TYPE = {
     "caption_img": docx_styles.FIGURE_CAPTION,
@@ -792,6 +793,9 @@ class DocxRenderer(RendererPort):
         if template_file.exists():
             self.doc = DocxDocument(str(template_file))
             self.logger.info(f"Шаблон загружен: {template_file}")
+        elif (template_bytes := packaged_template_bytes(template_path)) is not None:
+            self.doc = DocxDocument(BytesIO(template_bytes))
+            self.logger.info(f"Шаблон загружен: {packaged_template_label(template_path)}")
         else:
             self.doc = DocxDocument()
             self._setup_document_margins()

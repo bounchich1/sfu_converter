@@ -1,5 +1,9 @@
 import importlib
+from importlib import resources
 from importlib.metadata import version as dist_version
+from pathlib import Path
+
+from sfu_converter.cli import _template_exists
 
 
 def test_package_exposes_version():
@@ -13,3 +17,28 @@ def test_module_entrypoint_imports_main_function():
     cli_module = importlib.import_module("sfu_converter.cli")
 
     assert entrypoint.main is cli_module.main
+
+
+def test_runtime_package_data_is_declared():
+    pyproject = Path("pyproject.toml").read_text(encoding="utf-8")
+
+    assert "[tool.setuptools.package-data]" in pyproject
+    assert '"cli_schemas/*.json"' in pyproject
+    assert '"templates/*.docx"' in pyproject
+
+
+def test_license_metadata_uses_spdx_expression():
+    pyproject = Path("pyproject.toml").read_text(encoding="utf-8")
+
+    assert 'license = "MIT"' in pyproject
+    assert "License :: OSI Approved :: MIT License" not in pyproject
+
+
+def test_default_template_is_packaged_resource():
+    template = resources.files("sfu_converter").joinpath("templates", "template1.docx")
+
+    assert template.is_file()
+
+
+def test_cli_accepts_packaged_default_template(tmp_path):
+    assert _template_exists(tmp_path, Path("template1.docx"))

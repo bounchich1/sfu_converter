@@ -24,6 +24,7 @@ from sfu_converter.ports.template import (
     TemplateDocument,
     TemplatePort,
 )
+from sfu_converter.runtime_resources import packaged_template_bytes, packaged_template_label
 
 _TEMPLATE_BOOKMARK_NOT_FOUND = "TEMPLATE_BOOKMARK_NOT_FOUND"
 _TEMPLATE_PAGE_NOT_FOUND = "TEMPLATE_PAGE_NOT_FOUND"
@@ -39,6 +40,15 @@ class DocxTemplateAdapter(TemplatePort):
 
     def load_template(self, path: str) -> TemplateDocument:
         resolved = self._resolve(path)
+        if resolved.exists():
+            doc = DocxDocument(str(resolved))
+            return TemplateDocument(doc=doc, path=str(resolved))
+
+        template_bytes = packaged_template_bytes(path)
+        if template_bytes is not None:
+            doc = DocxDocument(BytesIO(template_bytes))
+            return TemplateDocument(doc=doc, path=packaged_template_label(path))
+
         doc = DocxDocument(str(resolved))
         return TemplateDocument(doc=doc, path=str(resolved))
 

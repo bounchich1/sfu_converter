@@ -65,10 +65,10 @@ pipx install sfu-converter
 sfu-converter --help
 ```
 
-Это всё, что нужно для конвертации `.txt → .docx`. Интеграция с ИИ-агентами (плагин для Claude
-Code, `AGENTS.md`/`GEMINI.md` для Codex / OpenCode / Gemini) и полная матрица установки по
-инструментам — в [docs/installation.md](docs/installation.md). Установка для разработки конвертера
-— в разделе [Разработка](#разработка).
+Это всё, что нужно для конвертации `.txt → .docx`. Интеграция с ИИ-агентами (installer для Claude
+Code и Codex, `AGENTS.md`/`GEMINI.md` для остальных) и полная матрица установки по инструментам —
+в [docs/installation.md](docs/installation.md). Установка для разработки конвертера — в разделе
+[Разработка](#разработка).
 
 ## Быстрый старт
 
