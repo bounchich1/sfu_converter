@@ -96,6 +96,26 @@ def test_install_commands_codex_reports_no_cli(tmp_path):
     assert commands == []
 
 
+def test_install_commands_codex_ignores_unusable_configured_cli_path(tmp_path):
+    config_dir = tmp_path / ".codex"
+    config_dir.mkdir()
+    missing = tmp_path / "missing-codex.exe"
+    (config_dir / "config.toml").write_text(
+        "\n".join(
+            [
+                "OTHER = 'ignored'",
+                "CODEX_CLI_PATH = '" + str(missing).replace("\\", "\\\\") + "'",
+                "ANOTHER = 'ignored'",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    commands = agents._install_commands(agents._provider("codex"), which=lambda command: None, home=tmp_path)
+
+    assert commands == []
+
+
 def test_install_provider_dry_run_does_not_invoke_runner():
     lines, emit = make_emit()
     calls = []
@@ -182,6 +202,14 @@ def test_claude_idempotency_ignores_unrelated_commands():
     result = agents.CommandResult(1, stderr="already done")
 
     ok = agents._is_idempotent_claude_result(agents._provider("claude"), ["plugin", "update"], result)
+
+    assert ok is False
+
+
+def test_codex_idempotency_ignores_unrelated_commands():
+    result = agents.CommandResult(1, stderr="already done")
+
+    ok = agents._is_idempotent_codex_result(agents._provider("codex"), ["plugin", "update"], result)
 
     assert ok is False
 
@@ -281,6 +309,23 @@ def test_install_provider_reports_claude_plugin_install_failure_hint():
 
     assert ok is False
     assert any("claude plugin list" in line for line in lines)
+
+
+def test_install_provider_reports_codex_failure_without_plugin_hint(monkeypatch):
+    lines, emit = make_emit()
+
+    monkeypatch.setattr(agents, "_install_commands", lambda provider, **kwargs: [("codex", ["status"])])
+
+    ok = agents.install_provider(
+        agents._provider("codex"),
+        dry_run=False,
+        run=lambda command, args: agents.CommandResult(2, stderr="status failed"),
+        emit=emit,
+    )
+
+    assert ok is False
+    assert any("для Codex требуется" in line for line in lines)
+    assert not any("plugin list" in line for line in lines)
 
 
 def test_select_providers_interactive_cancel_returns_empty():
