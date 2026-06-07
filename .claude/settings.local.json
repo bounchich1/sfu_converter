@@ -63,7 +63,26 @@
       "Bash(PYTEST_DEBUG_TEMPROOT=M:/sfu_converter-main/build/pytest_tmp python -m pytest tests/test_docx_renderer.py)",
       "Bash(PYTEST_DEBUG_TEMPROOT=M:/sfu_converter-main/build/pytest_tmp python -m pytest tests/test_docx_renderer.py tests/test_numbering.py)",
       "Bash(PYTEST_DEBUG_TEMPROOT=M:/sfu_converter-main/build/pytest_tmp python -m pytest)",
-      "Bash(PYTEST_DEBUG_TEMPROOT=M:/sfu_converter-main/build/pytest_tmp python -m pytest tests/test_registry.py::test_every_source_section_resolves_to_a_heading_in_its_doc -v)"
+      "Bash(PYTEST_DEBUG_TEMPROOT=M:/sfu_converter-main/build/pytest_tmp python -m pytest tests/test_registry.py::test_every_source_section_resolves_to_a_heading_in_its_doc -v)",
+      "Bash(grep -E \"\\\\.\\(json|md|yaml|yml\\)$\")",
+      "Bash(find /m/sfu_converter-main -maxdepth 3 -type d -not -path \"*/\\\\.*\" -not -path \"*/__pycache__*\" -not -path \"*.venv*\" -not -path \"*build*\")",
+      "Bash(xargs wc -l)",
+      "Bash(xargs grep -l \"Цель\\\\|Задачи\\\\|Ход работы\")",
+      "Bash(sfu-converter list-profiles *)",
+      "Bash(echo \"---EXIT $?---\")",
+      "Bash(set -e)",
+      "Bash(rm -rf .claude/skills/sfu-converter)",
+      "Bash(mkdir -p .claude/references .claude/skills)",
+      "Bash(cp -f plugins/sfu-converter/references/*.md .claude/references/)",
+      "Bash(cp -rf plugins/sfu-converter/skills/* .claude/skills/)",
+      "Bash(echo \"plain convert exit: $?\")",
+      "Bash(cp plugins/sfu-converter/references/cli.md .claude/references/cli.md)",
+      "Bash(cp plugins/sfu-converter/references/metadata.md .claude/references/metadata.md)",
+      "Bash(cp plugins/sfu-converter/skills/__TRACKED_VAR__/SKILL.md .claude/skills/__TRACKED_VAR__/SKILL.md)",
+      "Bash(python -m sfu_converter.cli convert --input examples/converter_v2_showcase_report.txt --output results/_plan_smoke.docx --profile lab_practical_project_reports --syntax-version 2 --template templates/template1.docx --skip-generated-front-matter --format json)",
+      "Bash(echo \"exit=$?\")",
+      "Bash(pip --version)",
+      "Bash(PYTHONSAFEPATH=1 python -m twine check dist_verify/*)"
     ]
   }
 }

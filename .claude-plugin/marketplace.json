@@ -12,7 +12,7 @@
     {
       "name": "sfu-converter",
       "source": "./plugins/sfu-converter",
-      "description": "Agent skill for generating SFU-compliant academic documents (lab/coursework/VKR/research/practice reports) in V2 TXT syntax and converting them to DOCX via the sfu-converter CLI.",
+      "description": "Multi-skill pack for generating SFU-compliant academic documents (lab/coursework/VKR/research/practice/small-works) in V2 TXT syntax and converting them to DOCX via the sfu-converter CLI. Includes a shared sfu-common skill plus one skill per document type.",
       "version": "0.1.0",
       "category": "documentation",
       "tags": ["sfu", "сфу", "docx", "academic", "russian", "report", "txt-to-docx"]

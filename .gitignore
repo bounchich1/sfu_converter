@@ -66,3 +66,5 @@ temp/
 *.pem
 /.pytest_tmp/
 /.pytmp/
+/.pt_tmp/
+/dist_verify/

@@ -10,6 +10,9 @@
 > [Объекты](v2-objects.md) · [Ссылки и источники](v2-references.md) ·
 > [Расширенные блоки](v2-extensions.md) · [Диагностика](v2-diagnostics.md) ·
 > [Профили](v2-profiles.md)
+>
+> Рабочие процессы и установка: [Flow 1 — веб](workflow-web.md) ·
+> [Flow 2 — агент](workflow-agent.md) · [Установка по агентам](installation.md)
 
 ## Содержание
 

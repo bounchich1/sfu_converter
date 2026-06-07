@@ -28,25 +28,47 @@ SFU Converter превращает структурированный текст
 ## Содержание
 
 - [Краткий обзор](#sfu-converter--конвертер-txt-в-docx-по-стандарту-сфу)
+- [Рабочие процессы](#рабочие-процессы)
+  - [Flow 1 — веб-чат (ручной)](docs/workflow-web.md)
+  - [Flow 2 — ИИ-агент (автоматический)](docs/workflow-agent.md)
 - [Установка](#установка)
+  - [Установка по агентам](docs/installation.md)
 - [Быстрый старт](#быстрый-старт)
 - [Команды CLI](#команды-cli)
 - [Документация по стандарту и roadmap](#документация-по-стандарту-и-roadmap)
 - [Профили оформления](#профили-оформления)
 - [Разработка](#разработка)
 
+## Рабочие процессы
+
+Сгенерировать документ можно двумя способами:
+
+- **Flow 1 — веб-чат (ручной).** Скопируйте один готовый промпт
+  [`prompts/SFU_WEB_PROMPT.md`](prompts/SFU_WEB_PROMPT.md) в любой веб-чат с ИИ (Claude, ChatGPT,
+  Gemini …). Он спросит тип документа и метаданные, выдаст `.txt` в синтаксисе V2, а вы
+  сконвертируете его командами `sfu-converter`. Пошагово — [docs/workflow-web.md](docs/workflow-web.md).
+- **Flow 2 — ИИ-агент (автоматический).** Агент (Claude Code, Codex, OpenCode, Gemini CLI) сам
+  пишет `.txt`, прогоняет lint, исправляет ошибки и конвертирует в `.docx`. Пошагово —
+  [docs/workflow-agent.md](docs/workflow-agent.md).
+
+Оба способа спрашивают, **кто пишет первые разделы** (Цель/Задачи/Введение): вы даёте текст или ИИ
+генерирует его из темы. Установка для каждого агента — [docs/installation.md](docs/installation.md).
+
 ## Установка
 
+Рекомендуемый способ — изолированная установка через [pipx](https://pipx.pypa.io):
+
 ```bash
-git clone https://github.com/Nikita2005qwe/sfu_converter.git
-cd sfu_converter
-python -m venv .venv
-.venv\Scripts\activate        # Windows
-source .venv/bin/activate     # macOS / Linux
-pip install -e ".[dev]"
+pipx install sfu-converter
+# до выхода на PyPI — прямо из репозитория:
+# pipx install git+https://github.com/bounchich1/sfu_converter
+sfu-converter --help
 ```
 
-После установки команда `sfu-converter` доступна в терминале.
+Это всё, что нужно для конвертации `.txt → .docx`. Интеграция с ИИ-агентами (плагин для Claude
+Code, `AGENTS.md`/`GEMINI.md` для Codex / OpenCode / Gemini) и полная матрица установки по
+инструментам — в [docs/installation.md](docs/installation.md). Установка для разработки конвертера
+— в разделе [Разработка](#разработка).
 
 ## Быстрый старт
 
@@ -157,9 +179,20 @@ sfu-converter list-profiles --format json
 ## Разработка
 
 ```bash
+git clone https://github.com/bounchich1/sfu_converter
+cd sfu_converter
+python -m venv .venv
+.venv\Scripts\activate        # Windows
+source .venv/bin/activate     # macOS / Linux
+pip install -e ".[dev]"
+
 python -m pytest                                                              # тесты
 python -m pytest --cov=sfu_converter --cov-branch --cov-report=term-missing   # покрытие
 ```
+
+В режиме разработки команда доступна и как `sfu-converter`, и как `python -m sfu_converter.cli`.
+Портативные инструкции для агентов: `AGENTS.md` — источник правды, `GEMINI.md` генерируется из него
+командой `python tools/sync_agent_docs.py` (проверка в CI — `--check`).
 
 Структура проекта:
 

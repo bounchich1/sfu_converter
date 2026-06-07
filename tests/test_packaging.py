@@ -1,10 +1,11 @@
 import importlib
+from importlib.metadata import version as dist_version
 
 
 def test_package_exposes_version():
     package = importlib.import_module("sfu_converter")
 
-    assert package.__version__ == "0.1.0"
+    assert package.__version__ == dist_version("sfu-converter")
 
 
 def test_module_entrypoint_imports_main_function():
