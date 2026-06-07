@@ -2,6 +2,7 @@ import importlib
 from importlib import resources
 from importlib.metadata import version as dist_version
 from pathlib import Path
+from unittest.mock import patch
 
 import tomllib
 
@@ -12,6 +13,21 @@ def test_package_exposes_version():
     package = importlib.import_module("sfu_converter")
 
     assert package.__version__ == dist_version("sfu-converter")
+
+
+def test_package_version_falls_back_when_distribution_metadata_is_missing():
+    metadata = importlib.import_module("importlib.metadata")
+    package = importlib.import_module("sfu_converter")
+
+    def missing_version(distribution_name):
+        assert distribution_name == "sfu-converter"
+        raise metadata.PackageNotFoundError(distribution_name)
+
+    with patch.object(metadata, "version", missing_version):
+        reloaded = importlib.reload(package)
+        assert reloaded.__version__ == "0+unknown"
+
+    importlib.reload(package)
 
 
 def test_module_entrypoint_imports_main_function():
